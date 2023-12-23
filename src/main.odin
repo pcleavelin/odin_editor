@@ -1,12 +1,47 @@
 package main
 
+import "core:os"
+import "core:runtime"
 import "core:fmt"
 import "core:mem"
+import "core:slice"
 import "vendor:raylib"
 
 source_font_width :: 8;
 source_font_height :: 16;
 line_number_padding :: 4 * source_font_width;
+
+ErrorType :: enum {
+    None,
+    FileIOError,
+}
+
+Error :: struct {
+    type: ErrorType,
+    loc: runtime.Source_Code_Location,
+    msg: string,
+}
+
+make_error :: proc(type: ErrorType, msg: string, loc := #caller_location) -> Error {
+    return Error {
+        type = type,
+        loc = loc,
+        msg = msg
+    }
+}
+
+no_error :: proc() -> Error {
+    return Error {
+        type = .None,
+    }
+}
+
+error :: proc{make_error, no_error};
+
+ScrollDir :: enum {
+    Up,
+    Down,
+}
 
 ContentType :: enum {
     Original,
@@ -77,37 +112,46 @@ iterate_file_buffer :: proc(it: ^FileBufferIter) -> (character: u8, idx: FileBuf
     return;
 }
 
-new_file_buffer :: proc(allocator: mem.Allocator, file_path: string) -> FileBuffer {
+new_file_buffer :: proc(allocator: mem.Allocator, file_path: string) -> (FileBuffer, Error) {
     context.allocator = allocator;
 
-    width := 80;
-    height := 24;
+    fd, err := os.open(file_path);
+    if err != os.ERROR_NONE {
+        return FileBuffer{}, make_error(ErrorType.FileIOError, fmt.aprintf("failed to open file: errno=%x", err));
+    }
+    defer os.close(fd);
 
-    test_str := "This is a test string\nfor a file buffer\nThis is line 3\nThis is line 4\n\n\nThis is line 7 (with some gaps between 4)";
+    if original_content, success := os.read_entire_file_from_handle(fd); success {
+        width := 256;
+        height := 50;
 
-    buffer := FileBuffer {
-        allocator = allocator,
-        file_path = file_path,
+        buffer := FileBuffer {
+            allocator = allocator,
+            file_path = file_path,
 
-        original_content = make([dynamic]u8, 0, len(test_str)),
-        added_content = make([dynamic]u8, 0, 1024*1024),
-        content_slices = make([dynamic]ContentSlice, 0, 1024*1024),
+            original_content = slice.clone_to_dynamic(original_content),
+            added_content = make([dynamic]u8, 0, 1024*1024),
+            content_slices = make([dynamic]ContentSlice, 0, 1024*1024),
 
-        glyph_buffer_width = width,
-        glyph_buffer_height = height,
-        glyph_buffer = make([dynamic]Glyph, width*height, width*height),
+            glyph_buffer_width = width,
+            glyph_buffer_height = height,
+            glyph_buffer = make([dynamic]Glyph, width*height, width*height),
 
-        input_buffer = make([dynamic]u8, 0, 1024),
-    };
+            input_buffer = make([dynamic]u8, 0, 1024),
+        };
 
-    append(&buffer.original_content, test_str);
-    append(&buffer.content_slices, ContentSlice { type = .Original, slice = buffer.original_content[:] });
+        append(&buffer.content_slices, ContentSlice { type = .Original, slice = buffer.original_content[:] });
 
-    return buffer;
+        return buffer, error();
+    } else {
+        return FileBuffer{}, error(ErrorType.FileIOError, fmt.aprintf("failed to read from file"));
+    }
 }
 
 update_glyph_buffer :: proc(buffer: ^FileBuffer) {
-    //mem.set(&buffer.glyph_buffer, 0, size_of(Glyph)*buffer.glyph_buffer_width*buffer.glyph_buffer_height);
+    for &glyph in buffer.glyph_buffer {
+        glyph = Glyph{};
+    }
 
     begin := buffer.top_line;
     rendered_col: int;
@@ -117,8 +161,8 @@ update_glyph_buffer :: proc(buffer: ^FileBuffer) {
     for character in iterate_file_buffer(&it) {
         if character == '\r' { continue; }
 
-        line := rendered_line - begin;
-        if rendered_line >= begin && line >= buffer.glyph_buffer_height { break; }
+        screen_line := rendered_line - begin;
+        if rendered_line >= begin && screen_line >= buffer.glyph_buffer_height { break; }
 
         if character == '\n' {
             rendered_col = 0;
@@ -127,7 +171,7 @@ update_glyph_buffer :: proc(buffer: ^FileBuffer) {
         }
 
         if rendered_line >= begin && rendered_col < buffer.glyph_buffer_width {
-            buffer.glyph_buffer[rendered_col + line * buffer.glyph_buffer_width] = Glyph { codepoint = character, color = 0 };
+            buffer.glyph_buffer[rendered_col + screen_line * buffer.glyph_buffer_width] = Glyph { codepoint = character, color = 0 };
         }
 
         rendered_col += 1;
@@ -140,6 +184,9 @@ draw_file_buffer :: proc(buffer: ^FileBuffer, x: int, y: int, font: raylib.Font)
     begin := buffer.top_line;
     cursor_x := x + line_number_padding + buffer.cursor.col * source_font_width;
     cursor_y := y + buffer.cursor.line * source_font_height;
+
+    cursor_y -= begin * source_font_height;
+    raylib.DrawRectangle(i32(cursor_x), i32(cursor_y), source_font_width, source_font_height, raylib.BLUE);
 
     for j in 0..<buffer.glyph_buffer_height {
         text_y := y + source_font_height * j;
@@ -155,7 +202,35 @@ draw_file_buffer :: proc(buffer: ^FileBuffer, x: int, y: int, font: raylib.Font)
 
             raylib.DrawTextCodepoint(font, rune(glyph.codepoint), raylib.Vector2 { f32(text_x), f32(text_y) }, source_font_height, raylib.LIGHTGRAY);
         }
-    } 
+    }
+}
+
+scroll_file_buffer :: proc(buffer: ^FileBuffer, dir: ScrollDir) {
+    switch dir {
+        case .Up:
+        {
+            if buffer.top_line > 0 {
+                buffer.top_line -= 20;
+
+                if buffer.top_line < 0 {
+                    buffer.top_line = 0;
+                }
+            }
+
+            if buffer.cursor.line >= buffer.top_line + buffer.glyph_buffer_height - 4 {
+                buffer.cursor.line = buffer.top_line + buffer.glyph_buffer_height - 1 - 4;
+            }
+        }
+        case .Down:
+        {
+            buffer.top_line += 20;
+            // TODO: check if top_line has gone past end of document
+
+            if buffer.cursor.line < buffer.top_line + 4 {
+                buffer.cursor.line = buffer.top_line + 4;
+            }
+        }
+    }
 }
 
 main :: proc() {
@@ -166,18 +241,28 @@ main :: proc() {
 
     font := raylib.LoadFont("../c_editor/Mx437_ToshibaSat_8x16.ttf");
 
-    fmt.println("Hello");
-    buffer := new_file_buffer(context.allocator, "./main.odin");
+    buffer, err := new_file_buffer(context.allocator, "./src/main.odin");
+    if err.type != .None {
+        fmt.println("Failed to create file buffer:", err);
+        os.exit(1);
+    }
     update_glyph_buffer(&buffer);
 
     for !raylib.WindowShouldClose() {
         {
             raylib.BeginDrawing();
             defer raylib.EndDrawing();
-            
+
             raylib.ClearBackground(raylib.GetColor(0x232136ff));
 
             draw_file_buffer(&buffer, 0, 0, font);
+        }
+
+        if raylib.IsKeyDown(.LEFT_CONTROL) && raylib.IsKeyDown(.U) {
+            scroll_file_buffer(&buffer, .Up);
+        }
+        if raylib.IsKeyDown(.LEFT_CONTROL) && raylib.IsKeyDown(.D) {
+            scroll_file_buffer(&buffer, .Down);
         }
     }
 }
