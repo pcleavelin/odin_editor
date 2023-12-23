@@ -101,9 +101,14 @@ State :: struct {
     mode: Mode,
 }
 
-new_file_buffer_iter :: proc(file_buffer: ^FileBuffer) -> FileBufferIter {
+new_file_buffer_iter_from_beginning :: proc(file_buffer: ^FileBuffer) -> FileBufferIter {
     return FileBufferIter { buffer = file_buffer };
 }
+new_file_buffer_iter_with_index :: proc(file_buffer: ^FileBuffer, index: FileBufferIndex) -> FileBufferIter {
+    return FileBufferIter { buffer = file_buffer, index = index };
+}
+new_file_buffer_iter :: proc{new_file_buffer_iter_from_beginning, new_file_buffer_iter_with_index};
+
 iterate_file_buffer :: proc(it: ^FileBufferIter) -> (character: u8, idx: FileBufferIndex, cond: bool) {
     if it.index.slice_index >= len(it.buffer.content_slices) || it.index.content_index >= len(it.buffer.content_slices[it.index.slice_index]) {
         return;
@@ -370,6 +375,90 @@ scroll_file_buffer :: proc(buffer: ^FileBuffer, dir: ScrollDir) {
     }
 }
 
+// TODO: use buffer list in state
+do_normal_mode :: proc(state: ^State, buffer: ^FileBuffer) {
+    if raylib.IsKeyPressed(.I) {
+        state.mode = .Insert;
+        return;
+    }
+
+    if raylib.IsKeyPressed(.K) {
+        move_cursor_up(buffer);
+    }
+    if raylib.IsKeyPressed(.J) {
+        move_cursor_down(buffer);
+    }
+    if raylib.IsKeyPressed(.H) {
+        move_cursor_left(buffer);
+    }
+    if raylib.IsKeyPressed(.L) {
+        move_cursor_right(buffer);
+    }
+
+    if raylib.IsKeyDown(.LEFT_CONTROL) && raylib.IsKeyDown(.U) {
+        scroll_file_buffer(buffer, .Up);
+    }
+    if raylib.IsKeyDown(.LEFT_CONTROL) && raylib.IsKeyDown(.D) {
+        scroll_file_buffer(buffer, .Down);
+    }
+}
+
+insert_content :: proc(buffer: ^FileBuffer, to_be_inserted: []u8) {
+    if len(to_be_inserted) == 0 {
+        return;
+    }
+
+    // TODO: is this even needed? would mean that the cursor isn't always in a valid state.
+    update_file_buffer_index_from_cursor(buffer);
+    before_it := new_file_buffer_iter(buffer, buffer.cursor.buffer_index);
+
+    length := append(&buffer.added_content, ..to_be_inserted);
+    inserted_slice: []u8 = buffer.added_content[len(buffer.added_content)-length:];
+
+    if before_it.index.content_index == 0 {
+        // insertion happening in beginning of content slice
+
+        inject_at(&buffer.content_slices, 0, inserted_slice);
+    }
+    else {
+        // insertion is happening in middle of content slice
+
+        // cut current slice
+        end_slice := buffer.content_slices[before_it.index.slice_index][before_it.index.content_index:];
+        buffer.content_slices[before_it.index.slice_index] = buffer.content_slices[before_it.index.slice_index][:before_it.index.content_index];
+
+        inject_at(&buffer.content_slices, before_it.index.slice_index+1, inserted_slice);
+        inject_at(&buffer.content_slices, before_it.index.slice_index+2, end_slice);
+    }
+
+    update_file_buffer_index_from_cursor(buffer);
+}
+
+// TODO: use buffer list in state
+do_insert_mode :: proc(state: ^State, buffer: ^FileBuffer) {
+    key := raylib.GetCharPressed();
+
+    for key > 0 {
+        if key >= 32 && key <= 125 && len(buffer.input_buffer) < 1024-1 {
+            append(&buffer.input_buffer, u8(key)); 
+        }
+
+        key = raylib.GetCharPressed();
+    }
+
+    if raylib.IsKeyPressed(.ENTER) {
+        append(&buffer.input_buffer, '\n'); 
+    }
+
+    if raylib.IsKeyPressed(.ESCAPE) {
+        state.mode = .Normal;
+
+        insert_content(buffer, buffer.input_buffer[:]);
+        runtime.clear(&buffer.input_buffer);
+        return;
+    }
+}
+
 main :: proc() {
     raylib.InitWindow(640, 480, "odin_editor - [back to basics]");
     raylib.SetWindowState({ .WINDOW_RESIZABLE, .VSYNC_HINT });
@@ -395,24 +484,11 @@ main :: proc() {
             raylib.DrawTextEx(font, raylib.TextFormat("Line: %d, Col: %d", buffer.cursor.line + 1, buffer.cursor.col + 1), raylib.Vector2 { 0, 0 }, source_font_height, 0, raylib.DARKGRAY);
         }
 
-        if raylib.IsKeyPressed(.K) {
-            move_cursor_up(&buffer);
-        }
-        if raylib.IsKeyPressed(.J) {
-            move_cursor_down(&buffer);
-        }
-        if raylib.IsKeyPressed(.H) {
-            move_cursor_left(&buffer);
-        }
-        if raylib.IsKeyPressed(.L) {
-            move_cursor_right(&buffer);
-        }
-
-        if raylib.IsKeyDown(.LEFT_CONTROL) && raylib.IsKeyDown(.U) {
-            scroll_file_buffer(&buffer, .Up);
-        }
-        if raylib.IsKeyDown(.LEFT_CONTROL) && raylib.IsKeyDown(.D) {
-            scroll_file_buffer(&buffer, .Down);
+        switch state.mode {
+            case .Normal:
+                do_normal_mode(&state, &buffer);
+            case .Insert:
+                do_insert_mode(&state, &buffer);
         }
     }
 }
