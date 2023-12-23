@@ -78,7 +78,7 @@ FileBuffer :: struct {
 
     original_content: [dynamic]u8,
     added_content: [dynamic]u8,
-    content_slices: [dynamic]ContentSlice,
+    content_slices: [dynamic][]u8,
 
     glyph_buffer_width: int,
     glyph_buffer_height: int,
@@ -92,24 +92,133 @@ FileBufferIter :: struct {
     buffer: ^FileBuffer,
 }
 
+Mode :: enum {
+    Normal,
+    Insert,
+}
+
+State :: struct {
+    mode: Mode,
+}
+
 new_file_buffer_iter :: proc(file_buffer: ^FileBuffer) -> FileBufferIter {
     return FileBufferIter { buffer = file_buffer };
 }
 iterate_file_buffer :: proc(it: ^FileBufferIter) -> (character: u8, idx: FileBufferIndex, cond: bool) {
-    if it.index.slice_index >= len(it.buffer.content_slices) || it.index.content_index >= len(it.buffer.content_slices[it.index.slice_index].slice) {
+    if it.index.slice_index >= len(it.buffer.content_slices) || it.index.content_index >= len(it.buffer.content_slices[it.index.slice_index]) {
         return;
     }
     cond = true;
 
-    character = it.buffer.content_slices[it.index.slice_index].slice[it.index.content_index];
+    character = it.buffer.content_slices[it.index.slice_index][it.index.content_index];
 
     it.index.content_index += 1;
-    if it.index.content_index >= len(it.buffer.content_slices[it.index.slice_index].slice) {
+    if it.index.content_index >= len(it.buffer.content_slices[it.index.slice_index]) {
         it.index.content_index = 0;
         it.index.slice_index += 1;
     }
 
     return;
+}
+
+update_file_buffer_index_from_cursor :: proc(buffer: ^FileBuffer) {
+    it := new_file_buffer_iter(buffer);
+    before_it := new_file_buffer_iter(buffer);
+
+    line_length := 0;
+    rendered_line := 0;
+
+    for character in iterate_file_buffer(&it) {
+        if line_length == buffer.cursor.col && rendered_line == buffer.cursor.line {
+            break;
+        }
+
+        if character == '\n' {
+            rendered_line += 1;
+            line_length = 0;
+        } else {
+            line_length += 1;
+        }
+
+        before_it = it;
+    }
+
+    buffer.cursor.buffer_index = before_it.index;
+}
+
+file_buffer_line_length :: proc(buffer: ^FileBuffer) -> int {
+    line_length := 0;
+    rendered_line := 0;
+
+    for i in 0..<len(buffer.content_slices) {
+        content := buffer.content_slices[i];
+
+        for c in content {
+            if c == '\n' {
+                rendered_line += 1;
+
+                if rendered_line > buffer.cursor.line {
+                    return line_length;
+                }
+
+                continue;
+            }
+
+            if rendered_line == buffer.cursor.line {
+                line_length += 1;
+            }
+        }
+    }
+
+    return line_length;
+}
+
+move_cursor_up :: proc(buffer: ^FileBuffer) {
+    if buffer.cursor.line > 0 {
+        buffer.cursor.line -= 1;
+
+        if buffer.cursor.line < buffer.top_line + 5 && buffer.cursor.line >= 4 {
+            buffer.top_line = buffer.cursor.line - 4;
+        }
+
+        line_length := file_buffer_line_length(buffer);
+        if buffer.cursor.col >= line_length {
+            buffer.cursor.col = line_length < 1 ? 0 : line_length - 1;
+        }
+
+        update_file_buffer_index_from_cursor(buffer);
+    }
+}
+
+move_cursor_down :: proc(buffer: ^FileBuffer) {
+    buffer.cursor.line += 1;
+
+    if buffer.cursor.line > buffer.top_line + (buffer.glyph_buffer_height - 5) {
+        buffer.top_line = buffer.cursor.line - (buffer.glyph_buffer_height - 5);
+    }
+
+    line_length := file_buffer_line_length(buffer);
+    if buffer.cursor.col >= line_length {
+        buffer.cursor.col = line_length < 1 ? 0 : line_length - 1;
+    }
+
+    update_file_buffer_index_from_cursor(buffer);
+}
+
+move_cursor_left :: proc(buffer: ^FileBuffer) {
+    if buffer.cursor.col > 0 {
+        buffer.cursor.col -= 1;
+        update_file_buffer_index_from_cursor(buffer);
+    }
+}
+
+move_cursor_right :: proc(buffer: ^FileBuffer) {
+    line_length := file_buffer_line_length(buffer);
+
+    if line_length > 0 && buffer.cursor.col < line_length-1 {
+        buffer.cursor.col += 1;
+        update_file_buffer_index_from_cursor(buffer);
+    }
 }
 
 new_file_buffer :: proc(allocator: mem.Allocator, file_path: string) -> (FileBuffer, Error) {
@@ -131,7 +240,7 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string) -> (FileBuf
 
             original_content = slice.clone_to_dynamic(original_content),
             added_content = make([dynamic]u8, 0, 1024*1024),
-            content_slices = make([dynamic]ContentSlice, 0, 1024*1024),
+            content_slices = make([dynamic][]u8, 0, 1024*1024),
 
             glyph_buffer_width = width,
             glyph_buffer_height = height,
@@ -140,7 +249,7 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string) -> (FileBuf
             input_buffer = make([dynamic]u8, 0, 1024),
         };
 
-        append(&buffer.content_slices, ContentSlice { type = .Original, slice = buffer.original_content[:] });
+        append(&buffer.content_slices, buffer.original_content[:]);
 
         return buffer, error();
     } else {
@@ -162,7 +271,30 @@ update_glyph_buffer :: proc(buffer: ^FileBuffer) {
         if character == '\r' { continue; }
 
         screen_line := rendered_line - begin;
+        // don't render past the screen
         if rendered_line >= begin && screen_line >= buffer.glyph_buffer_height { break; }
+
+        // render INSERT mode text into glyph buffer
+        if len(buffer.input_buffer) > 0 && rendered_line == buffer.cursor.line && rendered_col >= buffer.cursor.col && rendered_col < buffer.cursor.col + len(buffer.input_buffer) {
+            for k in 0..<len(buffer.input_buffer) {
+                screen_line = rendered_line - begin;
+
+                if buffer.input_buffer[k] == '\n' {
+                    rendered_col = 0;
+                    rendered_line += 1;
+                    continue;
+                }
+
+                if rendered_line >= begin && rendered_col < buffer.glyph_buffer_width {
+                    buffer.glyph_buffer[rendered_col + screen_line * buffer.glyph_buffer_width].color = 0xFFFF;
+                    buffer.glyph_buffer[rendered_col + screen_line * buffer.glyph_buffer_width].codepoint = buffer.input_buffer[k];
+
+                    rendered_col += 1;
+                }
+            }
+        }
+
+        screen_line = rendered_line - begin;
 
         if character == '\n' {
             rendered_col = 0;
@@ -178,7 +310,7 @@ update_glyph_buffer :: proc(buffer: ^FileBuffer) {
     }
 }
 
-draw_file_buffer :: proc(buffer: ^FileBuffer, x: int, y: int, font: raylib.Font) {
+draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, font: raylib.Font) {
     update_glyph_buffer(buffer);
 
     begin := buffer.top_line;
@@ -186,7 +318,12 @@ draw_file_buffer :: proc(buffer: ^FileBuffer, x: int, y: int, font: raylib.Font)
     cursor_y := y + buffer.cursor.line * source_font_height;
 
     cursor_y -= begin * source_font_height;
-    raylib.DrawRectangle(i32(cursor_x), i32(cursor_y), source_font_width, source_font_height, raylib.BLUE);
+    if state.mode == .Normal {
+        raylib.DrawRectangle(i32(cursor_x), i32(cursor_y), source_font_width, source_font_height, raylib.BLUE);
+    } else if state.mode == .Insert {
+        raylib.DrawRectangle(i32(cursor_x), i32(cursor_y), source_font_width, source_font_height, raylib.GREEN);
+        raylib.DrawRectangle(i32(cursor_x + len(buffer.input_buffer) * source_font_width), i32(cursor_y), source_font_width, source_font_height, raylib.BLUE);
+    }
 
     for j in 0..<buffer.glyph_buffer_height {
         text_y := y + source_font_height * j;
@@ -240,13 +377,13 @@ main :: proc() {
     raylib.SetExitKey(.KEY_NULL);
 
     font := raylib.LoadFont("../c_editor/Mx437_ToshibaSat_8x16.ttf");
+    state: State;
 
     buffer, err := new_file_buffer(context.allocator, "./src/main.odin");
     if err.type != .None {
         fmt.println("Failed to create file buffer:", err);
         os.exit(1);
     }
-    update_glyph_buffer(&buffer);
 
     for !raylib.WindowShouldClose() {
         {
@@ -254,8 +391,21 @@ main :: proc() {
             defer raylib.EndDrawing();
 
             raylib.ClearBackground(raylib.GetColor(0x232136ff));
+            draw_file_buffer(&state, &buffer, 0, 32, font);
+            raylib.DrawTextEx(font, raylib.TextFormat("Line: %d, Col: %d", buffer.cursor.line + 1, buffer.cursor.col + 1), raylib.Vector2 { 0, 0 }, source_font_height, 0, raylib.DARKGRAY);
+        }
 
-            draw_file_buffer(&buffer, 0, 0, font);
+        if raylib.IsKeyPressed(.K) {
+            move_cursor_up(&buffer);
+        }
+        if raylib.IsKeyPressed(.J) {
+            move_cursor_down(&buffer);
+        }
+        if raylib.IsKeyPressed(.H) {
+            move_cursor_left(&buffer);
+        }
+        if raylib.IsKeyPressed(.L) {
+            move_cursor_right(&buffer);
         }
 
         if raylib.IsKeyDown(.LEFT_CONTROL) && raylib.IsKeyDown(.U) {
