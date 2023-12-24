@@ -61,7 +61,7 @@ FileBufferIndex :: struct {
 Cursor :: struct {
     col: int,
     line: int,
-    buffer_index: FileBufferIndex,
+    index: FileBufferIndex,
 }
 
 Glyph :: struct #packed {
@@ -88,7 +88,7 @@ FileBuffer :: struct {
 }
 
 FileBufferIter :: struct {
-    index: FileBufferIndex,
+    cursor: Cursor,
     buffer: ^FileBuffer,
 }
 
@@ -104,26 +104,65 @@ State :: struct {
 new_file_buffer_iter_from_beginning :: proc(file_buffer: ^FileBuffer) -> FileBufferIter {
     return FileBufferIter { buffer = file_buffer };
 }
-new_file_buffer_iter_with_index :: proc(file_buffer: ^FileBuffer, index: FileBufferIndex) -> FileBufferIter {
-    return FileBufferIter { buffer = file_buffer, index = index };
+new_file_buffer_iter_with_cursor :: proc(file_buffer: ^FileBuffer, cursor: Cursor) -> FileBufferIter {
+    return FileBufferIter { buffer = file_buffer, cursor = cursor };
 }
-new_file_buffer_iter :: proc{new_file_buffer_iter_from_beginning, new_file_buffer_iter_with_index};
+new_file_buffer_iter :: proc{new_file_buffer_iter_from_beginning, new_file_buffer_iter_with_cursor};
 
 iterate_file_buffer :: proc(it: ^FileBufferIter) -> (character: u8, idx: FileBufferIndex, cond: bool) {
-    if it.index.slice_index >= len(it.buffer.content_slices) || it.index.content_index >= len(it.buffer.content_slices[it.index.slice_index]) {
+    if it.cursor.index.slice_index >= len(it.buffer.content_slices) || it.cursor.index.content_index >= len(it.buffer.content_slices[it.cursor.index.slice_index]) {
         return;
     }
     cond = true;
 
-    character = it.buffer.content_slices[it.index.slice_index][it.index.content_index];
+    character = it.buffer.content_slices[it.cursor.index.slice_index][it.cursor.index.content_index];
+    if character == '\n' {
+        it.cursor.col = 0;
+        it.cursor.line += 1;
+    } else {
+        it.cursor.col += 1;
+    }
 
-    it.index.content_index += 1;
-    if it.index.content_index >= len(it.buffer.content_slices[it.index.slice_index]) {
-        it.index.content_index = 0;
-        it.index.slice_index += 1;
+    it.cursor.index.content_index += 1;
+    if it.cursor.index.content_index >= len(it.buffer.content_slices[it.cursor.index.slice_index]) {
+        it.cursor.index.content_index = 0;
+        it.cursor.index.slice_index += 1;
     }
 
     return;
+}
+iterate_file_buffer_reverse_mangle_cursor :: proc(it: ^FileBufferIter) -> (character: u8, idx: FileBufferIndex, cond: bool) {
+    if it.cursor.index.content_index == 0 {
+        if it.cursor.index.slice_index > 0 {
+            it.cursor.index.slice_index -= 1;
+            it.cursor.index.content_index = len(it.buffer.content_slices[it.cursor.index.slice_index])-1;
+        } else {
+            return 0, it.cursor.index, false;
+        }
+    } else {
+        it.cursor.index.content_index -= 1;
+    }
+
+    return it.buffer.content_slices[it.cursor.index.slice_index][it.cursor.index.content_index], it.cursor.index, true;
+}
+iterate_file_buffer_reverse :: proc(it: ^FileBufferIter) -> (character: u8, idx: FileBufferIndex, cond: bool) {
+    if character, idx, cond = iterate_file_buffer_reverse_mangle_cursor(it); cond {
+       if character == '\n' {
+           if it.cursor.line > 0 {
+               line_length := file_buffer_line_length(it.buffer, it.cursor.index);
+               if line_length < 0 { line_length = 0; }
+
+               it.cursor.line -= 1;
+               it.cursor.col = line_length;
+           } else {
+               return 0, it.cursor.index, false;
+           }
+       } else {
+           it.cursor.col -= 1;
+       }
+    }
+
+    return character, it.cursor.index, cond;
 }
 
 update_file_buffer_index_from_cursor :: proc(buffer: ^FileBuffer) {
@@ -148,31 +187,29 @@ update_file_buffer_index_from_cursor :: proc(buffer: ^FileBuffer) {
         before_it = it;
     }
 
-    buffer.cursor.buffer_index = before_it.index;
+    // FIXME: just swap cursors
+    buffer.cursor.index = before_it.cursor.index;
 }
 
-file_buffer_line_length :: proc(buffer: ^FileBuffer) -> int {
+file_buffer_line_length :: proc(buffer: ^FileBuffer, index: FileBufferIndex) -> int {
     line_length := 0;
-    rendered_line := 0;
 
-    for i in 0..<len(buffer.content_slices) {
-        content := buffer.content_slices[i];
-
-        for c in content {
-            if c == '\n' {
-                rendered_line += 1;
-
-                if rendered_line > buffer.cursor.line {
-                    return line_length;
-                }
-
-                continue;
-            }
-
-            if rendered_line == buffer.cursor.line {
-                line_length += 1;
-            }
+    left_it := new_file_buffer_iter_with_cursor(buffer, Cursor { index = index });
+    for character in iterate_file_buffer_reverse_mangle_cursor(&left_it) {
+        if character == '\n' {
+            break;
         }
+
+        line_length += 1;
+    }
+
+    right_it := new_file_buffer_iter_with_cursor(buffer, Cursor { index = index });
+    for character in iterate_file_buffer(&right_it) {
+        if character == '\n' {
+            break;
+        }
+
+        line_length += 1;
     }
 
     return line_length;
@@ -180,34 +217,59 @@ file_buffer_line_length :: proc(buffer: ^FileBuffer) -> int {
 
 move_cursor_up :: proc(buffer: ^FileBuffer) {
     if buffer.cursor.line > 0 {
-        buffer.cursor.line -= 1;
+        current_line := buffer.cursor.line;
+        current_col := buffer.cursor.col;
+
+        it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+        for _ in iterate_file_buffer_reverse(&it) {
+            if it.cursor.line <= current_line-1 {
+                break;
+            }
+        }
+
+        // the `it.cursor.col > 0` is here because after the above loop, the
+        // iterator is left on the new line instead of the last character of the line
+        if it.cursor.col > current_col || it.cursor.col > 0 {
+            for _ in iterate_file_buffer_reverse(&it) {
+                if it.cursor.col <= current_col {
+                    break;
+                }
+            }
+        }
+
+        buffer.cursor = it.cursor;
 
         if buffer.cursor.line < buffer.top_line + 5 && buffer.cursor.line >= 4 {
             buffer.top_line = buffer.cursor.line - 4;
         }
-
-        line_length := file_buffer_line_length(buffer);
-        if buffer.cursor.col >= line_length {
-            buffer.cursor.col = line_length < 1 ? 0 : line_length - 1;
-        }
-
-        update_file_buffer_index_from_cursor(buffer);
     }
 }
 
 move_cursor_down :: proc(buffer: ^FileBuffer) {
-    buffer.cursor.line += 1;
+    current_line := buffer.cursor.line;
+    current_col := buffer.cursor.col;
+
+    it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+    for _ in iterate_file_buffer(&it) {
+        if it.cursor.line >= current_line+1 {
+            break;
+        }
+    }
+
+    line_length := file_buffer_line_length(buffer, it.cursor.index);
+    if it.cursor.col < line_length && it.cursor.col < current_col {
+        for _ in iterate_file_buffer(&it) {
+            if it.cursor.col >= line_length-1 || it.cursor.col >= current_col {
+                break;
+            }
+        }
+    }
+
+    buffer.cursor = it.cursor;
 
     if buffer.cursor.line > buffer.top_line + (buffer.glyph_buffer_height - 5) {
         buffer.top_line = buffer.cursor.line - (buffer.glyph_buffer_height - 5);
     }
-
-    line_length := file_buffer_line_length(buffer);
-    if buffer.cursor.col >= line_length {
-        buffer.cursor.col = line_length < 1 ? 0 : line_length - 1;
-    }
-
-    update_file_buffer_index_from_cursor(buffer);
 }
 
 move_cursor_left :: proc(buffer: ^FileBuffer) {
@@ -218,7 +280,7 @@ move_cursor_left :: proc(buffer: ^FileBuffer) {
 }
 
 move_cursor_right :: proc(buffer: ^FileBuffer) {
-    line_length := file_buffer_line_length(buffer);
+    line_length := file_buffer_line_length(buffer, buffer.cursor.index);
 
     if line_length > 0 && buffer.cursor.col < line_length-1 {
         buffer.cursor.col += 1;
@@ -410,28 +472,76 @@ insert_content :: proc(buffer: ^FileBuffer, to_be_inserted: []u8) {
 
     // TODO: is this even needed? would mean that the cursor isn't always in a valid state.
     update_file_buffer_index_from_cursor(buffer);
-    before_it := new_file_buffer_iter(buffer, buffer.cursor.buffer_index);
+    it := new_file_buffer_iter(buffer, buffer.cursor);
 
     length := append(&buffer.added_content, ..to_be_inserted);
     inserted_slice: []u8 = buffer.added_content[len(buffer.added_content)-length:];
 
-    if before_it.index.content_index == 0 {
+    if it.cursor.index.content_index == 0 {
         // insertion happening in beginning of content slice
 
-        inject_at(&buffer.content_slices, 0, inserted_slice);
+        inject_at(&buffer.content_slices, buffer.cursor.index.slice_index, inserted_slice);
     }
     else {
         // insertion is happening in middle of content slice
 
         // cut current slice
-        end_slice := buffer.content_slices[before_it.index.slice_index][before_it.index.content_index:];
-        buffer.content_slices[before_it.index.slice_index] = buffer.content_slices[before_it.index.slice_index][:before_it.index.content_index];
+        end_slice := buffer.content_slices[it.cursor.index.slice_index][it.cursor.index.content_index:];
+        buffer.content_slices[it.cursor.index.slice_index] = buffer.content_slices[it.cursor.index.slice_index][:it.cursor.index.content_index];
 
-        inject_at(&buffer.content_slices, before_it.index.slice_index+1, inserted_slice);
-        inject_at(&buffer.content_slices, before_it.index.slice_index+2, end_slice);
+        inject_at(&buffer.content_slices, it.cursor.index.slice_index+1, inserted_slice);
+        inject_at(&buffer.content_slices, it.cursor.index.slice_index+2, end_slice);
     }
 
     update_file_buffer_index_from_cursor(buffer);
+}
+
+// TODO: potentially add FileBufferIndex as parameter
+split_content_slice :: proc(buffer: ^FileBuffer) {
+    if buffer.cursor.index.content_index == 0 {
+        return;
+    }
+
+    end_slice := buffer.content_slices[buffer.cursor.index.slice_index][buffer.cursor.index.content_index:];
+    buffer.content_slices[buffer.cursor.index.slice_index] = buffer.content_slices[buffer.cursor.index.slice_index][:buffer.cursor.index.content_index];
+
+    inject_at(&buffer.content_slices, buffer.cursor.index.slice_index+1, end_slice);
+
+    // TODO: maybe move this out of this function
+    buffer.cursor.index.slice_index += 1;
+    buffer.cursor.index.content_index = 0;
+}
+
+delete_content :: proc(buffer: ^FileBuffer, amount: int) {
+    if amount <= len(buffer.input_buffer) {
+        runtime.resize(&buffer.input_buffer, len(buffer.input_buffer)-amount);
+    } else {
+        amount := amount - len(buffer.input_buffer);
+        runtime.clear(&buffer.input_buffer);
+
+        split_content_slice(buffer);
+
+        it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+
+        // go back one (to be at the end of the content slice)
+        iterate_file_buffer_reverse(&it);
+
+        for i in 0..<amount {
+            content_slice_ptr := &buffer.content_slices[it.cursor.index.slice_index];
+
+            if len(content_slice_ptr^) == 1 {
+                // move cursor to previous content_slice so we can delete the current one
+                iterate_file_buffer_reverse(&it);
+                runtime.ordered_remove(&buffer.content_slices, it.cursor.index.slice_index+1);
+            } else {
+                iterate_file_buffer_reverse(&it);
+                content_slice_ptr^ = content_slice_ptr^[:len(content_slice_ptr^)-1];
+            }
+        }
+
+        iterate_file_buffer(&it);
+        buffer.cursor = it.cursor;
+    }
 }
 
 // TODO: use buffer list in state
@@ -440,14 +550,14 @@ do_insert_mode :: proc(state: ^State, buffer: ^FileBuffer) {
 
     for key > 0 {
         if key >= 32 && key <= 125 && len(buffer.input_buffer) < 1024-1 {
-            append(&buffer.input_buffer, u8(key)); 
+            append(&buffer.input_buffer, u8(key));
         }
 
         key = raylib.GetCharPressed();
     }
 
     if raylib.IsKeyPressed(.ENTER) {
-        append(&buffer.input_buffer, '\n'); 
+        append(&buffer.input_buffer, '\n');
     }
 
     if raylib.IsKeyPressed(.ESCAPE) {
@@ -456,6 +566,10 @@ do_insert_mode :: proc(state: ^State, buffer: ^FileBuffer) {
         insert_content(buffer, buffer.input_buffer[:]);
         runtime.clear(&buffer.input_buffer);
         return;
+    }
+
+    if raylib.IsKeyPressed(.BACKSPACE) {
+        delete_content(buffer, 1);
     }
 }
 
@@ -481,7 +595,7 @@ main :: proc() {
 
             raylib.ClearBackground(raylib.GetColor(0x232136ff));
             draw_file_buffer(&state, &buffer, 0, 32, font);
-            raylib.DrawTextEx(font, raylib.TextFormat("Line: %d, Col: %d", buffer.cursor.line + 1, buffer.cursor.col + 1), raylib.Vector2 { 0, 0 }, source_font_height, 0, raylib.DARKGRAY);
+            raylib.DrawTextEx(font, raylib.TextFormat("Line: %d, Col: %d --- Slice Index: %d, Content Index: %d", buffer.cursor.line + 1, buffer.cursor.col + 1, buffer.cursor.index.slice_index, buffer.cursor.index.content_index), raylib.Vector2 { 0, 0 }, source_font_height, 0, raylib.DARKGRAY);
         }
 
         switch state.mode {
