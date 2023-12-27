@@ -9,8 +9,8 @@ import "core:mem"
 import "core:slice"
 import "vendor:raylib"
 
-source_font_width :: 8*2;
-source_font_height :: 16*2;
+source_font_width :: 8;
+source_font_height :: 16;
 line_number_padding :: 5 * source_font_width;
 
 PaletteColor :: enum {
@@ -486,6 +486,142 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string) -> (FileBuf
     }
 }
 
+is_keyword :: proc(start: FileBufferIter, end: FileBufferIter) -> (matches: bool) {
+    keywords := []string {
+        "using",
+        "transmute",
+        "cast",
+        "distinct",
+        "opaque",
+        "where",
+        "struct",
+        "enum",
+        "union",
+        "bit_field",
+        "bit_set",
+        "if",
+        "when",
+        "else",
+        "do",
+        "for",
+        "switch",
+        "case",
+        "continue",
+        "break",
+        "size_of",
+        "offset_of",
+        "type_info_of",
+        "typeid_of",
+        "type_of",
+        "align_of",
+        "or_return",
+        "or_else",
+        "inline",
+        "no_inline",
+        "string",
+        "cstring",
+        "bool",
+        "b8",
+        "b16",
+        "b32",
+        "b64",
+        "rune",
+        "any",
+        "rawptr",
+        "f16",
+        "f32",
+        "f64",
+        "f16le",
+        "f16be",
+        "f32le",
+        "f32be",
+        "f64le",
+        "f64be",
+        "u8",
+        "u16",
+        "u32",
+        "u64",
+        "u128",
+        "u16le",
+        "u32le",
+        "u64le",
+        "u128le",
+        "u16be",
+        "u32be",
+        "u64be",
+        "u128be",
+        "uint",
+        "uintptr",
+        "i8",
+        "i16",
+        "i32",
+        "i64",
+        "i128",
+        "i16le",
+        "i32le",
+        "i64le",
+        "i128le",
+        "i16be",
+        "i32be",
+        "i64be",
+        "i128be",
+        "int",
+        "complex",
+        "complex32",
+        "complex64",
+        "complex128",
+        "quaternion",
+        "quaternion64",
+        "quaternion128",
+        "quaternion256",
+        "matrix",
+        "typeid",
+        "true",
+        "false",
+        "nil",
+        "dynamic",
+        "map",
+        "proc",
+        "in",
+        "notin",
+        "not_in",
+        "import",
+        "export",
+        "foreign",
+        "const",
+        "package",
+        "return",
+        "defer",
+    };
+
+    for keyword in keywords {
+        it := start;
+        keyword_index := 0;
+
+        for character in iterate_file_buffer(&it) {
+            if character != keyword[keyword_index] {
+                break;
+            }
+
+            keyword_index += 1;
+            if keyword_index >= len(keyword) && it == end {
+                matches = true;
+                break;
+            } else if keyword_index >= len(keyword) {
+                break;
+            } else if it == end {
+                break;
+            }
+        }
+
+        if matches {
+            break;
+        }
+    }
+
+    return;
+}
+
 color_character :: proc(buffer: ^FileBuffer, start: Cursor, end: Cursor, palette_index: PaletteColor) {
     start, end := start, end;
 
@@ -577,8 +713,9 @@ color_buffer :: proc(buffer: ^FileBuffer) {
             if !succ { break; }
 
             // TODO: color keywords
-
-            if character, _, cond := iterate_file_buffer(&it); cond {
+            if is_keyword(start_it, it) {
+                color_character(buffer, start_it.cursor, end_of_word_it.cursor, .Blue);
+            } else if character, _, cond := iterate_file_buffer(&it); cond {
                 if character == '(' {
                     color_character(buffer, start_it.cursor, end_of_word_it.cursor, .Green);
                 }
