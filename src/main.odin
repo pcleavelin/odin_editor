@@ -77,76 +77,59 @@ do_insert_mode :: proc(state: ^State, buffer: ^FileBuffer) {
     }
 }
 
+switch_to_buffer :: proc(state: ^State, item: ^ui.MenuBarItem) {
+    for buffer, index in state.buffers {
+        if strings.compare(buffer.file_path, item.text) == 0 {
+            state.current_buffer = index;
+            break;
+        }
+    }
+}
+
 main :: proc() {
+    state: State;
+
+    for arg in os.args[1:] {
+        buffer, err := core.new_file_buffer(context.allocator, arg);
+        if err.type != .None {
+            fmt.println("Failed to create file buffer:", err);
+            continue;
+        }
+
+        runtime.append(&state.buffers, buffer);
+    }
+    buffer_items := make([dynamic]ui.MenuBarItem, 0, len(state.buffers));
+    for buffer, index in state.buffers {
+        item := ui.MenuBarItem {
+            text = buffer.file_path,
+            on_click = switch_to_buffer,
+        };
+
+        runtime.append(&buffer_items, item);
+    }
+
     raylib.InitWindow(640, 480, "odin_editor - [back to basics]");
     raylib.SetWindowState({ .WINDOW_RESIZABLE, .VSYNC_HINT });
     raylib.SetTargetFPS(60);
     raylib.SetExitKey(.KEY_NULL);
 
     font := raylib.LoadFont("../c_editor/Mx437_ToshibaSat_8x16.ttf");
-    state: State;
-    buffer, err := core.new_file_buffer(context.allocator, os.args[1]);
-    if err.type != .None {
-        fmt.println("Failed to create file buffer:", err);
-        os.exit(1);
-    }
-
-    menu_bar_data := ui.MenuBarState {
+    menu_bar_state := ui.MenuBarState{
         items = []ui.MenuBarItem {
             ui.MenuBarItem {
-                text = "File",
-                sub_items = []ui.MenuBarItem {
-                    ui.MenuBarItem {
-                        text = "Open..."
-                    },
-                    ui.MenuBarItem {
-                        text = "Recents",
-                        sub_items = []ui.MenuBarItem {
-                            ui.MenuBarItem {
-                                text = "Editor Project",
-                                sub_items = []ui.MenuBarItem {
-                                    ui.MenuBarItem {
-                                        text = "ui.odin"
-                                    },
-                                    ui.MenuBarItem {
-                                        text = "theme.odin"
-                                    }
-                                },
-                            },
-                            ui.MenuBarItem {
-                                text = "proposals.rs"
-                            },
-                            ui.MenuBarItem {
-                                text = "database.rs"
-                            }
-                        },
-                    },
-                    ui.MenuBarItem {
-                        text = "Quit",
-                        on_click = proc(state: ^State) { state.should_close = true; },
-                    }
-                },
-                on_click = nil
-            },
-            ui.MenuBarItem {
-                text = "Help",
-                sub_items = []ui.MenuBarItem {
-                    ui.MenuBarItem {
-                        text = "Docs"
-                    },
-                    ui.MenuBarItem {
-                        text = "About"
-                    }
-                },
-                on_click = nil
-            },
-        },
+                text = "Buffers",
+                sub_items = buffer_items[:],
+            }
+        }
     };
 
     for !raylib.WindowShouldClose() && !state.should_close {
         screen_width := raylib.GetScreenWidth();
         screen_height := raylib.GetScreenHeight();
         mouse_pos := raylib.GetMousePosition();
+
+        buffer := &state.buffers[state.current_buffer];
+
         buffer.glyph_buffer_height = math.min(256, int((screen_height - 32 - core.source_font_height) / core.source_font_height));
 
         {
@@ -154,8 +137,8 @@ main :: proc() {
             defer raylib.EndDrawing();
 
             raylib.ClearBackground(theme.get_palette_raylib_color(.Background));
-            core.draw_file_buffer(&state, &buffer, 32, core.source_font_height, font);
-            ui.draw_menu_bar(&menu_bar_data, 0, 0, screen_width, screen_height, font, core.source_font_height);
+            core.draw_file_buffer(&state, buffer, 32, core.source_font_height, font);
+            ui.draw_menu_bar(&menu_bar_state, 0, 0, screen_width, screen_height, font, core.source_font_height);
 
             raylib.DrawRectangle(0, screen_height - core.source_font_height, screen_width, core.source_font_height, theme.get_palette_raylib_color(.Background2));
 
@@ -181,11 +164,11 @@ main :: proc() {
 
         switch state.mode {
             case .Normal:
-                do_normal_mode(&state, &buffer);
+                do_normal_mode(&state, buffer);
             case .Insert:
-                do_insert_mode(&state, &buffer);
+                do_insert_mode(&state, buffer);
         }
 
-        ui.test_menu_bar(&state, &menu_bar_data, 0,0, mouse_pos, raylib.IsMouseButtonReleased(.LEFT), font, core.source_font_height);
+        ui.test_menu_bar(&state, &menu_bar_state, 0,0, mouse_pos, raylib.IsMouseButtonReleased(.LEFT), font, core.source_font_height);
     }
 }

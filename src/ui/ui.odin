@@ -6,7 +6,7 @@ import "vendor:raylib"
 import "../core"
 import "../theme"
 
-MenuBarItemOnClick :: proc(state: ^core.State);
+MenuBarItemOnClick :: proc(state: ^core.State, item: ^MenuBarItem);
 
 text_padding :: 4;
 
@@ -75,7 +75,7 @@ draw_menu_bar :: proc(data: ^MenuBarState, x, y: i32, parent_width, parent_heigh
         item_text := raylib.TextFormat("%s", item.text);
         item_width := raylib.MeasureTextEx(font, item_text, f32(font_height), 0).x;
 
-        item_x := x + (i32(item_width) + text_padding*2) * i32(index*8);
+        item_x := x + (i32(item_width) + text_padding*2) * i32(index);
         draw_menu_bar_item(item, item_x, y, i32(item_width + text_padding*2), i32(font_height), font, font_height);
     }
 }
@@ -85,7 +85,7 @@ test_menu_item :: proc(state: ^core.State, item: ^MenuBarItem, rect: raylib.Rect
         item.selected = true;
 
         if item.on_click != nil && mouse_has_clicked {
-            item.on_click(state);
+            item.on_click(state, item);
         }
     } else if item.selected {
         largest_sub_item: int
@@ -138,7 +138,7 @@ test_menu_bar :: proc(state: ^core.State, menu_bar: ^MenuBarState, x, y: i32, mo
         item_width := raylib.MeasureTextEx(font, item_text, f32(font_height), 0).x;
 
         item_rec := raylib.Rectangle {
-            x = f32(x) + (item_width + f32(text_padding*2)) * f32(index*8),
+            x = f32(x) + (item_width + f32(text_padding*2)) * f32(index),
             y = f32(y),
             width = f32(item_width + text_padding*2),
             height = f32(font_height),
