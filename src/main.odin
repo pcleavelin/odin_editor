@@ -87,7 +87,9 @@ switch_to_buffer :: proc(state: ^State, item: ^ui.MenuBarItem) {
 }
 
 main :: proc() {
-    state: State;
+    state := State {
+        buffer_list_window_is_visible = true,
+    };
 
     for arg in os.args[1:] {
         buffer, err := core.new_file_buffer(context.allocator, arg);
@@ -114,6 +116,7 @@ main :: proc() {
     raylib.SetExitKey(.KEY_NULL);
 
     font := raylib.LoadFont("../c_editor/Mx437_ToshibaSat_8x16.ttf");
+    state.font = font;
     menu_bar_state := ui.MenuBarState{
         items = []ui.MenuBarItem {
             ui.MenuBarItem {
@@ -124,13 +127,13 @@ main :: proc() {
     };
 
     for !raylib.WindowShouldClose() && !state.should_close {
-        screen_width := raylib.GetScreenWidth();
-        screen_height := raylib.GetScreenHeight();
+        state.screen_width = raylib.GetScreenWidth();
+        state.screen_height = raylib.GetScreenHeight();
         mouse_pos := raylib.GetMousePosition();
 
         buffer := &state.buffers[state.current_buffer];
 
-        buffer.glyph_buffer_height = math.min(256, int((screen_height - 32 - core.source_font_height) / core.source_font_height));
+        buffer.glyph_buffer_height = math.min(256, int((state.screen_height - 32 - core.source_font_height) / core.source_font_height));
 
         {
             raylib.BeginDrawing();
@@ -138,28 +141,31 @@ main :: proc() {
 
             raylib.ClearBackground(theme.get_palette_raylib_color(.Background));
             core.draw_file_buffer(&state, buffer, 32, core.source_font_height, font);
-            ui.draw_menu_bar(&menu_bar_state, 0, 0, screen_width, screen_height, font, core.source_font_height);
+            ui.draw_menu_bar(&menu_bar_state, 0, 0, state.screen_width, state.screen_height, font, core.source_font_height);
 
-            raylib.DrawRectangle(0, screen_height - core.source_font_height, screen_width, core.source_font_height, theme.get_palette_raylib_color(.Background2));
+            raylib.DrawRectangle(0, state.screen_height - core.source_font_height, state.screen_width, core.source_font_height, theme.get_palette_raylib_color(.Background2));
 
             line_info_text := raylib.TextFormat("Line: %d, Col: %d --- Slice Index: %d, Content Index: %d", buffer.cursor.line + 1, buffer.cursor.col + 1, buffer.cursor.index.slice_index, buffer.cursor.index.content_index);
             line_info_width := raylib.MeasureTextEx(font, line_info_text, core.source_font_height, 0).x;
 
             switch state.mode {
                 case .Normal:
-                    raylib.DrawRectangle(0, screen_height - core.source_font_height, 8 + len("NORMAL")*core.source_font_width, core.source_font_height, theme.get_palette_raylib_color(.Foreground4));
-                    raylib.DrawRectangleV(raylib.Vector2 { f32(screen_width) - line_info_width - 8 , f32(screen_height - core.source_font_height) }, raylib.Vector2 { 8 + line_info_width, f32(core.source_font_height) }, theme.get_palette_raylib_color(.Foreground4));
+                    raylib.DrawRectangle(0, state.screen_height - core.source_font_height, 8 + len("NORMAL")*core.source_font_width, core.source_font_height, theme.get_palette_raylib_color(.Foreground4));
+                    raylib.DrawRectangleV(raylib.Vector2 { f32(state.screen_width) - line_info_width - 8 , f32(state.screen_height - core.source_font_height) }, raylib.Vector2 { 8 + line_info_width, f32(core.source_font_height) }, theme.get_palette_raylib_color(.Foreground4));
 
-                    raylib.DrawTextEx(font, "NORMAL", raylib.Vector2 { 4, f32(screen_height - core.source_font_height) }, core.source_font_height, 0, theme.get_palette_raylib_color(.Background1));
+                    raylib.DrawTextEx(font, "NORMAL", raylib.Vector2 { 4, f32(state.screen_height - core.source_font_height) }, core.source_font_height, 0, theme.get_palette_raylib_color(.Background1));
                 case .Insert:
-                    raylib.DrawRectangle(0, screen_height - core.source_font_height, 8 + len("INSERT")*core.source_font_width, core.source_font_height, raylib.SKYBLUE);
-                    raylib.DrawRectangleV(raylib.Vector2 { f32(screen_width) - line_info_width - 8 , f32(screen_height - core.source_font_height) }, raylib.Vector2 { 8 + line_info_width, f32(core.source_font_height) }, raylib.SKYBLUE);
+                    raylib.DrawRectangle(0, state.screen_height - core.source_font_height, 8 + len("INSERT")*core.source_font_width, core.source_font_height, theme.get_palette_raylib_color(.Foreground2));
+                    raylib.DrawRectangleV(raylib.Vector2 { f32(state.screen_width) - line_info_width - 8 , f32(state.screen_height - core.source_font_height) }, raylib.Vector2 { 8 + line_info_width, f32(core.source_font_height) }, theme.get_palette_raylib_color(.Foreground2));
 
-                    raylib.DrawTextEx(font, "INSERT", raylib.Vector2 { 4, f32(screen_height - core.source_font_height) }, core.source_font_height, 0, raylib.DARKBLUE);
+                    raylib.DrawTextEx(font, "INSERT", raylib.Vector2 { 4, f32(state.screen_height - core.source_font_height) }, core.source_font_height, 0, theme.get_palette_raylib_color(.Background1));
             }
 
+            raylib.DrawTextEx(font, line_info_text, raylib.Vector2 { f32(state.screen_width) - line_info_width - 4, f32(state.screen_height - core.source_font_height) }, core.source_font_height, 0, theme.get_palette_raylib_color(.Background1));
 
-            raylib.DrawTextEx(font, line_info_text, raylib.Vector2 { f32(screen_width) - line_info_width - 4, f32(screen_height - core.source_font_height) }, core.source_font_height, 0, theme.get_palette_raylib_color(.Background1));
+            if state.buffer_list_window_is_visible {
+                ui.draw_buffer_list_window(&state);
+            }
         }
 
         switch state.mode {

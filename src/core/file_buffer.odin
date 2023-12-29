@@ -732,12 +732,17 @@ update_glyph_buffer :: proc(buffer: ^FileBuffer) {
     }
 }
 
-draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, font: raylib.Font) {
+draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, font: raylib.Font, show_line_numbers: bool = true) {
     update_glyph_buffer(buffer);
     color_buffer(buffer);
 
+    padding := 0;
+    if show_line_numbers {
+        padding = line_number_padding;
+    }
+
     begin := buffer.top_line;
-    cursor_x := x + line_number_padding + buffer.cursor.col * source_font_width;
+    cursor_x := x + padding + buffer.cursor.col * source_font_width;
     cursor_y := y + buffer.cursor.line * source_font_height;
 
     cursor_y -= begin * source_font_height;
@@ -760,7 +765,7 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, fon
         }
 
         if num_line_break > 0 {
-            cursor_x = x + line_number_padding + line_length * source_font_width;
+            cursor_x = x + padding + line_length * source_font_width;
             cursor_y = cursor_y + num_line_break * source_font_height;
         } else {
             cursor_x += line_length * source_font_width;
@@ -772,11 +777,12 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, fon
     for j in 0..<buffer.glyph_buffer_height {
         text_y := y + source_font_height * j;
 
-        // Line Numbers
-        raylib.DrawTextEx(font, raylib.TextFormat("%d", begin + j + 1), raylib.Vector2 { f32(x), f32(text_y) }, source_font_height, 0, raylib.DARKGRAY);
+        if show_line_numbers {
+            raylib.DrawTextEx(font, raylib.TextFormat("%d", begin + j + 1), raylib.Vector2 { f32(x), f32(text_y) }, source_font_height, 0, raylib.DARKGRAY);
+        }
 
         for i in 0..<buffer.glyph_buffer_width {
-            text_x := x + line_number_padding + i * source_font_width;
+            text_x := x + padding + i * source_font_width;
             glyph := buffer.glyph_buffer[i + j * buffer.glyph_buffer_width];
 
             if glyph.codepoint == 0 { break; }
