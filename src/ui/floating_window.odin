@@ -34,19 +34,28 @@ draw_buffer_list_window :: proc(state: ^core.State) {
 
     for _, index in state.buffers {
         buffer := &state.buffers[index];
-
-        raylib.DrawTextEx(
-            state.font,
-            raylib.TextFormat("%s:%d", buffer.file_path, buffer.cursor.line+1),
-            raylib.Vector2 { win_rec.x + win_margin.x, win_rec.y + win_margin.y + f32(index * core.source_font_height) },
-            core.source_font_height,
-            0,
-            theme.get_palette_raylib_color(.Foreground2));
+        text := raylib.TextFormat("%s:%d", buffer.file_path, buffer.cursor.line+1);
+        text_width := raylib.MeasureTextEx(state.font, text, core.source_font_height, 0);
 
         if index == state.buffer_list_window_selected_buffer {
             buffer.glyph_buffer_height = glyph_buffer_height;
             buffer.glyph_buffer_width = glyph_buffer_width;
             core.draw_file_buffer(state, buffer, int(win_rec.x + win_margin.x + win_rec.width / 2), int(win_rec.y + win_margin.y), state.font, show_line_numbers = false);
+
+            raylib.DrawRectangle(
+                i32(win_rec.x + win_margin.x),
+                i32(win_rec.y + win_margin.y) + i32(index * core.source_font_height),
+                i32(text_width.x),
+                core.source_font_height,
+                theme.get_palette_raylib_color(.Background2));
         }
+
+        raylib.DrawTextEx(
+            state.font,
+            text,
+            raylib.Vector2 { win_rec.x + win_margin.x, win_rec.y + win_margin.y + f32(index * core.source_font_height) },
+            core.source_font_height,
+            0,
+            theme.get_palette_raylib_color(.Foreground2));
     }
 }
