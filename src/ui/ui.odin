@@ -37,8 +37,6 @@ draw_menu_bar_item :: proc(item: ^MenuBarItem, x, y: i32, parent_width, parent_h
     raylib.DrawRectangle(x, y, parent_width, i32(font_height), theme.get_palette_raylib_color(foreground_color));
      raylib.DrawTextEx(font, item_text, raylib.Vector2 { f32(x + text_padding), f32(y) }, f32(font_height), 0, theme.get_palette_raylib_color(.Background1));
 
-    //raylib.DrawRectangle(x, y, i32(item_width) + text_padding*2, i32(1 * font_height), theme.get_palette_raylib_color(.Foreground3));
-
     if item.selected {
         // TODO: change to parent_width
         largest_sub_item: int
@@ -49,7 +47,6 @@ draw_menu_bar_item :: proc(item: ^MenuBarItem, x, y: i32, parent_width, parent_h
         this_width := i32(largest_sub_item) * 8 + text_padding*2;
         sub_list_x := x;
         if horizontal {
-            //sub_list_x += i32(largest_sub_item) * 8;
             sub_list_x += parent_width;
         }
         for _, index in item.sub_items {
