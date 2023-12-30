@@ -18,33 +18,30 @@ FileBuffer :: core.FileBuffer;
 
 // TODO: use buffer list in state
 do_normal_mode :: proc(state: ^State, buffer: ^FileBuffer) {
-    if raylib.IsKeyPressed(.I) {
-        state.mode = .Insert;
-        return;
-    }
-
-    if raylib.IsKeyPressed(.W) {
-        core.move_cursor_forward_start_of_word(buffer);
-    }
-
-    if raylib.IsKeyPressed(.K) {
-        core.move_cursor_up(buffer);
-    }
-    if raylib.IsKeyPressed(.J) {
-        core.move_cursor_down(buffer);
-    }
-    if raylib.IsKeyPressed(.H) {
-        core.move_cursor_left(buffer);
-    }
-    if raylib.IsKeyPressed(.L) {
-        core.move_cursor_right(buffer);
-    }
-
-    if raylib.IsKeyDown(.LEFT_CONTROL) && raylib.IsKeyDown(.U) {
-        core.scroll_file_buffer(buffer, .Up);
-    }
-    if raylib.IsKeyDown(.LEFT_CONTROL) && raylib.IsKeyDown(.D) {
-        core.scroll_file_buffer(buffer, .Down);
+    if state.current_input_map != nil {
+        if raylib.IsKeyDown(.LEFT_CONTROL) {
+            for key, action in state.current_input_map.ctrl_key_actions {
+                if raylib.IsKeyPressed(key) {
+                    switch value in action {
+                        case core.EditorAction:
+                        value(state);
+                        case core.InputMap:
+                        // TODO: make this the current input map and display it
+                    }
+                }
+            }
+        } else {
+            for key, action in state.current_input_map.key_actions {
+                if raylib.IsKeyPressed(key) {
+                    switch value in action {
+                        case core.EditorAction:
+                        value(state);
+                        case core.InputMap:
+                        // TODO: make this the current input map and display it
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -86,10 +83,77 @@ switch_to_buffer :: proc(state: ^State, item: ^ui.MenuBarItem) {
     }
 }
 
+register_default_input_actions :: proc(input_map: ^core.InputMap) {
+    core.register_key_action(input_map, .W, proc(state: ^State) {
+        core.move_cursor_forward_start_of_word(&state.buffers[state.current_buffer]);
+    });
+
+    core.register_key_action(input_map, .K, proc(state: ^State) {
+        core.move_cursor_up(&state.buffers[state.current_buffer]);
+    });
+    core.register_key_action(input_map, .J, proc(state: ^State) {
+        core.move_cursor_down(&state.buffers[state.current_buffer]);
+    });
+    core.register_key_action(input_map, .H, proc(state: ^State) {
+        core.move_cursor_left(&state.buffers[state.current_buffer]);
+    });
+    core.register_key_action(input_map, .L, proc(state: ^State) {
+        core.move_cursor_right(&state.buffers[state.current_buffer]);
+    });
+
+    core.register_ctrl_key_action(input_map, .U, proc(state: ^State) {
+        core.scroll_file_buffer(&state.buffers[state.current_buffer], .Up);
+    });
+    core.register_ctrl_key_action(input_map, .D, proc(state: ^State) {
+        core.scroll_file_buffer(&state.buffers[state.current_buffer], .Down);
+    });
+
+    core.register_key_action(input_map, .B, proc(state: ^State) {
+        state.buffer_list_window_is_visible = true;
+        state.current_input_map = &state.buffer_list_window_input_map;
+    });
+
+    core.register_key_action(input_map, .I, proc(state: ^State) {
+        state.mode = .Insert;
+    });
+}
+
+register_buffer_list_input_actions :: proc(input_map: ^core.InputMap) {
+    core.register_key_action(input_map, .K, proc(state: ^State) {
+        if state.buffer_list_window_selected_buffer > 0 {
+            state.buffer_list_window_selected_buffer -= 1;
+        } else {
+            state.buffer_list_window_selected_buffer = len(state.buffers)-1;
+        }
+    });
+    core.register_key_action(input_map, .J, proc(state: ^State) {
+        if state.buffer_list_window_selected_buffer >= len(state.buffers)-1 {
+            state.buffer_list_window_selected_buffer = 0;
+        } else {
+            state.buffer_list_window_selected_buffer += 1;
+        }
+    });
+    core.register_key_action(input_map, .ENTER, proc(state: ^State) {
+        state.current_buffer = state.buffer_list_window_selected_buffer;
+
+        state.buffer_list_window_is_visible = false;
+        state.current_input_map = &state.input_map;
+    });
+
+    core.register_key_action(input_map, .Q, proc(state: ^State) {
+        state.buffer_list_window_is_visible = false;
+        state.current_input_map = &state.input_map;
+    });
+}
+
 main :: proc() {
     state := State {
-        buffer_list_window_is_visible = true,
+        input_map = core.new_input_map(),
+        buffer_list_window_input_map = core.new_input_map(),
     };
+    state.current_input_map = &state.input_map;
+    register_default_input_actions(&state.input_map);
+    register_buffer_list_input_actions(&state.buffer_list_window_input_map);
 
     for arg in os.args[1:] {
         buffer, err := core.new_file_buffer(context.allocator, arg);
@@ -133,7 +197,8 @@ main :: proc() {
 
         buffer := &state.buffers[state.current_buffer];
 
-        buffer.glyph_buffer_height = math.min(256, int((state.screen_height - 32 - core.source_font_height) / core.source_font_height));
+        buffer.glyph_buffer_height = math.min(256, int((state.screen_height - core.source_font_height*2) / core.source_font_height)) + 1;
+        buffer.glyph_buffer_width = math.min(256, int((state.screen_width - core.source_font_width) / core.source_font_width));
 
         {
             raylib.BeginDrawing();
