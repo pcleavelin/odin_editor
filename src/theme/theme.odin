@@ -65,7 +65,39 @@ palette := []u32 {
     0x928374ff,
 };
 
+
+light_palette := []u32 {
+    0xfbf1c7ff,
+    0x3c3836ff,
+
+    0xebdbb2ff,
+    0xd5c4a1ff,
+    0xbdae93ff,
+    0xa89984ff,
+
+    0x3c3836ff,
+    0x504945ff,
+    0x665c54ff,
+    0x7c6f64ff,
+
+    0xcc241dff,
+    0x98971aff,
+    0xd79921ff,
+    0x458588ff,
+    0xb16286ff,
+    0x689d6aff,
+    0x7c6f64ff,
+
+    0x9d0006ff,
+    0x79740eff,
+    0xb57614ff,
+    0x076678ff,
+    0x8f3f71ff,
+    0x427b58ff,
+    0x928374ff,
+};
+
 get_palette_raylib_color :: proc(palette_color: PaletteColor) -> raylib.Color {
-    return raylib.GetColor(palette[palette_color]);
+    return raylib.GetColor(light_palette[palette_color]);
 }
 

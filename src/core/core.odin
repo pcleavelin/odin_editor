@@ -11,9 +11,13 @@ Mode :: enum {
 State :: struct {
     mode: Mode,
     should_close: bool,
-    screen_height: i32,
-    screen_width: i32,
+    screen_height: int,
+    screen_width: int,
     font: raylib.Font,
+
+    source_font_width: int,
+    source_font_height: int,
+    line_number_padding: int,
 
     current_buffer: int,
     buffers: [dynamic]FileBuffer,

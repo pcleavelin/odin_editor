@@ -21,7 +21,7 @@ MenuBarState :: struct {
     items: []MenuBarItem,
 }
 
-draw_menu_bar_item :: proc(item: ^MenuBarItem, x, y: i32, parent_width, parent_height: i32, font: raylib.Font, font_height: int, horizontal: bool = false) {
+draw_menu_bar_item :: proc(state: ^core.State, item: ^MenuBarItem, x, y: i32, parent_width, parent_height: i32, font_height: int, horizontal: bool = false) {
     foreground_color := theme.PaletteColor.Foreground3;
     if horizontal {
         if item.selected {
@@ -32,10 +32,10 @@ draw_menu_bar_item :: proc(item: ^MenuBarItem, x, y: i32, parent_width, parent_h
     }
 
     item_text := raylib.TextFormat("%s", item.text);
-    item_width := raylib.MeasureTextEx(font, item_text, f32(font_height), 0).x;
+    item_width := raylib.MeasureTextEx(state.font, item_text, f32(font_height), 0).x;
 
     raylib.DrawRectangle(x, y, parent_width, i32(font_height), theme.get_palette_raylib_color(foreground_color));
-     raylib.DrawTextEx(font, item_text, raylib.Vector2 { f32(x + text_padding), f32(y) }, f32(font_height), 0, theme.get_palette_raylib_color(.Background1));
+    raylib.DrawTextEx(state.font, item_text, raylib.Vector2 { f32(x + text_padding), f32(y) }, f32(font_height), 0, theme.get_palette_raylib_color(.Background1));
 
     if item.selected {
         // TODO: change to parent_width
@@ -44,7 +44,7 @@ draw_menu_bar_item :: proc(item: ^MenuBarItem, x, y: i32, parent_width, parent_h
             largest_sub_item = math.max(len(sub_item.text), largest_sub_item);
         }
 
-        this_width := i32(largest_sub_item) * 8 + text_padding*2;
+        this_width := i32(largest_sub_item * state.source_font_width + text_padding*2);
         sub_list_x := x;
         if horizontal {
             sub_list_x += parent_width;
@@ -52,32 +52,32 @@ draw_menu_bar_item :: proc(item: ^MenuBarItem, x, y: i32, parent_width, parent_h
         for _, index in item.sub_items {
             sub_item := &item.sub_items[index];
             item_text := raylib.TextFormat("%s", sub_item.text);
-            item_width := raylib.MeasureTextEx(font, item_text, f32(font_height), 0).x;
+            item_width := raylib.MeasureTextEx(state.font, item_text, f32(font_height), 0).x;
 
             index_offset := 1;
             if horizontal {
                 index_offset = 0;
             }
             item_y := y + i32(font_height * (index+index_offset));
-            draw_menu_bar_item(sub_item, sub_list_x, item_y, this_width, 0, font, font_height, true);
+            draw_menu_bar_item(state, sub_item, sub_list_x, item_y, this_width, 0, font_height, true);
         }
     }
 }
 
-draw_menu_bar :: proc(data: ^MenuBarState, x, y: i32, parent_width, parent_height: i32, font: raylib.Font, font_height: int) {
+draw_menu_bar :: proc(state: ^core.State, data: ^MenuBarState, x, y: i32, parent_width, parent_height: i32, font_height: int) {
     raylib.DrawRectangle(x, y, parent_width, i32(font_height), theme.get_palette_raylib_color(.Background3));
 
     for _, index in data.items {
         item := &data.items[index];
         item_text := raylib.TextFormat("%s", item.text);
-        item_width := raylib.MeasureTextEx(font, item_text, f32(font_height), 0).x;
+        item_width := raylib.MeasureTextEx(state.font, item_text, f32(font_height), 0).x;
 
         item_x := x + (i32(item_width) + text_padding*2) * i32(index);
-        draw_menu_bar_item(item, item_x, y, i32(item_width + text_padding*2), i32(font_height), font, font_height);
+        draw_menu_bar_item(state, item, item_x, y, i32(item_width + text_padding*2), i32(font_height), font_height);
     }
 }
 
-test_menu_item :: proc(state: ^core.State, item: ^MenuBarItem, rect: raylib.Rectangle, mouse_pos: raylib.Vector2, mouse_has_clicked: bool, font: raylib.Font, font_height: int, horizontal: bool) -> bool {
+test_menu_item :: proc(state: ^core.State, item: ^MenuBarItem, rect: raylib.Rectangle, mouse_pos: raylib.Vector2, mouse_has_clicked: bool, font_height: int, horizontal: bool) -> bool {
     if raylib.CheckCollisionPointRec(mouse_pos, rect) {
         item.selected = true;
 
@@ -90,7 +90,7 @@ test_menu_item :: proc(state: ^core.State, item: ^MenuBarItem, rect: raylib.Rect
             largest_sub_item = math.max(len(sub_item.text), largest_sub_item);
         }
 
-        this_width := i32(largest_sub_item) * 8 + text_padding*2;
+        this_width := i32(largest_sub_item * state.source_font_width + text_padding*2);
         sub_list_x := rect.x;
         if horizontal {
             sub_list_x += rect.width;
@@ -100,7 +100,7 @@ test_menu_item :: proc(state: ^core.State, item: ^MenuBarItem, rect: raylib.Rect
         for _, index in item.sub_items {
             sub_item := &item.sub_items[index];
             item_text := raylib.TextFormat("%s", sub_item.text);
-            item_width := raylib.MeasureTextEx(font, item_text, f32(font_height), 0).x;
+            item_width := raylib.MeasureTextEx(state.font, item_text, f32(font_height), 0).x;
 
             index_offset := 1;
             if horizontal {
@@ -115,7 +115,7 @@ test_menu_item :: proc(state: ^core.State, item: ^MenuBarItem, rect: raylib.Rect
                 height = f32(font_height),
             };
 
-           if test_menu_item(state, sub_item, sub_rec, mouse_pos, mouse_has_clicked, font, font_height, true) {
+           if test_menu_item(state, sub_item, sub_rec, mouse_pos, mouse_has_clicked, font_height, true) {
                has_sub_item_selected = true;
            }
         }
@@ -128,11 +128,11 @@ test_menu_item :: proc(state: ^core.State, item: ^MenuBarItem, rect: raylib.Rect
     return item.selected;
 }
 
-test_menu_bar :: proc(state: ^core.State, menu_bar: ^MenuBarState, x, y: i32, mouse_pos: raylib.Vector2, mouse_has_clicked: bool, font: raylib.Font, font_height: int) {
+test_menu_bar :: proc(state: ^core.State, menu_bar: ^MenuBarState, x, y: i32, mouse_pos: raylib.Vector2, mouse_has_clicked: bool, font_height: int) {
     for _, index in menu_bar.items {
         item := &menu_bar.items[index];
         item_text := raylib.TextFormat("%s", item.text);
-        item_width := raylib.MeasureTextEx(font, item_text, f32(font_height), 0).x;
+        item_width := raylib.MeasureTextEx(state.font, item_text, f32(font_height), 0).x;
 
         item_rec := raylib.Rectangle {
             x = f32(x) + (item_width + f32(text_padding*2)) * f32(index),
@@ -141,6 +141,6 @@ test_menu_bar :: proc(state: ^core.State, menu_bar: ^MenuBarState, x, y: i32, mo
             height = f32(font_height),
         };
 
-        test_menu_item(state, item, item_rec, mouse_pos, mouse_has_clicked, font, font_height, false);
+        test_menu_item(state, item, item_rec, mouse_pos, mouse_has_clicked, font_height, false);
     }
 }

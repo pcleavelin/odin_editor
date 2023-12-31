@@ -11,10 +11,6 @@ import "vendor:raylib"
 
 import "../theme"
 
-source_font_width :: 8;
-source_font_height :: 16;
-line_number_padding :: 5 * source_font_width;
-
 ScrollDir :: enum {
     Up,
     Down,
@@ -738,20 +734,20 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, fon
 
     padding := 0;
     if show_line_numbers {
-        padding = line_number_padding;
+        padding = state.source_font_width * 5;
     }
 
     begin := buffer.top_line;
-    cursor_x := x + padding + buffer.cursor.col * source_font_width;
-    cursor_y := y + buffer.cursor.line * source_font_height;
+    cursor_x := x + padding + buffer.cursor.col * state.source_font_width;
+    cursor_y := y + buffer.cursor.line * state.source_font_height;
 
-    cursor_y -= begin * source_font_height;
+    cursor_y -= begin * state.source_font_height;
 
     // draw cursor
     if state.mode == .Normal {
-        raylib.DrawRectangle(i32(cursor_x), i32(cursor_y), source_font_width, source_font_height, raylib.BLUE);
+        raylib.DrawRectangle(i32(cursor_x), i32(cursor_y), i32(state.source_font_width), i32(state.source_font_height), theme.get_palette_raylib_color(.Background4));
     } else if state.mode == .Insert {
-        raylib.DrawRectangle(i32(cursor_x), i32(cursor_y), source_font_width, source_font_height, raylib.GREEN);
+        raylib.DrawRectangle(i32(cursor_x), i32(cursor_y), i32(state.source_font_width), i32(state.source_font_height), theme.get_palette_raylib_color(.Green));
 
         num_line_break := 0;
         line_length := 0;
@@ -765,29 +761,29 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, fon
         }
 
         if num_line_break > 0 {
-            cursor_x = x + padding + line_length * source_font_width;
-            cursor_y = cursor_y + num_line_break * source_font_height;
+            cursor_x = x + padding + line_length * state.source_font_width;
+            cursor_y = cursor_y + num_line_break * state.source_font_height;
         } else {
-            cursor_x += line_length * source_font_width;
+            cursor_x += line_length * state.source_font_width;
         }
 
-        raylib.DrawRectangle(i32(cursor_x), i32(cursor_y), source_font_width, source_font_height, raylib.BLUE);
+        raylib.DrawRectangle(i32(cursor_x), i32(cursor_y), i32(state.source_font_width), i32(state.source_font_height), theme.get_palette_raylib_color(.Blue));
     }
 
     for j in 0..<buffer.glyph_buffer_height {
-        text_y := y + source_font_height * j;
+        text_y := y + state.source_font_height * j;
 
         if show_line_numbers {
-            raylib.DrawTextEx(font, raylib.TextFormat("%d", begin + j + 1), raylib.Vector2 { f32(x), f32(text_y) }, source_font_height, 0, raylib.DARKGRAY);
+            raylib.DrawTextEx(font, raylib.TextFormat("%d", begin + j + 1), raylib.Vector2 { f32(x), f32(text_y) }, f32(state.source_font_height), 0, theme.get_palette_raylib_color(.Background3));
         }
 
         for i in 0..<buffer.glyph_buffer_width {
-            text_x := x + padding + i * source_font_width;
+            text_x := x + padding + i * state.source_font_width;
             glyph := buffer.glyph_buffer[i + j * buffer.glyph_buffer_width];
 
             if glyph.codepoint == 0 { break; }
 
-            raylib.DrawTextCodepoint(font, rune(glyph.codepoint), raylib.Vector2 { f32(text_x), f32(text_y) }, source_font_height, theme.get_palette_raylib_color(glyph.color));
+            raylib.DrawTextCodepoint(font, rune(glyph.codepoint), raylib.Vector2 { f32(text_x), f32(text_y) }, f32(state.source_font_height), theme.get_palette_raylib_color(glyph.color));
         }
     }
 }

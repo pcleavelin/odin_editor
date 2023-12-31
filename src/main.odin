@@ -88,6 +88,9 @@ register_default_leader_actions :: proc(input_map: ^core.InputMap) {
         state.buffer_list_window_is_visible = true;
         state.current_input_map = &state.buffer_list_window_input_map;
     }, "show list of open buffers");
+    core.register_key_action(input_map, .Q, proc(state: ^State) {
+        state.current_input_map = &state.input_map;
+    }, "close this help");
 }
 
 register_default_input_actions :: proc(input_map: ^core.InputMap) {
@@ -114,6 +117,24 @@ register_default_input_actions :: proc(input_map: ^core.InputMap) {
     core.register_ctrl_key_action(input_map, .D, proc(state: ^State) {
         core.scroll_file_buffer(&state.buffers[state.current_buffer], .Down);
     }, "scroll buffer up");
+
+    // Scale font size
+    core.register_ctrl_key_action(input_map, .MINUS, proc(state: ^State) {
+        if state.source_font_height > 16 {
+            state.source_font_height -= 2;
+            state.source_font_width = state.source_font_height / 2;
+
+            state.font = raylib.LoadFontEx("/Users/temp/Library/Fonts/JetBrainsMono-Regular.ttf", i32(state.source_font_height*2), nil, 0);
+            raylib.SetTextureFilter(state.font.texture, .BILINEAR);
+        }
+    }, "increase font size");
+    core.register_ctrl_key_action(input_map, .EQUAL, proc(state: ^State) {
+        state.source_font_height += 2;
+        state.source_font_width = state.source_font_height / 2;
+
+        state.font = raylib.LoadFontEx("/Users/temp/Library/Fonts/JetBrainsMono-Regular.ttf", i32(state.source_font_height*2), nil, 0);
+        raylib.SetTextureFilter(state.font.texture, .BILINEAR);
+    }, "decrease font size");
 
     core.register_key_action(input_map, .I, proc(state: ^State) {
         state.mode = .Insert;
@@ -153,6 +174,8 @@ register_buffer_list_input_actions :: proc(input_map: ^core.InputMap) {
 
 main :: proc() {
     state := State {
+        source_font_width = 8,
+        source_font_height = 16,
         input_map = core.new_input_map(),
         buffer_list_window_input_map = core.new_input_map(),
     };
@@ -184,8 +207,8 @@ main :: proc() {
     raylib.SetTargetFPS(60);
     raylib.SetExitKey(.KEY_NULL);
 
-    font := raylib.LoadFont("../c_editor/Mx437_ToshibaSat_8x16.ttf");
-    state.font = font;
+    state.font = raylib.LoadFont("../c_editor/Mx437_ToshibaSat_8x16.ttf");
+    raylib.SetTextureFilter(state.font.texture, .BILINEAR);
     menu_bar_state := ui.MenuBarState{
         items = []ui.MenuBarItem {
             ui.MenuBarItem {
@@ -196,24 +219,24 @@ main :: proc() {
     };
 
     for !raylib.WindowShouldClose() && !state.should_close {
-        state.screen_width = raylib.GetScreenWidth();
-        state.screen_height = raylib.GetScreenHeight();
+        state.screen_width = int(raylib.GetScreenWidth());
+        state.screen_height = int(raylib.GetScreenHeight());
         mouse_pos := raylib.GetMousePosition();
 
         buffer := &state.buffers[state.current_buffer];
 
-        buffer.glyph_buffer_height = math.min(256, int((state.screen_height - core.source_font_height*2) / core.source_font_height)) + 1;
-        buffer.glyph_buffer_width = math.min(256, int((state.screen_width - core.source_font_width) / core.source_font_width));
+        buffer.glyph_buffer_height = math.min(256, int((state.screen_height - state.source_font_height*2) / state.source_font_height)) + 1;
+        buffer.glyph_buffer_width = math.min(256, int((state.screen_width - state.source_font_width) / state.source_font_width));
 
         {
             raylib.BeginDrawing();
             defer raylib.EndDrawing();
 
             raylib.ClearBackground(theme.get_palette_raylib_color(.Background));
-            core.draw_file_buffer(&state, buffer, 32, core.source_font_height, font);
-            ui.draw_menu_bar(&menu_bar_state, 0, 0, state.screen_width, state.screen_height, font, core.source_font_height);
+            core.draw_file_buffer(&state, buffer, 32, state.source_font_height, state.font);
+            ui.draw_menu_bar(&state, &menu_bar_state, 0, 0, i32(state.screen_width), i32(state.screen_height), state.source_font_height);
 
-            raylib.DrawRectangle(0, state.screen_height - core.source_font_height, state.screen_width, core.source_font_height, theme.get_palette_raylib_color(.Background2));
+            raylib.DrawRectangle(0, i32(state.screen_height - state.source_font_height), i32(state.screen_width), i32(state.source_font_height), theme.get_palette_raylib_color(.Background2));
 
             line_info_text := raylib.TextFormat(
                 "Line: %d, Col: %d --- Slice Index: %d, Content Index: %d",
@@ -221,52 +244,52 @@ main :: proc() {
                 buffer.cursor.col + 1,
                 buffer.cursor.index.slice_index,
                 buffer.cursor.index.content_index);
-            line_info_width := raylib.MeasureTextEx(font, line_info_text, core.source_font_height, 0).x;
+            line_info_width := raylib.MeasureTextEx(state.font, line_info_text, f32(state.source_font_height), 0).x;
 
             switch state.mode {
                 case .Normal:
                     raylib.DrawRectangle(
                         0,
-                        state.screen_height - core.source_font_height,
-                        8 + len("NORMAL")*core.source_font_width,
-                        core.source_font_height,
+                        i32(state.screen_height - state.source_font_height),
+                        i32(8 + len("NORMAL")*state.source_font_width),
+                        i32(state.source_font_height),
                         theme.get_palette_raylib_color(.Foreground4));
                     raylib.DrawRectangleV(
-                        raylib.Vector2 { f32(state.screen_width) - line_info_width - 8, f32(state.screen_height - core.source_font_height) },
-                        raylib.Vector2 { 8 + line_info_width, f32(core.source_font_height) },
+                        raylib.Vector2 { f32(state.screen_width) - line_info_width - 8, f32(state.screen_height - state.source_font_height) },
+                        raylib.Vector2 { 8 + line_info_width, f32(state.source_font_height) },
                         theme.get_palette_raylib_color(.Foreground4));
                     raylib.DrawTextEx(
-                        font,
+                        state.font,
                         "NORMAL",
-                        raylib.Vector2 { 4, f32(state.screen_height - core.source_font_height) },
-                        core.source_font_height,
+                        raylib.Vector2 { 4, f32(state.screen_height - state.source_font_height) },
+                        f32(state.source_font_height),
                         0,
                         theme.get_palette_raylib_color(.Background1));
                 case .Insert:
                     raylib.DrawRectangle(
                         0,
-                        state.screen_height - core.source_font_height,
-                        8 + len("INSERT")*core.source_font_width,
-                        core.source_font_height,
+                        i32(state.screen_height - state.source_font_height),
+                        i32(8 + len("INSERT")*state.source_font_width),
+                        i32(state.source_font_height),
                         theme.get_palette_raylib_color(.Foreground2));
                     raylib.DrawRectangleV(
-                        raylib.Vector2 { f32(state.screen_width) - line_info_width - 8, f32(state.screen_height - core.source_font_height) },
-                        raylib.Vector2 { 8 + line_info_width, f32(core.source_font_height) },
+                        raylib.Vector2 { f32(state.screen_width) - line_info_width - 8, f32(state.screen_height - state.source_font_height) },
+                        raylib.Vector2 { 8 + line_info_width, f32(state.source_font_height) },
                         theme.get_palette_raylib_color(.Foreground2));
                     raylib.DrawTextEx(
-                        font,
+                        state.font,
                         "INSERT",
-                        raylib.Vector2 { 4, f32(state.screen_height - core.source_font_height) },
-                        core.source_font_height,
+                        raylib.Vector2 { 4, f32(state.screen_height - state.source_font_height) },
+                        f32(state.source_font_height),
                         0,
                         theme.get_palette_raylib_color(.Background1));
             }
 
             raylib.DrawTextEx(
-                font,
+                state.font,
                 line_info_text,
-                raylib.Vector2 { f32(state.screen_width) - line_info_width - 4, f32(state.screen_height - core.source_font_height) },
-                core.source_font_height,
+                raylib.Vector2 { f32(state.screen_width) - line_info_width - 4, f32(state.screen_height - state.source_font_height) },
+                f32(state.source_font_height),
                 0,
                 theme.get_palette_raylib_color(.Background1));
 
@@ -281,24 +304,40 @@ main :: proc() {
                         longest_description = len(action.description);
                     }
                 }
-                longest_description += 4;
+                for key, action in state.current_input_map.ctrl_key_actions {
+                    if len(action.description) > longest_description {
+                        longest_description = len(action.description);
+                    }
+                }
+                longest_description += 8;
 
-                helper_height := i32(core.source_font_height * len(state.current_input_map.key_actions));
+                helper_height := state.source_font_height * (len(state.current_input_map.key_actions) + len(state.current_input_map.ctrl_key_actions));
+                offset_from_bottom := state.source_font_height * 2;
 
                 raylib.DrawRectangle(
-                    state.screen_width - i32(longest_description * core.source_font_width),
-                    state.screen_height - helper_height - 20,
-                    i32(longest_description*core.source_font_width),
-                    helper_height,
+                    i32(state.screen_width - longest_description * state.source_font_width),
+                    i32(state.screen_height - helper_height - offset_from_bottom),
+                    i32(longest_description*state.source_font_width),
+                    i32(helper_height),
                     theme.get_palette_raylib_color(.Background2));
 
                 index := 0;
                 for key, action in state.current_input_map.key_actions {
                     raylib.DrawTextEx(
-                        font,
+                        state.font,
                         raylib.TextFormat("%s - %s", key, action.description),
-                        raylib.Vector2 { f32(state.screen_width - i32(longest_description * core.source_font_width)), f32(state.screen_height - helper_height + i32((index) * core.source_font_height) - 20) },
-                        core.source_font_height,
+                        raylib.Vector2 { f32(state.screen_width - longest_description * state.source_font_width), f32(state.screen_height - helper_height + index * state.source_font_height - offset_from_bottom) },
+                        f32(state.source_font_height),
+                        0,
+                        theme.get_palette_raylib_color(.Foreground1));
+                    index += 1;
+                }
+                for key, action in state.current_input_map.ctrl_key_actions {
+                    raylib.DrawTextEx(
+                        state.font,
+                        raylib.TextFormat("<C>-%s - %s", key, action.description),
+                        raylib.Vector2 { f32(state.screen_width - longest_description * state.source_font_width), f32(state.screen_height - helper_height + index * state.source_font_height - offset_from_bottom) },
+                        f32(state.source_font_height),
                         0,
                         theme.get_palette_raylib_color(.Foreground1));
                     index += 1;
@@ -313,6 +352,6 @@ main :: proc() {
                 do_insert_mode(&state, buffer);
         }
 
-        ui.test_menu_bar(&state, &menu_bar_state, 0,0, mouse_pos, raylib.IsMouseButtonReleased(.LEFT), font, core.source_font_height);
+        ui.test_menu_bar(&state, &menu_bar_state, 0,0, mouse_pos, raylib.IsMouseButtonReleased(.LEFT), state.source_font_height);
     }
 }
