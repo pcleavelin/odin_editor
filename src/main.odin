@@ -160,7 +160,7 @@ register_default_input_actions :: proc(input_map: ^core.InputMap) {
         state.mode = .Insert;
     }, "enter insert mode");
     core.register_key_action(input_map, .A, proc(state: ^State) {
-        core.move_cursor_right(&state.buffers[state.current_buffer]);
+        core.move_cursor_right(&state.buffers[state.current_buffer], false);
         state.mode = .Insert;
     }, "enter insert mode after character (append)");
 
@@ -234,7 +234,7 @@ main :: proc() {
     raylib.SetTargetFPS(60);
     raylib.SetExitKey(.KEY_NULL);
 
-    state.font = raylib.LoadFont("../c_editor/Mx437_ToshibaSat_8x16.ttf");
+    state.font = raylib.LoadFontEx("/System/Library/Fonts/Supplemental/Andale Mono.ttf", i32(state.source_font_height*2), nil, 0);
     raylib.SetTextureFilter(state.font.texture, .BILINEAR);
     menu_bar_state := ui.MenuBarState{
         items = []ui.MenuBarItem {
@@ -266,12 +266,14 @@ main :: proc() {
             raylib.DrawRectangle(0, i32(state.screen_height - state.source_font_height), i32(state.screen_width), i32(state.source_font_height), theme.get_palette_raylib_color(.Background2));
 
             line_info_text := raylib.TextFormat(
-                "Line: %d, Col: %d, Len: %d --- Slice Index: %d, Content Index: %d",
+                // "Line: %d, Col: %d, Len: %d --- Slice Index: %d, Content Index: %d",
+                "Line: %d, Col: %d",
                 buffer.cursor.line + 1,
                 buffer.cursor.col + 1,
-                core.file_buffer_line_length(buffer, buffer.cursor.index),
-                buffer.cursor.index.slice_index,
-                buffer.cursor.index.content_index);
+                // core.file_buffer_line_length(buffer, buffer.cursor.index),
+                // buffer.cursor.index.slice_index,
+                // buffer.cursor.index.content_index
+            );
             line_info_width := raylib.MeasureTextEx(state.font, line_info_text, f32(state.source_font_height), 0).x;
 
             switch state.mode {
@@ -325,7 +327,7 @@ main :: proc() {
                 ui.draw_buffer_list_window(&state);
             }
 
-            if true || state.current_input_map != &state.input_map {
+            if state.current_input_map != &state.input_map {
                 longest_description := 0;
                 for key, action in state.current_input_map.key_actions {
                     if len(action.description) > longest_description {

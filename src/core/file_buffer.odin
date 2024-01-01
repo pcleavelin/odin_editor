@@ -489,10 +489,10 @@ move_cursor_left :: proc(buffer: ^FileBuffer) {
     }
 }
 
-move_cursor_right :: proc(buffer: ^FileBuffer) {
+move_cursor_right :: proc(buffer: ^FileBuffer, stop_at_end: bool = true) {
     line_length := file_buffer_line_length(buffer, buffer.cursor.index);
 
-    if line_length > 0 && buffer.cursor.col < line_length-1 {
+    if !stop_at_end || (line_length > 0 && buffer.cursor.col < line_length-1) {
         buffer.cursor.col += 1;
         update_file_buffer_index_from_cursor(buffer);
     }
