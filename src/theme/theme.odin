@@ -98,6 +98,6 @@ light_palette := []u32 {
 };
 
 get_palette_raylib_color :: proc(palette_color: PaletteColor) -> raylib.Color {
-    return raylib.GetColor(light_palette[palette_color]);
+    return raylib.GetColor(palette[palette_color]);
 }
 

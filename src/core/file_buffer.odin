@@ -63,6 +63,7 @@ FileBuffer :: struct {
 FileBufferIter :: struct {
     cursor: Cursor,
     buffer: ^FileBuffer,
+    hit_end: bool,
 }
 
 new_file_buffer_iter_from_beginning :: proc(file_buffer: ^FileBuffer) -> FileBufferIter {
@@ -98,25 +99,28 @@ iterate_file_buffer :: proc(it: ^FileBufferIter) -> (character: u8, idx: FileBuf
 
     return character, it.cursor.index, true;
 }
-// NOTE: This give the character for the NEXT position, unlike the non-reverse version
-// which gives the character for the CURRENT position.
 iterate_file_buffer_reverse_mangle_cursor :: proc(it: ^FileBufferIter) -> (character: u8, idx: FileBufferIndex, cond: bool) {
+    character = it.buffer.content_slices[it.cursor.index.slice_index][it.cursor.index.content_index];
     if it.cursor.index.content_index == 0 {
         if it.cursor.index.slice_index > 0 {
             it.cursor.index.slice_index -= 1;
             it.cursor.index.content_index = len(it.buffer.content_slices[it.cursor.index.slice_index])-1;
+        } else if it.hit_end {
+            return character, it.cursor.index, false;
         } else {
-            return 0, it.cursor.index, false;
+            it.hit_end = true;
+            return character, it.cursor.index, true;
         }
     } else {
         it.cursor.index.content_index -= 1;
     }
 
-    return it.buffer.content_slices[it.cursor.index.slice_index][it.cursor.index.content_index], it.cursor.index, true;
+    return character, it.cursor.index, true;
 }
+// TODO: figure out how to give the first character of the buffer
 iterate_file_buffer_reverse :: proc(it: ^FileBufferIter) -> (character: u8, idx: FileBufferIndex, cond: bool) {
     if character, idx, cond = iterate_file_buffer_reverse_mangle_cursor(it); cond {
-       if character == '\n' {
+       if it.cursor.col < 1 {
            if it.cursor.line > 0 {
                line_length := file_buffer_line_length(it.buffer, it.cursor.index);
                if line_length < 0 { line_length = 0; }
@@ -124,7 +128,7 @@ iterate_file_buffer_reverse :: proc(it: ^FileBufferIter) -> (character: u8, idx:
                it.cursor.line -= 1;
                it.cursor.col = line_length;
            } else {
-               return 0, it.cursor.index, false;
+               return character, it.cursor.index, false;
            }
        } else {
            it.cursor.col -= 1;
@@ -296,8 +300,13 @@ update_file_buffer_index_from_cursor :: proc(buffer: ^FileBuffer) {
 
 file_buffer_line_length :: proc(buffer: ^FileBuffer, index: FileBufferIndex) -> int {
     line_length := 0;
+    first_character := buffer.content_slices[index.slice_index][index.content_index];
 
     left_it := new_file_buffer_iter_with_cursor(buffer, Cursor { index = index });
+    if first_character == '\n' {
+        iterate_file_buffer_reverse_mangle_cursor(&left_it);
+    }
+
     for character in iterate_file_buffer_reverse_mangle_cursor(&left_it) {
         if character == '\n' {
             break;
@@ -307,15 +316,47 @@ file_buffer_line_length :: proc(buffer: ^FileBuffer, index: FileBufferIndex) -> 
     }
 
     right_it := new_file_buffer_iter_with_cursor(buffer, Cursor { index = index });
+    first := true;
     for character in iterate_file_buffer(&right_it) {
         if character == '\n' {
             break;
         }
 
-        line_length += 1;
+        if !first {
+            line_length += 1;
+        }
+        first = false;
     }
 
     return line_length;
+}
+
+move_cursor_start_of_line :: proc(buffer: ^FileBuffer) {
+    if buffer.cursor.col > 0 {
+        it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+        for _ in iterate_file_buffer_reverse(&it) {
+            if it.cursor.col <= 0 {
+                break;
+            }
+        }
+
+        buffer.cursor = it.cursor;
+    }
+}
+
+move_cursor_end_of_line :: proc(buffer: ^FileBuffer) {
+    it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+    line_length := file_buffer_line_length(buffer, it.cursor.index);
+
+    if buffer.cursor.col < line_length-1 {
+        for _ in iterate_file_buffer(&it) {
+            if it.cursor.col >= line_length-1 {
+                break;
+            }
+        }
+
+        buffer.cursor = it.cursor;
+    }
 }
 
 move_cursor_up :: proc(buffer: ^FileBuffer, amount: int = 1) {
@@ -394,6 +435,14 @@ move_cursor_right :: proc(buffer: ^FileBuffer) {
 move_cursor_forward_start_of_word :: proc(buffer: ^FileBuffer) {
     it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
     iterate_file_buffer_until(&it, until_start_of_word);
+    buffer.cursor = it.cursor;
+
+    update_file_buffer_scroll(buffer);
+}
+
+move_cursor_backward_start_of_word :: proc(buffer: ^FileBuffer) {
+    it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+    iterate_file_buffer_until_reverse(&it, until_start_of_word);
     buffer.cursor = it.cursor;
 
     update_file_buffer_scroll(buffer);

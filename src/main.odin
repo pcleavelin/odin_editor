@@ -19,7 +19,9 @@ FileBuffer :: core.FileBuffer;
 // TODO: use buffer list in state
 do_normal_mode :: proc(state: ^State, buffer: ^FileBuffer) {
     if state.current_input_map != nil {
-        if raylib.IsKeyDown(.LEFT_CONTROL) {
+        if raylib.IsKeyDown(.ESCAPE) {
+            state.current_input_map = &state.input_map;
+        } else if raylib.IsKeyDown(.LEFT_CONTROL) {
             for key, action in &state.current_input_map.ctrl_key_actions {
                 if raylib.IsKeyPressed(key) {
                     switch value in action.action {
@@ -93,10 +95,24 @@ register_default_leader_actions :: proc(input_map: ^core.InputMap) {
     }, "close this help");
 }
 
+register_default_go_actions :: proc(input_map: ^core.InputMap) {
+    core.register_key_action(input_map, .H, proc(state: ^State) {
+        core.move_cursor_start_of_line(&state.buffers[state.current_buffer]);
+        state.current_input_map = &state.input_map;
+    }, "move to beginning of line");
+    core.register_key_action(input_map, .L, proc(state: ^State) {
+        core.move_cursor_end_of_line(&state.buffers[state.current_buffer]);
+        state.current_input_map = &state.input_map;
+    }, "move to end of line");
+}
+
 register_default_input_actions :: proc(input_map: ^core.InputMap) {
     core.register_key_action(input_map, .W, proc(state: ^State) {
         core.move_cursor_forward_start_of_word(&state.buffers[state.current_buffer]);
     }, "move forward one word");
+    core.register_key_action(input_map, .B, proc(state: ^State) {
+        core.move_cursor_backward_start_of_word(&state.buffers[state.current_buffer]);
+    }, "move backward one word");
 
     core.register_key_action(input_map, .K, proc(state: ^State) {
         core.move_cursor_up(&state.buffers[state.current_buffer]);
@@ -124,7 +140,7 @@ register_default_input_actions :: proc(input_map: ^core.InputMap) {
             state.source_font_height -= 2;
             state.source_font_width = state.source_font_height / 2;
 
-            state.font = raylib.LoadFontEx("/Users/temp/Library/Fonts/JetBrainsMono-Regular.ttf", i32(state.source_font_height*2), nil, 0);
+            state.font = raylib.LoadFontEx("/System/Library/Fonts/Supplemental/Andale Mono.ttf", i32(state.source_font_height*2), nil, 0);
             raylib.SetTextureFilter(state.font.texture, .BILINEAR);
         }
     }, "increase font size");
@@ -132,7 +148,7 @@ register_default_input_actions :: proc(input_map: ^core.InputMap) {
         state.source_font_height += 2;
         state.source_font_width = state.source_font_height / 2;
 
-        state.font = raylib.LoadFontEx("/Users/temp/Library/Fonts/JetBrainsMono-Regular.ttf", i32(state.source_font_height*2), nil, 0);
+        state.font = raylib.LoadFontEx("/System/Library/Fonts/Supplemental/Andale Mono.ttf", i32(state.source_font_height*2), nil, 0);
         raylib.SetTextureFilter(state.font.texture, .BILINEAR);
     }, "decrease font size");
 
@@ -142,6 +158,9 @@ register_default_input_actions :: proc(input_map: ^core.InputMap) {
 
     core.register_key_action(input_map, .SPACE, core.new_input_map(), "leader commands");
     register_default_leader_actions(&(&input_map.key_actions[.SPACE]).action.(core.InputMap));
+
+    core.register_key_action(input_map, .G, core.new_input_map(), "Go commands");
+    register_default_go_actions(&(&input_map.key_actions[.G]).action.(core.InputMap));
 }
 
 register_buffer_list_input_actions :: proc(input_map: ^core.InputMap) {
@@ -239,9 +258,10 @@ main :: proc() {
             raylib.DrawRectangle(0, i32(state.screen_height - state.source_font_height), i32(state.screen_width), i32(state.source_font_height), theme.get_palette_raylib_color(.Background2));
 
             line_info_text := raylib.TextFormat(
-                "Line: %d, Col: %d --- Slice Index: %d, Content Index: %d",
+                "Line: %d, Col: %d, Len: %d --- Slice Index: %d, Content Index: %d",
                 buffer.cursor.line + 1,
                 buffer.cursor.col + 1,
+                core.file_buffer_line_length(buffer, buffer.cursor.index),
                 buffer.cursor.index.slice_index,
                 buffer.cursor.index.content_index);
             line_info_width := raylib.MeasureTextEx(state.font, line_info_text, f32(state.source_font_height), 0).x;

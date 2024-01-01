@@ -67,6 +67,10 @@ draw_menu_bar_item :: proc(state: ^core.State, item: ^MenuBarItem, x, y: i32, pa
 draw_menu_bar :: proc(state: ^core.State, data: ^MenuBarState, x, y: i32, parent_width, parent_height: i32, font_height: int) {
     raylib.DrawRectangle(x, y, parent_width, i32(font_height), theme.get_palette_raylib_color(.Background3));
 
+    raylib.DrawTextEx(state.font, "Editor", raylib.Vector2 { f32(x), f32(y) }, f32(font_height), 0, theme.get_palette_raylib_color(.Foreground1));
+
+    x := x + i32((len("Editor") + 4) * state.source_font_width);
+
     for _, index in data.items {
         item := &data.items[index];
         item_text := raylib.TextFormat("%s", item.text);
@@ -129,6 +133,8 @@ test_menu_item :: proc(state: ^core.State, item: ^MenuBarItem, rect: raylib.Rect
 }
 
 test_menu_bar :: proc(state: ^core.State, menu_bar: ^MenuBarState, x, y: i32, mouse_pos: raylib.Vector2, mouse_has_clicked: bool, font_height: int) {
+    x := x + i32((len("Editor") + 4) * state.source_font_width);
+
     for _, index in menu_bar.items {
         item := &menu_bar.items[index];
         item_text := raylib.TextFormat("%s", item.text);

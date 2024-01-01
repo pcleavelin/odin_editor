@@ -17,7 +17,7 @@ draw_buffer_list_window :: proc(state: ^core.State) {
         win_rec,
         theme.get_palette_raylib_color(.Background4));
 
-    win_margin := raylib.Vector2 { f32(text_padding*2), f32(state.source_font_height) };
+    win_margin := raylib.Vector2 { f32(state.source_font_width), f32(state.source_font_height) };
 
     buffer_prev_width := (win_rec.width - win_margin.x*2) / 2;
     buffer_prev_height := win_rec.height - win_margin.y*2;
