@@ -152,19 +152,32 @@ iterate_file_buffer_until_reverse :: proc(it: ^FileBufferIter, until_proc: Until
     for until_proc(it, iterate_file_buffer_reverse) {}
 }
 
+iterate_peek :: proc(it: ^FileBufferIter, iter_proc: IterProc) -> (character: u8, peek_it: FileBufferIter, cond: bool) {
+    peek_it = it^;
+    character, _, cond = iter_proc(&peek_it);
+    if !cond {
+        return character, peek_it, cond;
+    }
+
+    character = get_character_at_iter(peek_it);
+    return character, peek_it, cond;
+}
+
 until_non_whitespace :: proc(it: ^FileBufferIter, iter_proc: IterProc) -> bool {
+    before_it := it^;
+
     if character, _, cond := iter_proc(it); cond && strings.is_space(rune(character)) {
         return cond;
     }
 
+    it^ = before_it;
     return false;
 }
 
 until_before_non_whitespace :: proc(it: ^FileBufferIter, iter_proc: IterProc) -> bool {
-    peek_it := it^;
-    if character, _, cond := iter_proc(&peek_it); cond && strings.is_space(rune(character)) {
+    if character, peek_it, cond := iterate_peek(it, iter_proc); cond && strings.is_space(rune(character)) {
         it^ = peek_it;
-        return cond;
+        return true;
     }
 
     return false;
@@ -173,11 +186,13 @@ until_before_non_whitespace :: proc(it: ^FileBufferIter, iter_proc: IterProc) ->
 until_non_alpha_num :: proc(it: ^FileBufferIter, iter_proc: IterProc) -> bool {
     // TODO: make this global
     set, _ := strings.ascii_set_make("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_");
+    before_it := it^;
 
     if character, _, cond := iter_proc(it); cond && strings.ascii_set_contains(set, character) {
         return cond;
     }
 
+    it^ = before_it;
     return false;
 }
 
@@ -185,8 +200,7 @@ until_before_non_alpha_num :: proc(it: ^FileBufferIter, iter_proc: IterProc) -> 
     // TODO: make this global
     set, _ := strings.ascii_set_make("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_");
 
-    peek_it := it^;
-    if character, _, cond := iter_proc(&peek_it); cond && strings.ascii_set_contains(set, character) {
+    if character, peek_it, cond := iterate_peek(it, iter_proc); cond && strings.ascii_set_contains(set, character) {
         it^ = peek_it;
         return cond;
     }
@@ -196,8 +210,32 @@ until_before_non_alpha_num :: proc(it: ^FileBufferIter, iter_proc: IterProc) -> 
 
 until_alpha_num :: proc(it: ^FileBufferIter, iter_proc: IterProc) -> bool {
     set, _ := strings.ascii_set_make("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_");
+    before_it := it^;
 
     if character, _, cond := iter_proc(it); cond && !strings.ascii_set_contains(set, character) {
+        return cond;
+    }
+
+    it^ = before_it;
+    return false;
+}
+
+until_before_alpha_num :: proc(it: ^FileBufferIter, iter_proc: IterProc) -> bool {
+    set, _ := strings.ascii_set_make("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_");
+
+    if character, peek_it, cond := iterate_peek(it, iter_proc); cond && !strings.ascii_set_contains(set, character) {
+        it^ = peek_it;
+        return cond;
+    }
+
+    return false;
+}
+
+until_before_alpha_num_or_whitespace :: proc(it: ^FileBufferIter, iter_proc: IterProc) -> bool {
+    set, _ := strings.ascii_set_make("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_");
+
+    if character, peek_it, cond := iterate_peek(it, iter_proc); cond && (!strings.ascii_set_contains(set, character) && !strings.is_space(rune(character))) {
+        it^ = peek_it;
         return cond;
     }
 
@@ -207,14 +245,18 @@ until_alpha_num :: proc(it: ^FileBufferIter, iter_proc: IterProc) -> bool {
 until_start_of_word :: proc(it: ^FileBufferIter, iter_proc: IterProc) -> bool {
     set, _ := strings.ascii_set_make("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_");
 
-    // if not already on a word, iterate until non-whitespace
-    if character, _, cond := iter_proc(it); cond && (!strings.ascii_set_contains(set, character) && !strings.is_space(rune(character))) {
-        for until_before_non_whitespace(it, iter_proc) {}
+    // if on a symbol go to next symbol or word
+    current_character := get_character_at_iter(it^);
+    if !strings.ascii_set_contains(set, current_character) && !strings.is_space(rune(current_character)) {
+        _, _, cond := iter_proc(it);
+        if !cond { return false; }
+
+        for until_alpha_num(it, iter_proc) {}
         return false;
     }
 
-    for until_before_non_alpha_num(it, iter_proc) {}
-    for until_before_non_whitespace(it, iter_proc) {}
+    for until_non_alpha_num(it, iter_proc) {}
+    for until_non_whitespace(it, iter_proc) {}
 
     return false;
 }
@@ -222,12 +264,41 @@ until_start_of_word :: proc(it: ^FileBufferIter, iter_proc: IterProc) -> bool {
 until_end_of_word :: proc(it: ^FileBufferIter, iter_proc: IterProc) -> bool {
     set, _ := strings.ascii_set_make("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_");
 
-    if character, _, cond := iter_proc(it); cond && !strings.ascii_set_contains(set, character) && !strings.is_space(rune(character)) {
-        for until_before_non_whitespace(it, iter_proc) {}
-        return false;
+    current_character := get_character_at_iter(it^);
+    if character, peek_it, cond := iterate_peek(it, iter_proc); strings.ascii_set_contains(set, current_character) {
+        // if current charater is a word
+
+        if strings.is_space(rune(character)) {
+            it^ = peek_it;
+            for until_non_whitespace(it, iter_proc) {}
+        }
+
+        if strings.ascii_set_contains(set, character) {
+            // we are within a word
+            for until_before_non_alpha_num(it, iter_proc) {}
+        } else {
+            // we are at the start of a word
+            for until_before_alpha_num_or_whitespace(it, iter_proc) {}
+        }
+    } else if character, peek_it, cond := iterate_peek(it, iter_proc); !strings.ascii_set_contains(set, current_character)  {
+        // if current charater is a symbol
+
+        if strings.is_space(rune(character)) {
+            it^ = peek_it;
+            for until_non_whitespace(it, iter_proc) {}
+
+            character = get_character_at_iter(it^);
+        }
+
+        if !strings.ascii_set_contains(set, character) {
+            // we are within a run of symbols
+            for until_before_alpha_num_or_whitespace(it, iter_proc) {}
+        } else {
+            // we are at the start of a run of symbols
+            for until_before_non_alpha_num(it, iter_proc) {}
+        }
     }
 
-    for until_before_non_alpha_num(it, iter_proc) {}
     return false;
 }
 
@@ -382,11 +453,9 @@ move_cursor_up :: proc(buffer: ^FileBuffer, amount: int = 1) {
         }
 
         buffer.cursor = it.cursor;
-
-        if buffer.cursor.line < buffer.top_line + 5 && buffer.cursor.line >= 4 {
-            buffer.top_line = buffer.cursor.line - 4;
-        }
     }
+
+    update_file_buffer_scroll(buffer);
 }
 
 move_cursor_down :: proc(buffer: ^FileBuffer, amount: int = 1) {
@@ -410,10 +479,7 @@ move_cursor_down :: proc(buffer: ^FileBuffer, amount: int = 1) {
     }
 
     buffer.cursor = it.cursor;
-
-    if buffer.cursor.line > buffer.top_line + (buffer.glyph_buffer_height - 5) {
-        buffer.top_line = buffer.cursor.line - (buffer.glyph_buffer_height - 5);
-    }
+    update_file_buffer_scroll(buffer);
 }
 
 move_cursor_left :: proc(buffer: ^FileBuffer) {
@@ -440,7 +506,24 @@ move_cursor_forward_start_of_word :: proc(buffer: ^FileBuffer) {
     update_file_buffer_scroll(buffer);
 }
 
+move_cursor_forward_end_of_word :: proc(buffer: ^FileBuffer) {
+    it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+    iterate_file_buffer_until(&it, until_end_of_word);
+    buffer.cursor = it.cursor;
+
+    update_file_buffer_scroll(buffer);
+}
+
 move_cursor_backward_start_of_word :: proc(buffer: ^FileBuffer) {
+    it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+    iterate_file_buffer_until_reverse(&it, until_end_of_word);
+    //iterate_file_buffer_until(&it, until_non_whitespace);
+    buffer.cursor = it.cursor;
+
+    update_file_buffer_scroll(buffer);
+}
+
+move_cursor_backward_end_of_word :: proc(buffer: ^FileBuffer) {
     it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
     iterate_file_buffer_until_reverse(&it, until_start_of_word);
     buffer.cursor = it.cursor;
@@ -602,10 +685,13 @@ is_keyword :: proc(start: FileBufferIter, end: FileBufferIter) -> (matches: bool
             }
 
             keyword_index += 1;
-            if keyword_index >= len(keyword) && it == end {
-                matches = true;
+            if keyword_index >= len(keyword)-1 && it == end {
+                if get_character_at_iter(it) == keyword[keyword_index] {
+                    matches = true;
+                }
+
                 break;
-            } else if keyword_index >= len(keyword) {
+            } else if keyword_index >= len(keyword)-1 {
                 break;
             } else if it == end {
                 break;
@@ -706,20 +792,18 @@ color_buffer :: proc(buffer: ^FileBuffer) {
 
             iterate_file_buffer_until(&it, until_end_of_word);
 
-            end_of_word_it := it;
-            _, _, succ := iterate_file_buffer_reverse(&end_of_word_it);
-            if !succ { break; }
-
             // TODO: color keywords
             if is_keyword(start_it, it) {
-                color_character(buffer, start_it.cursor, end_of_word_it.cursor, .Blue);
-            } else if character, _, cond := iterate_file_buffer(&it); cond {
+                color_character(buffer, start_it.cursor, it.cursor, .Blue);
+            } else if character, _, cond := iterate_peek(&it, iterate_file_buffer); cond {
                 if character == '(' {
-                    color_character(buffer, start_it.cursor, end_of_word_it.cursor, .Green);
+                    color_character(buffer, start_it.cursor, it.cursor, .Green);
                 }
             } else {
                 break;
             }
+
+            iterate_file_buffer(&it);
         }
     }
 }
@@ -840,8 +924,8 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, fon
 update_file_buffer_scroll :: proc(buffer: ^FileBuffer) {
     if buffer.cursor.line > (buffer.top_line + buffer.glyph_buffer_height - 5) {
         buffer.top_line = math.max(buffer.cursor.line - buffer.glyph_buffer_height + 5, 0);
-    } else {
-        // TODO: scroll buffer up
+    } else if buffer.cursor.line < (buffer.top_line + 5) {
+        buffer.top_line = math.max(buffer.cursor.line - 5, 0);
     }
 }
 

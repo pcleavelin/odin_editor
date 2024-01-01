@@ -110,6 +110,10 @@ register_default_input_actions :: proc(input_map: ^core.InputMap) {
     core.register_key_action(input_map, .W, proc(state: ^State) {
         core.move_cursor_forward_start_of_word(&state.buffers[state.current_buffer]);
     }, "move forward one word");
+    core.register_key_action(input_map, .E, proc(state: ^State) {
+        core.move_cursor_forward_end_of_word(&state.buffers[state.current_buffer]);
+    }, "move forward to end of word");
+
     core.register_key_action(input_map, .B, proc(state: ^State) {
         core.move_cursor_backward_start_of_word(&state.buffers[state.current_buffer]);
     }, "move backward one word");
@@ -155,6 +159,10 @@ register_default_input_actions :: proc(input_map: ^core.InputMap) {
     core.register_key_action(input_map, .I, proc(state: ^State) {
         state.mode = .Insert;
     }, "enter insert mode");
+    core.register_key_action(input_map, .A, proc(state: ^State) {
+        core.move_cursor_right(&state.buffers[state.current_buffer]);
+        state.mode = .Insert;
+    }, "enter insert mode after character (append)");
 
     core.register_key_action(input_map, .SPACE, core.new_input_map(), "leader commands");
     register_default_leader_actions(&(&input_map.key_actions[.SPACE]).action.(core.InputMap));
@@ -317,7 +325,7 @@ main :: proc() {
                 ui.draw_buffer_list_window(&state);
             }
 
-            if state.current_input_map != &state.input_map {
+            if true || state.current_input_map != &state.input_map {
                 longest_description := 0;
                 for key, action in state.current_input_map.key_actions {
                     if len(action.description) > longest_description {
