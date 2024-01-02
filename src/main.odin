@@ -19,8 +19,8 @@ FileBuffer :: core.FileBuffer;
 // TODO: use buffer list in state
 do_normal_mode :: proc(state: ^State, buffer: ^FileBuffer) {
     if state.current_input_map != nil {
-        if raylib.IsKeyDown(.ESCAPE) {
-            state.current_input_map = &state.input_map;
+        if raylib.IsKeyPressed(.ESCAPE) {
+            core.request_window_close(state);
         } else if raylib.IsKeyDown(.LEFT_CONTROL) {
             for key, action in &state.current_input_map.ctrl_key_actions {
                 if raylib.IsKeyPressed(key) {
@@ -87,9 +87,14 @@ switch_to_buffer :: proc(state: ^State, item: ^ui.MenuBarItem) {
 
 register_default_leader_actions :: proc(input_map: ^core.InputMap) {
     core.register_key_action(input_map, .B, proc(state: ^State) {
-        state.buffer_list_window_is_visible = true;
-        state.current_input_map = &state.buffer_list_window_input_map;
+        state.window = ui.create_buffer_list_window();
+        state.current_input_map = &state.window.input_map;
     }, "show list of open buffers");
+    core.register_key_action(input_map, .R, proc(state: ^State) {
+        state.window = ui.create_grep_window();
+        state.current_input_map = &state.window.input_map;
+        state.mode = .Insert;
+    }, "live grep");
     core.register_key_action(input_map, .Q, proc(state: ^State) {
         state.current_input_map = &state.input_map;
     }, "close this help");
@@ -107,62 +112,70 @@ register_default_go_actions :: proc(input_map: ^core.InputMap) {
 }
 
 register_default_input_actions :: proc(input_map: ^core.InputMap) {
-    core.register_key_action(input_map, .W, proc(state: ^State) {
-        core.move_cursor_forward_start_of_word(&state.buffers[state.current_buffer]);
-    }, "move forward one word");
-    core.register_key_action(input_map, .E, proc(state: ^State) {
-        core.move_cursor_forward_end_of_word(&state.buffers[state.current_buffer]);
-    }, "move forward to end of word");
+    // Cursor Movement
+    {
+        core.register_key_action(input_map, .W, proc(state: ^State) {
+            core.move_cursor_forward_start_of_word(&state.buffers[state.current_buffer]);
+        }, "move forward one word");
+        core.register_key_action(input_map, .E, proc(state: ^State) {
+            core.move_cursor_forward_end_of_word(&state.buffers[state.current_buffer]);
+        }, "move forward to end of word");
 
-    core.register_key_action(input_map, .B, proc(state: ^State) {
-        core.move_cursor_backward_start_of_word(&state.buffers[state.current_buffer]);
-    }, "move backward one word");
+        core.register_key_action(input_map, .B, proc(state: ^State) {
+            core.move_cursor_backward_start_of_word(&state.buffers[state.current_buffer]);
+        }, "move backward one word");
 
-    core.register_key_action(input_map, .K, proc(state: ^State) {
-        core.move_cursor_up(&state.buffers[state.current_buffer]);
-    }, "move up one line");
-    core.register_key_action(input_map, .J, proc(state: ^State) {
-        core.move_cursor_down(&state.buffers[state.current_buffer]);
-    }, "move down one line");
-    core.register_key_action(input_map, .H, proc(state: ^State) {
-        core.move_cursor_left(&state.buffers[state.current_buffer]);
-    }, "move left one char");
-    core.register_key_action(input_map, .L, proc(state: ^State) {
-        core.move_cursor_right(&state.buffers[state.current_buffer]);
-    }, "move right one char");
+        core.register_key_action(input_map, .K, proc(state: ^State) {
+            core.move_cursor_up(&state.buffers[state.current_buffer]);
+        }, "move up one line");
+        core.register_key_action(input_map, .J, proc(state: ^State) {
+            core.move_cursor_down(&state.buffers[state.current_buffer]);
+        }, "move down one line");
+        core.register_key_action(input_map, .H, proc(state: ^State) {
+            core.move_cursor_left(&state.buffers[state.current_buffer]);
+        }, "move left one char");
+        core.register_key_action(input_map, .L, proc(state: ^State) {
+            core.move_cursor_right(&state.buffers[state.current_buffer]);
+        }, "move right one char");
 
-    core.register_ctrl_key_action(input_map, .U, proc(state: ^State) {
-        core.scroll_file_buffer(&state.buffers[state.current_buffer], .Up);
-    }, "scroll buffer up");
-    core.register_ctrl_key_action(input_map, .D, proc(state: ^State) {
-        core.scroll_file_buffer(&state.buffers[state.current_buffer], .Down);
-    }, "scroll buffer up");
+        core.register_ctrl_key_action(input_map, .U, proc(state: ^State) {
+            core.scroll_file_buffer(&state.buffers[state.current_buffer], .Up);
+        }, "scroll buffer up");
+        core.register_ctrl_key_action(input_map, .D, proc(state: ^State) {
+            core.scroll_file_buffer(&state.buffers[state.current_buffer], .Down);
+        }, "scroll buffer up");
+    }
 
     // Scale font size
-    core.register_ctrl_key_action(input_map, .MINUS, proc(state: ^State) {
-        if state.source_font_height > 16 {
-            state.source_font_height -= 2;
+    {
+        core.register_ctrl_key_action(input_map, .MINUS, proc(state: ^State) {
+            if state.source_font_height > 16 {
+                state.source_font_height -= 2;
+                state.source_font_width = state.source_font_height / 2;
+
+                state.font = raylib.LoadFontEx("/System/Library/Fonts/Supplemental/Andale Mono.ttf", i32(state.source_font_height*2), nil, 0);
+                raylib.SetTextureFilter(state.font.texture, .BILINEAR);
+            }
+        }, "increase font size");
+        core.register_ctrl_key_action(input_map, .EQUAL, proc(state: ^State) {
+            state.source_font_height += 2;
             state.source_font_width = state.source_font_height / 2;
 
             state.font = raylib.LoadFontEx("/System/Library/Fonts/Supplemental/Andale Mono.ttf", i32(state.source_font_height*2), nil, 0);
             raylib.SetTextureFilter(state.font.texture, .BILINEAR);
-        }
-    }, "increase font size");
-    core.register_ctrl_key_action(input_map, .EQUAL, proc(state: ^State) {
-        state.source_font_height += 2;
-        state.source_font_width = state.source_font_height / 2;
+        }, "decrease font size");
+    }
 
-        state.font = raylib.LoadFontEx("/System/Library/Fonts/Supplemental/Andale Mono.ttf", i32(state.source_font_height*2), nil, 0);
-        raylib.SetTextureFilter(state.font.texture, .BILINEAR);
-    }, "decrease font size");
-
-    core.register_key_action(input_map, .I, proc(state: ^State) {
-        state.mode = .Insert;
-    }, "enter insert mode");
-    core.register_key_action(input_map, .A, proc(state: ^State) {
-        core.move_cursor_right(&state.buffers[state.current_buffer], false);
-        state.mode = .Insert;
-    }, "enter insert mode after character (append)");
+    // Inserting Text
+    {
+        core.register_key_action(input_map, .I, proc(state: ^State) {
+            state.mode = .Insert;
+        }, "enter insert mode");
+        core.register_key_action(input_map, .A, proc(state: ^State) {
+            core.move_cursor_right(&state.buffers[state.current_buffer], false);
+            state.mode = .Insert;
+        }, "enter insert mode after character (append)");
+    }
 
     core.register_key_action(input_map, .SPACE, core.new_input_map(), "leader commands");
     register_default_leader_actions(&(&input_map.key_actions[.SPACE]).action.(core.InputMap));
@@ -171,44 +184,15 @@ register_default_input_actions :: proc(input_map: ^core.InputMap) {
     register_default_go_actions(&(&input_map.key_actions[.G]).action.(core.InputMap));
 }
 
-register_buffer_list_input_actions :: proc(input_map: ^core.InputMap) {
-    core.register_key_action(input_map, .K, proc(state: ^State) {
-        if state.buffer_list_window_selected_buffer > 0 {
-            state.buffer_list_window_selected_buffer -= 1;
-        } else {
-            state.buffer_list_window_selected_buffer = len(state.buffers)-1;
-        }
-    }, "move selection up");
-    core.register_key_action(input_map, .J, proc(state: ^State) {
-        if state.buffer_list_window_selected_buffer >= len(state.buffers)-1 {
-            state.buffer_list_window_selected_buffer = 0;
-        } else {
-            state.buffer_list_window_selected_buffer += 1;
-        }
-    }, "move selection down");
-    core.register_key_action(input_map, .ENTER, proc(state: ^State) {
-        state.current_buffer = state.buffer_list_window_selected_buffer;
-
-        state.buffer_list_window_is_visible = false;
-        state.current_input_map = &state.input_map;
-    }, "switch to file");
-
-    core.register_key_action(input_map, .Q, proc(state: ^State) {
-        state.buffer_list_window_is_visible = false;
-        state.current_input_map = &state.input_map;
-    }, "close window");
-}
-
 main :: proc() {
     state := State {
         source_font_width = 8,
         source_font_height = 16,
         input_map = core.new_input_map(),
-        buffer_list_window_input_map = core.new_input_map(),
+        window = nil,
     };
     state.current_input_map = &state.input_map;
     register_default_input_actions(&state.input_map);
-    register_buffer_list_input_actions(&state.buffer_list_window_input_map);
 
     for arg in os.args[1:] {
         buffer, err := core.new_file_buffer(context.allocator, arg);
@@ -323,8 +307,8 @@ main :: proc() {
                 0,
                 theme.get_palette_raylib_color(.Background1));
 
-            if state.buffer_list_window_is_visible {
-                ui.draw_buffer_list_window(&state);
+            if state.window != nil && state.window.draw != nil {
+                state.window->draw(&state);
             }
 
             if state.current_input_map != &state.input_map {
@@ -377,9 +361,22 @@ main :: proc() {
 
         switch state.mode {
             case .Normal:
-                do_normal_mode(&state, buffer);
+                if state.window != nil && state.window.get_buffer != nil {
+                    do_normal_mode(&state, state.window->get_buffer());
+                } else {
+                    do_normal_mode(&state, buffer);
+                }
             case .Insert:
-                do_insert_mode(&state, buffer);
+                if state.window != nil && state.window.get_buffer != nil {
+                    do_insert_mode(&state, state.window->get_buffer());
+                } else {
+                    do_insert_mode(&state, buffer);
+                }
+        }
+
+        if state.should_close_window {
+            state.should_close_window = false;
+            core.close_window_and_free(&state);
         }
 
         ui.test_menu_bar(&state, &menu_bar_state, 0,0, mouse_pos, raylib.IsMouseButtonReleased(.LEFT), state.source_font_height);

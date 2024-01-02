@@ -86,8 +86,11 @@ iterate_file_buffer :: proc(it: ^FileBufferIter) -> (character: u8, idx: FileBuf
     } else if it.cursor.index.slice_index < len(it.buffer.content_slices)-1 {
         it.cursor.index.content_index = 0;
         it.cursor.index.slice_index += 1;
-    } else {
+    } else if it.hit_end {
         return character, it.cursor.index, false;
+    } else {
+        it.hit_end = true;
+        return character, it.cursor.index, true;
     }
 
     if character == '\n' {
@@ -531,6 +534,31 @@ move_cursor_backward_end_of_word :: proc(buffer: ^FileBuffer) {
     update_file_buffer_scroll(buffer);
 }
 
+new_virtual_file_buffer :: proc(allocator: mem.Allocator) -> FileBuffer {
+    context.allocator = allocator;
+    width := 256;
+    height := 256;
+
+    buffer := FileBuffer {
+        allocator = allocator,
+        file_path = "virtual_buffer",
+
+        original_content = slice.clone_to_dynamic([]u8{'\n'}),
+        added_content = make([dynamic]u8, 0, 1024*1024),
+        content_slices = make([dynamic][]u8, 0, 1024*1024),
+
+        glyph_buffer_width = width,
+        glyph_buffer_height = height,
+        glyph_buffer = make([dynamic]Glyph, width*height, width*height),
+
+        input_buffer = make([dynamic]u8, 0, 1024),
+    };
+
+    append(&buffer.content_slices, buffer.original_content[:]);
+
+    return buffer;
+}
+
 new_file_buffer :: proc(allocator: mem.Allocator, file_path: string) -> (FileBuffer, Error) {
     context.allocator = allocator;
 
@@ -565,6 +593,14 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string) -> (FileBuf
     } else {
         return FileBuffer{}, error(ErrorType.FileIOError, fmt.aprintf("failed to read from file"));
     }
+}
+
+free_file_buffer :: proc(buffer: ^FileBuffer) {
+    delete(buffer.original_content);
+    delete(buffer.added_content);
+    delete(buffer.content_slices);
+    delete(buffer.glyph_buffer);
+    delete(buffer.input_buffer);
 }
 
 is_keyword :: proc(start: FileBufferIter, end: FileBufferIter) -> (matches: bool) {

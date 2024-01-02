@@ -8,6 +8,36 @@ Mode :: enum {
     Insert,
 }
 
+WindowDrawProc :: proc(win: ^Window, state: ^State);
+WindowFreeProc :: proc(win: ^Window, state: ^State);
+WindowGetBufferProc :: proc(win: ^Window) -> ^FileBuffer;
+Window :: struct {
+    input_map: InputMap,
+    draw: WindowDrawProc,
+    free: WindowFreeProc,
+
+    get_buffer: WindowGetBufferProc,
+
+    // TODO: create hook for when mode changes happen
+}
+request_window_close :: proc(state: ^State) {
+    state.should_close_window = true;
+}
+
+close_window_and_free :: proc(state: ^State) {
+    if state.window != nil {
+        if state.window.free != nil {
+            state.window->free(state);
+        }
+
+        delete_input_map(&state.window.input_map);
+        free(state.window);
+
+        state.window = nil;
+        state.current_input_map = &state.input_map;
+    }
+}
+
 State :: struct {
     mode: Mode,
     should_close: bool,
@@ -22,10 +52,8 @@ State :: struct {
     current_buffer: int,
     buffers: [dynamic]FileBuffer,
 
-    // TODO: replace this with generic pointer to floating window
-    buffer_list_window_is_visible: bool,
-    buffer_list_window_selected_buffer: int,
-    buffer_list_window_input_map: InputMap, 
+    window: ^Window,
+    should_close_window: bool,
 
     input_map: InputMap,
     current_input_map: ^InputMap,
@@ -49,6 +77,10 @@ new_input_map :: proc() -> InputMap {
     }
 
     return input_map;
+}
+delete_input_map :: proc(input_map: ^InputMap) {
+    delete(input_map.key_actions);
+    delete(input_map.ctrl_key_actions);
 }
 
 // NOTE(pcleavelin): might be a bug in the compiler where it can't coerce
