@@ -3,14 +3,18 @@
     nixpkgs.url      = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url  = "github:numtide/flake-utils";
     nixgl.url        = "github:guibou/nixGL";
+    rust-overlay.url = "github:oxalica/rust-overlay";
   };
 
-  outputs = { self, nixpkgs, flake-utils, nixgl, ... }:
+  outputs = { self, nixpkgs, flake-utils, nixgl, rust-overlay, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        overlays = [ nixgl.overlay ];
+        overlays = [ nixgl.overlay (import rust-overlay) ];
         pkgs = import nixpkgs {
           inherit system overlays;
+        };
+        local-rust = (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain).override {
+          extensions = [ "rust-analysis" ];
         };
         fixed-odin = pkgs.odin.overrideAttrs (finalAttrs: prevAttr: rec {
           src = /Users/temp/Documents/personal/Odin;
@@ -48,6 +52,8 @@
         devShell = pkgs.mkShell {
           buildInputs = with pkgs; (if pkgs.system == "aarch64-darwin" || pkgs.system == "x86_64-darwin" then [
             fixed-odin
+            local-rust
+            rust-analyzer
             darwin.apple_sdk.frameworks.CoreData
             darwin.apple_sdk.frameworks.Kernel
             darwin.apple_sdk.frameworks.CoreVideo
@@ -59,6 +65,8 @@
             pkg-config
             binutils
             odin
+            local-rust
+            rust-analyzer
             libGL
             xorg.libX11
             xorg.libXi

@@ -1,0 +1,13 @@
+[package]
+name = "rg"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+grep = "0.3.1"
+termcolor = "1.4.0"
+walkdir = "2.4.0"

@@ -370,6 +370,8 @@ update_file_buffer_index_from_cursor :: proc(buffer: ^FileBuffer) {
 
     // FIXME: just swap cursors
     buffer.cursor.index = before_it.cursor.index;
+
+    update_file_buffer_scroll(buffer);
 }
 
 file_buffer_line_length :: proc(buffer: ^FileBuffer, index: FileBufferIndex) -> int {
