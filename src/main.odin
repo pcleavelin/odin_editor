@@ -218,6 +218,7 @@ main :: proc() {
     raylib.SetTargetFPS(60);
     raylib.SetExitKey(.KEY_NULL);
 
+    // TODO: don't just hard code a MacOS font path
     state.font = raylib.LoadFontEx("/System/Library/Fonts/Supplemental/Andale Mono.ttf", i32(state.source_font_height*2), nil, 0);
     raylib.SetTextureFilter(state.font.texture, .BILINEAR);
     menu_bar_state := ui.MenuBarState{

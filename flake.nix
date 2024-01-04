@@ -17,7 +17,12 @@
           extensions = [ "rust-analysis" ];
         };
         fixed-odin = pkgs.odin.overrideAttrs (finalAttrs: prevAttr: rec {
-          src = /Users/temp/Documents/personal/Odin;
+          src = pkgs.fetchFromGitHub {
+            owner = "pcleavelin";
+            repo = "Odin";
+            rev = "59aa05170d54edff75aed220bb1653fc369573d7";
+            hash = "sha256-ZMcVugE0uRHba8jmQjTyQ9KKDUdIVSELggKDz9iSiwY=";
+          };
           LLVM_CONFIG = "${pkgs.llvmPackages_17.llvm.dev}/bin/llvm-config";
           nativeBuildInputs = with pkgs; prevAttr.nativeBuildInputs ++ [ libcxx libcxxabi ];
           postPatch = prevAttr.postPatch + ''
