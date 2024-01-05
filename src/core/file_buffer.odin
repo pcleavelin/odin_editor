@@ -916,7 +916,13 @@ update_glyph_buffer :: proc(buffer: ^FileBuffer) {
 
 draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, font: raylib.Font, show_line_numbers: bool = true) {
     update_glyph_buffer(buffer);
-    color_buffer(buffer);
+    for plugin in state.plugins {
+        if plugin.on_initialize != nil {
+            plugin.on_draw(plugin.plugin);
+        }
+    }
+    //color_buffer(buffer);
+    //update_glyph_buffer(buffer);
 
     padding := 0;
     if show_line_numbers {

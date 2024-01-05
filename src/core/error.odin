@@ -5,6 +5,7 @@ import "core:runtime"
 ErrorType :: enum {
     None,
     FileIOError,
+    PluginLoadError,
 }
 
 Error :: struct {

@@ -1,7 +1,10 @@
 package core
 
+import "core:runtime"
 import "core:fmt"
 import "vendor:raylib"
+
+import "../plugin"
 
 Mode :: enum {
     Normal,
@@ -39,6 +42,8 @@ close_window_and_free :: proc(state: ^State) {
 }
 
 State :: struct {
+    ctx: runtime.Context,
+
     mode: Mode,
     should_close: bool,
     screen_height: int,
@@ -59,6 +64,8 @@ State :: struct {
 
     input_map: InputMap,
     current_input_map: ^InputMap,
+
+    plugins: [dynamic]plugin.Interface,
 }
 
 EditorAction :: proc(state: ^State);

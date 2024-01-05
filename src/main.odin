@@ -13,6 +13,7 @@ import "vendor:raylib"
 import "core"
 import "theme"
 import "ui"
+import "plugin"
 
 State :: core.State;
 FileBuffer :: core.FileBuffer;
@@ -185,14 +186,221 @@ register_default_input_actions :: proc(input_map: ^core.InputMap) {
     register_default_go_actions(&(&input_map.key_actions[.G]).action.(core.InputMap));
 }
 
+load_plugins :: proc(state: ^State) -> core.Error {
+    if loaded_plugin, succ := plugin.try_load_plugin("bin/odin_highlighter.dylib"); succ {
+        loaded_plugin.plugin = plugin.Plugin {
+            state = cast(rawptr)state,
+            iter = plugin.Iterator {
+                get_current_buffer_iterator = proc "c" (state: rawptr) -> plugin.BufferIter {
+                    state := cast(^State)state;
+                    context = state.ctx;
+
+                    it := core.new_file_buffer_iter(&state.buffers[state.current_buffer]);
+
+                    // TODO: make this into a function
+                    return plugin.BufferIter {
+                        cursor = plugin.Cursor {
+                            col = it.cursor.col,
+                            line = it.cursor.line,
+                            index = plugin.BufferIndex {
+                                slice_index = it.cursor.index.slice_index,
+                                content_index = it.cursor.index.content_index,
+                            }
+                        },
+                        buffer = cast(rawptr)it.buffer,
+                        hit_end = it.hit_end,
+                    }
+                },
+                get_char_at_iter = proc "c" (state: rawptr, it: ^plugin.BufferIter) -> u8 {
+                    state := cast(^State)state;
+                    context = state.ctx;
+
+                    internal_it := core.FileBufferIter {
+                        cursor = core.Cursor {
+                            col = it.cursor.col,
+                            line = it.cursor.line,
+                            index = core.FileBufferIndex {
+                                slice_index = it.cursor.index.slice_index,
+                                content_index = it.cursor.index.content_index,
+                            }
+                        },
+                        buffer = cast(^core.FileBuffer)it.buffer,
+                        hit_end = it.hit_end,
+                    }
+
+                    return core.get_character_at_iter(internal_it);
+                },
+                iterate_buffer = proc "c" (state: rawptr, it: ^plugin.BufferIter) -> plugin.IterateResult {
+                    state := cast(^State)state;
+                    context = state.ctx;
+
+                    // TODO: make this into a function
+                    internal_it := core.FileBufferIter {
+                        cursor = core.Cursor {
+                            col = it.cursor.col,
+                            line = it.cursor.line,
+                            index = core.FileBufferIndex {
+                                slice_index = it.cursor.index.slice_index,
+                                content_index = it.cursor.index.content_index,
+                            }
+                        },
+                        buffer = cast(^core.FileBuffer)it.buffer,
+                        hit_end = it.hit_end,
+                    }
+
+                    char, _, cond := core.iterate_file_buffer(&internal_it);
+
+                    it^ = plugin.BufferIter {
+                        cursor = plugin.Cursor {
+                            col = internal_it.cursor.col,
+                            line = internal_it.cursor.line,
+                            index = plugin.BufferIndex {
+                                slice_index = internal_it.cursor.index.slice_index,
+                                content_index = internal_it.cursor.index.content_index,
+                            }
+                        },
+                        buffer = cast(rawptr)internal_it.buffer,
+                        hit_end = internal_it.hit_end,
+                    };
+
+                    return plugin.IterateResult {
+                        char = char,
+                        should_stop = cond,
+                    };
+                },
+                iterate_buffer_reverse = proc "c" (state: rawptr, it: ^plugin.BufferIter) -> plugin.IterateResult {
+                    state := cast(^State)state;
+                    context = state.ctx;
+
+                    // TODO: make this into a function
+                    internal_it := core.FileBufferIter {
+                        cursor = core.Cursor {
+                            col = it.cursor.col,
+                            line = it.cursor.line,
+                            index = core.FileBufferIndex {
+                                slice_index = it.cursor.index.slice_index,
+                                content_index = it.cursor.index.content_index,
+                            }
+                        },
+                        buffer = cast(^core.FileBuffer)it.buffer,
+                        hit_end = it.hit_end,
+                    }
+
+                    char, _, cond := core.iterate_file_buffer_reverse(&internal_it);
+
+                    it^ = plugin.BufferIter {
+                        cursor = plugin.Cursor {
+                            col = internal_it.cursor.col,
+                            line = internal_it.cursor.line,
+                            index = plugin.BufferIndex {
+                                slice_index = internal_it.cursor.index.slice_index,
+                                content_index = internal_it.cursor.index.content_index,
+                            }
+                        },
+                        buffer = cast(rawptr)internal_it.buffer,
+                        hit_end = internal_it.hit_end,
+                    };
+
+                    return plugin.IterateResult {
+                        char = char,
+                        should_stop = cond,
+                    };
+                },
+                iterate_buffer_until = proc "c" (state: rawptr, it: ^plugin.BufferIter, until_proc: rawptr) {
+                    state := cast(^State)state;
+                    context = state.ctx;
+
+                    // TODO: make this into a function
+                    internal_it := core.FileBufferIter {
+                        cursor = core.Cursor {
+                            col = it.cursor.col,
+                            line = it.cursor.line,
+                            index = core.FileBufferIndex {
+                                slice_index = it.cursor.index.slice_index,
+                                content_index = it.cursor.index.content_index,
+                            }
+                        },
+                        buffer = cast(^core.FileBuffer)it.buffer,
+                        hit_end = it.hit_end,
+                    }
+
+                    core.iterate_file_buffer_until(&internal_it, transmute(core.UntilProc)until_proc);
+
+                    it^ = plugin.BufferIter {
+                        cursor = plugin.Cursor {
+                            col = internal_it.cursor.col,
+                            line = internal_it.cursor.line,
+                            index = plugin.BufferIndex {
+                                slice_index = internal_it.cursor.index.slice_index,
+                                content_index = internal_it.cursor.index.content_index,
+                            }
+                        },
+                        buffer = cast(rawptr)internal_it.buffer,
+                        hit_end = internal_it.hit_end,
+                    };
+                },
+                until_line_break = transmute(rawptr)core.until_line_break,
+                until_single_quote = transmute(rawptr)core.until_single_quote,
+                until_double_quote = transmute(rawptr)core.until_double_quote,
+                until_end_of_word = transmute(rawptr)core.until_end_of_word,
+            },
+            buffer = plugin.Buffer {
+                get_buffer_info = proc "c" (state: rawptr) -> plugin.BufferInfo {
+                    state := cast(^State)state;
+                    context = state.ctx;
+
+                    buffer := &state.buffers[state.current_buffer];
+
+                    return plugin.BufferInfo {
+                        glyph_buffer_width = buffer.glyph_buffer_width,
+                        glyph_buffer_height = buffer.glyph_buffer_height,
+                        top_line = buffer.top_line,
+                    };
+                },
+                color_char_at = proc "c" (state: rawptr, start_cursor: plugin.Cursor, end_cursor: plugin.Cursor, palette_index: i32) {
+                    state := cast(^State)state;
+                    context = state.ctx;
+
+                    buffer := &state.buffers[state.current_buffer];
+
+                    start_cursor := core.Cursor {
+                        col = start_cursor.col,
+                        line = start_cursor.line,
+                        index = core.FileBufferIndex {
+                            slice_index = start_cursor.index.slice_index,
+                            content_index = start_cursor.index.content_index,
+                        }
+                    };
+                    end_cursor := core.Cursor {
+                        col = end_cursor.col,
+                        line = end_cursor.line,
+                        index = core.FileBufferIndex {
+                            slice_index = end_cursor.index.slice_index,
+                            content_index = end_cursor.index.content_index,
+                        }
+                    };
+
+                    core.color_character(buffer, start_cursor, end_cursor, cast(theme.PaletteColor)palette_index);
+                }
+            }
+        };
+
+        append(&state.plugins, loaded_plugin);
+        fmt.println("Loaded Odin Highlighter plugin");
+        return core.no_error();
+    }
+
+    return core.make_error(.PluginLoadError, fmt.aprintf("failed to load Odin Highligher plugin"));
+}
+
 main :: proc() {
     state := State {
         source_font_width = 8,
         source_font_height = 16,
         input_map = core.new_input_map(),
         window = nil,
-
         directory = os.get_current_directory(),
+        plugins = make([dynamic]plugin.Interface),
     };
     state.current_input_map = &state.input_map;
     register_default_input_actions(&state.input_map);
@@ -214,6 +422,17 @@ main :: proc() {
         };
 
         runtime.append(&buffer_items, item);
+    }
+
+    // Load plugins
+    if err := load_plugins(&state); err.type != .None {
+        fmt.println(err.msg);
+    }
+
+    for plugin in state.plugins {
+        if plugin.on_initialize != nil {
+            plugin.on_initialize(plugin.plugin);
+        }
     }
 
     raylib.InitWindow(640, 480, "odin_editor - [back to basics]");
@@ -248,6 +467,14 @@ main :: proc() {
             defer raylib.EndDrawing();
 
             raylib.ClearBackground(theme.get_palette_raylib_color(.Background));
+
+            // TODO: be more granular in /what/ is being draw by the plugin
+            for plugin in state.plugins {
+                if plugin.on_initialize != nil {
+                    //plugin.on_draw(plugin.plugin);
+                }
+            }
+
             core.draw_file_buffer(&state, buffer, 32, state.source_font_height, state.font);
             ui.draw_menu_bar(&state, &menu_bar_state, 0, 0, i32(state.screen_width), i32(state.screen_height), state.source_font_height);
 
@@ -392,5 +619,11 @@ main :: proc() {
         }
 
         ui.test_menu_bar(&state, &menu_bar_state, 0,0, mouse_pos, raylib.IsMouseButtonReleased(.LEFT), state.source_font_height);
+    }
+
+    for plugin in state.plugins {
+        if plugin.on_exit != nil {
+            plugin.on_exit();
+        }
     }
 }
