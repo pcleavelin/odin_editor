@@ -186,14 +186,25 @@ register_default_input_actions :: proc(input_map: ^core.InputMap) {
     register_default_go_actions(&(&input_map.key_actions[.G]).action.(core.InputMap));
 }
 
-load_plugins :: proc(state: ^State) -> core.Error {
-    if loaded_plugin, succ := plugin.try_load_plugin("bin/highlighter.dylib"); succ {
-        append(&state.plugins, loaded_plugin);
-        fmt.println("Loaded Odin Highlighter plugin");
-        return core.no_error();
+load_plugin :: proc(info: os.File_Info, in_err: os.Errno, state: rawptr) -> (err: os.Errno, skip_dir: bool) {
+    state := cast(^State)state;
+
+    relative_file_path, rel_error := filepath.rel(state.directory, info.fullpath);
+    extension := filepath.ext(info.fullpath);
+
+    if extension == ".dylib" || extension == ".dll" || extension == ".so" {
+        if loaded_plugin, succ := plugin.try_load_plugin(info.fullpath); succ {
+            append(&state.plugins, loaded_plugin);
+
+            if rel_error == .None {
+                fmt.println("Loaded", relative_file_path);
+            } else {
+                fmt.println("Loaded", info.fullpath);
+            }
+        }
     }
 
-    return core.make_error(.PluginLoadError, fmt.aprintf("failed to load Odin Highligher plugin"));
+    return in_err, skip_dir;
 }
 
 main :: proc() {
@@ -496,9 +507,7 @@ main :: proc() {
     }
 
     // Load plugins
-    if err := load_plugins(&state); err.type != .None {
-        fmt.println(err.msg);
-    }
+    filepath.walk(filepath.join({ state.directory, "bin" }), load_plugin, transmute(rawptr)&state);
 
     for plugin in state.plugins {
         if plugin.on_initialize != nil {

@@ -14,7 +14,7 @@ BufferIndex :: p.BufferIndex;
 @export
 OnInitialize :: proc "c" (plugin: Plugin) {
     context = runtime.default_context();
-    fmt.println("Hello from the Odin Highlighter Plugin!");
+    fmt.println("builtin highlighter plugin initialized!");
 
     plugin.register_highlighter(plugin.state, ".odin", color_buffer_odin);
     plugin.register_highlighter(plugin.state, ".rs", color_buffer_rust);

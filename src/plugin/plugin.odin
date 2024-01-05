@@ -76,7 +76,6 @@ load_proc_address :: proc(lib_path: string, library: dynlib.Library, symbol: str
     where intrinsics.type_is_proc(ProcType)
 {
     if address, found := dynlib.symbol_address(library, symbol); found {
-        fmt.println("The symbol", symbol, "was found at the address", address);
         return transmute(ProcType)address;
     } else {
         fmt.println("Could not find symbol", symbol, "in library", lib_path);
@@ -91,9 +90,14 @@ try_load_plugin :: proc(lib_path: string) -> (plugin: Interface, success: bool) 
         return {}, false;
     }
 
-    return Interface {
+    interface := Interface {
         on_initialize = load_proc_address(lib_path, library, "OnInitialize", OnInitializeProc),
         on_exit = load_proc_address(lib_path, library, "OnExit", OnExitProc),
         on_draw = load_proc_address(lib_path, library, "OnDraw", OnDrawProc),
-    }, true;
+    };
+
+    if interface.on_initialize == nil do return interface, false;
+    if interface.on_exit == nil do return interface, false;
+
+    return interface, true
 }
