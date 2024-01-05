@@ -18,6 +18,8 @@ import "plugin"
 State :: core.State;
 FileBuffer :: core.FileBuffer;
 
+state := core.State {};
+
 // TODO: use buffer list in state
 do_normal_mode :: proc(state: ^State, buffer: ^FileBuffer) {
     if state.current_input_map != nil {
@@ -208,7 +210,7 @@ load_plugin :: proc(info: os.File_Info, in_err: os.Errno, state: rawptr) -> (err
 }
 
 main :: proc() {
-    state := State {
+    state = State {
         ctx = context,
         source_font_width = 8,
         source_font_height = 16,
@@ -220,8 +222,7 @@ main :: proc() {
     };
     state.plugin_vtable = plugin.Plugin {
         state = cast(rawptr)&state,
-        register_highlighter = proc "c" (state: rawptr, extension: cstring, on_color_buffer: plugin.OnColorBufferProc) {
-            state := cast(^State)state;
+        register_highlighter = proc "c" (extension: cstring, on_color_buffer: plugin.OnColorBufferProc) {
             context = state.ctx;
 
             extension := strings.clone(string(extension));
@@ -233,8 +234,7 @@ main :: proc() {
             }
         },
         iter = plugin.Iterator {
-            get_current_buffer_iterator = proc "c" (state: rawptr) -> plugin.BufferIter {
-                state := cast(^State)state;
+            get_current_buffer_iterator = proc "c" () -> plugin.BufferIter {
                 context = state.ctx;
 
                 it := core.new_file_buffer_iter(&state.buffers[state.current_buffer]);
@@ -253,8 +253,7 @@ main :: proc() {
                     hit_end = it.hit_end,
                 }
             },
-            get_buffer_iterator = proc "c" (state: rawptr, buffer: rawptr) -> plugin.BufferIter {
-                state := cast(^State)state;
+            get_buffer_iterator = proc "c" (buffer: rawptr) -> plugin.BufferIter {
                 buffer := cast(^core.FileBuffer)buffer;
                 context = state.ctx;
 
@@ -274,8 +273,7 @@ main :: proc() {
                     hit_end = it.hit_end,
                 }
             },
-            get_char_at_iter = proc "c" (state: rawptr, it: ^plugin.BufferIter) -> u8 {
-                state := cast(^State)state;
+            get_char_at_iter = proc "c" (it: ^plugin.BufferIter) -> u8 {
                 context = state.ctx;
 
                 internal_it := core.FileBufferIter {
@@ -293,8 +291,7 @@ main :: proc() {
 
                 return core.get_character_at_iter(internal_it);
             },
-            iterate_buffer = proc "c" (state: rawptr, it: ^plugin.BufferIter) -> plugin.IterateResult {
-                state := cast(^State)state;
+            iterate_buffer = proc "c" (it: ^plugin.BufferIter) -> plugin.IterateResult {
                 context = state.ctx;
 
                 // TODO: make this into a function
@@ -331,8 +328,7 @@ main :: proc() {
                     should_stop = cond,
                 };
             },
-            iterate_buffer_reverse = proc "c" (state: rawptr, it: ^plugin.BufferIter) -> plugin.IterateResult {
-                state := cast(^State)state;
+            iterate_buffer_reverse = proc "c" (it: ^plugin.BufferIter) -> plugin.IterateResult {
                 context = state.ctx;
 
                 // TODO: make this into a function
@@ -369,8 +365,7 @@ main :: proc() {
                     should_stop = cond,
                 };
             },
-            iterate_buffer_until = proc "c" (state: rawptr, it: ^plugin.BufferIter, until_proc: rawptr) {
-                state := cast(^State)state;
+            iterate_buffer_until = proc "c" (it: ^plugin.BufferIter, until_proc: rawptr) {
                 context = state.ctx;
 
                 // TODO: make this into a function
@@ -402,8 +397,7 @@ main :: proc() {
                     hit_end = internal_it.hit_end,
                 };
             },
-            iterate_buffer_peek = proc "c" (state: rawptr, it: ^plugin.BufferIter) -> plugin.IterateResult {
-                state := cast(^State)state;
+            iterate_buffer_peek = proc "c" (it: ^plugin.BufferIter) -> plugin.IterateResult {
                 context = state.ctx;
 
                 // TODO: make this into a function
@@ -446,8 +440,7 @@ main :: proc() {
             until_end_of_word = transmute(rawptr)core.until_end_of_word,
         },
         buffer = plugin.Buffer {
-            get_buffer_info = proc "c" (state: rawptr) -> plugin.BufferInfo {
-                state := cast(^State)state;
+            get_buffer_info = proc "c" () -> plugin.BufferInfo {
                 context = state.ctx;
 
                 buffer := &state.buffers[state.current_buffer];
@@ -458,8 +451,7 @@ main :: proc() {
                     top_line = buffer.top_line,
                 };
             },
-            color_char_at = proc "c" (state: rawptr, buffer: rawptr, start_cursor: plugin.Cursor, end_cursor: plugin.Cursor, palette_index: i32) {
-                state := cast(^State)state;
+            color_char_at = proc "c" (buffer: rawptr, start_cursor: plugin.Cursor, end_cursor: plugin.Cursor, palette_index: i32) {
                 buffer := cast(^core.FileBuffer)buffer;
                 context = state.ctx;
 

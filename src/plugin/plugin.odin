@@ -43,20 +43,20 @@ BufferInfo :: struct {
 }
 
 Buffer :: struct {
-    get_buffer_info: proc "c" (state: rawptr) -> BufferInfo,
-    color_char_at: proc "c" (state: rawptr, buffer: rawptr, start_cursor: Cursor, end_cursor: Cursor, palette_index: i32),
+    get_buffer_info: proc "c" () -> BufferInfo,
+    color_char_at: proc "c" (buffer: rawptr, start_cursor: Cursor, end_cursor: Cursor, palette_index: i32),
 }
 
 Iterator :: struct {
-    get_current_buffer_iterator: proc "c" (state: rawptr) -> BufferIter,
-    get_buffer_iterator: proc "c" (state: rawptr, buffer: rawptr) -> BufferIter,
-    get_char_at_iter: proc "c" (state: rawptr, it: ^BufferIter) -> u8,
+    get_current_buffer_iterator: proc "c" () -> BufferIter,
+    get_buffer_iterator: proc "c" (buffer: rawptr) -> BufferIter,
+    get_char_at_iter: proc "c" (it: ^BufferIter) -> u8,
 
-    iterate_buffer: proc "c" (state: rawptr, it: ^BufferIter) -> IterateResult,
-    iterate_buffer_reverse: proc "c" (state: rawptr, it: ^BufferIter) -> IterateResult,
-    iterate_buffer_until: proc "c" (state: rawptr, it: ^BufferIter, until_proc: rawptr),
-    iterate_buffer_until_reverse: proc "c" (state: rawptr, it: ^BufferIter, until_proc: rawptr),
-    iterate_buffer_peek: proc "c" (state: rawptr, it: ^BufferIter) -> IterateResult,
+    iterate_buffer: proc "c" (it: ^BufferIter) -> IterateResult,
+    iterate_buffer_reverse: proc "c" (it: ^BufferIter) -> IterateResult,
+    iterate_buffer_until: proc "c" (it: ^BufferIter, until_proc: rawptr),
+    iterate_buffer_until_reverse: proc "c" (it: ^BufferIter, until_proc: rawptr),
+    iterate_buffer_peek: proc "c" (it: ^BufferIter) -> IterateResult,
 
     until_line_break: rawptr,
     until_single_quote: rawptr,
@@ -69,7 +69,7 @@ Plugin :: struct {
     iter: Iterator,
     buffer: Buffer,
 
-    register_highlighter: proc "c" (state: rawptr, extension: cstring, on_color_buffer: OnColorBufferProc),
+    register_highlighter: proc "c" (extension: cstring, on_color_buffer: OnColorBufferProc),
 }
 
 load_proc_address :: proc(lib_path: string, library: dynlib.Library, symbol: string, $ProcType: typeid) -> ProcType

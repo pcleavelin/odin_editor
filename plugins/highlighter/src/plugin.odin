@@ -16,8 +16,8 @@ OnInitialize :: proc "c" (plugin: Plugin) {
     context = runtime.default_context();
     fmt.println("builtin highlighter plugin initialized!");
 
-    plugin.register_highlighter(plugin.state, ".odin", color_buffer_odin);
-    plugin.register_highlighter(plugin.state, ".rs", color_buffer_rust);
+    plugin.register_highlighter(".odin", color_buffer_odin);
+    plugin.register_highlighter(".rs", color_buffer_rust);
 }
 
 @export
@@ -31,24 +31,24 @@ OnDraw :: proc "c" (plugin: Plugin) {
     context = runtime.default_context();
 }
 
-iterate_buffer :: proc(state: rawptr, iter_funcs: Iterator, it: ^BufferIter) -> (character: u8, idx: BufferIndex, cond: bool) {
-    result := iter_funcs.iterate_buffer(state, it);
+iterate_buffer :: proc(iter_funcs: Iterator, it: ^BufferIter) -> (character: u8, idx: BufferIndex, cond: bool) {
+    result := iter_funcs.iterate_buffer(it);
 
     return result.char, it.cursor.index, result.should_stop;
 }
 
-iterate_buffer_reverse :: proc(state: rawptr, iter_funcs: Iterator, it: ^BufferIter) -> (character: u8, idx: BufferIndex, cond: bool) {
-    result := iter_funcs.iterate_buffer_reverse(state, it);
+iterate_buffer_reverse :: proc(iter_funcs: Iterator, it: ^BufferIter) -> (character: u8, idx: BufferIndex, cond: bool) {
+    result := iter_funcs.iterate_buffer_reverse(it);
 
     return result.char, it.cursor.index, result.should_stop;
 }
 
 iterate_buffer_until :: proc(plugin: Plugin, it: ^BufferIter, until_proc: rawptr) {
-    plugin.iter.iterate_buffer_until(plugin.state, it, until_proc);
+    plugin.iter.iterate_buffer_until(it, until_proc);
 }
 
 iterate_buffer_peek :: proc(plugin: Plugin, it: ^BufferIter) -> (character: u8, idx: BufferIndex, cond: bool) {
-    result := plugin.iter.iterate_buffer_peek(plugin.state, it);
+    result := plugin.iter.iterate_buffer_peek(it);
 
     return result.char, it.cursor.index, result.should_stop;
 }
@@ -165,14 +165,14 @@ is_odin_keyword :: proc(plugin: Plugin, start: BufferIter, end: BufferIter) -> (
         it := start;
         keyword_index := 0;
 
-        for character in iterate_buffer(plugin.state, plugin.iter, &it) {
+        for character in iterate_buffer(plugin.iter, &it) {
             if character != keyword[keyword_index] {
                 break;
             }
 
             keyword_index += 1;
             if keyword_index >= len(keyword)-1 && it == end {
-                if plugin.iter.get_char_at_iter(plugin.state, &it) == keyword[keyword_index] {
+                if plugin.iter.get_char_at_iter(&it) == keyword[keyword_index] {
                     matches = true;
                 }
 
@@ -250,14 +250,14 @@ is_rust_keyword :: proc(plugin: Plugin, start: BufferIter, end: BufferIter) -> (
         it := start;
         keyword_index := 0;
 
-        for character in iterate_buffer(plugin.state, plugin.iter, &it) {
+        for character in iterate_buffer(plugin.iter, &it) {
             if character != keyword[keyword_index] {
                 break;
             }
 
             keyword_index += 1;
             if keyword_index >= len(keyword)-1 && it == end {
-                if plugin.iter.get_char_at_iter(plugin.state, &it) == keyword[keyword_index] {
+                if plugin.iter.get_char_at_iter(&it) == keyword[keyword_index] {
                     matches = true;
                 }
 
@@ -280,12 +280,12 @@ is_rust_keyword :: proc(plugin: Plugin, start: BufferIter, end: BufferIter) -> (
 color_buffer_odin :: proc "c" (plugin: Plugin, buffer: rawptr) {
     context = runtime.default_context();
 
-    start_it := plugin.iter.get_buffer_iterator(plugin.state, buffer);
-    it := plugin.iter.get_buffer_iterator(plugin.state, buffer);
+    start_it := plugin.iter.get_buffer_iterator(buffer);
+    it := plugin.iter.get_buffer_iterator(buffer);
 
-    buffer := plugin.buffer.get_buffer_info(plugin.state);
+    buffer := plugin.buffer.get_buffer_info();
 
-    for character in iterate_buffer(plugin.state, plugin.iter, &it) {
+    for character in iterate_buffer(plugin.iter, &it) {
         if it.cursor.line > buffer.glyph_buffer_height && (it.cursor.line - buffer.top_line) > buffer.glyph_buffer_height {
             break;
         }
@@ -293,56 +293,56 @@ color_buffer_odin :: proc "c" (plugin: Plugin, buffer: rawptr) {
         if character == '/' {
             start_it = it;
             // need to go back one character because `it` is on the next character
-            iterate_buffer_reverse(plugin.state, plugin.iter, &start_it);
+            iterate_buffer_reverse(plugin.iter, &start_it);
 
-            character, _, succ := iterate_buffer(plugin.state, plugin.iter, &it);
+            character, _, succ := iterate_buffer(plugin.iter, &it);
             if !succ { break; }
 
             if character == '/' {
                 iterate_buffer_until(plugin, &it, plugin.iter.until_line_break);
-                plugin.buffer.color_char_at(plugin.state, it.buffer, start_it.cursor, it.cursor, 9);
+                plugin.buffer.color_char_at(it.buffer, start_it.cursor, it.cursor, 9);
             } else if character == '*' {
                 // TODO: block comments
             }
         } else if character == '\'' {
             start_it = it;
             // need to go back one character because `it` is on the next character
-            iterate_buffer_reverse(plugin.state, plugin.iter, &start_it);
+            iterate_buffer_reverse(plugin.iter, &start_it);
 
             // jump into the quoted text
             iterate_buffer_until(plugin, &it, plugin.iter.until_single_quote);
-            plugin.buffer.color_char_at(plugin.state, it.buffer, start_it.cursor, it.cursor, 12);
+            plugin.buffer.color_char_at(it.buffer, start_it.cursor, it.cursor, 12);
 
-            iterate_buffer(plugin.state, plugin.iter, &it);
+            iterate_buffer(plugin.iter, &it);
         } else if character == '"' {
             start_it = it;
             // need to go back one character because `it` is on the next character
-            iterate_buffer_reverse(plugin.state, plugin.iter, &start_it);
+            iterate_buffer_reverse(plugin.iter, &start_it);
 
             // jump into the quoted text
             iterate_buffer_until(plugin, &it, plugin.iter.until_double_quote);
-            plugin.buffer.color_char_at(plugin.state, it.buffer, start_it.cursor, it.cursor, 12);
+            plugin.buffer.color_char_at(it.buffer, start_it.cursor, it.cursor, 12);
 
-            iterate_buffer(plugin.state, plugin.iter, &it);
+            iterate_buffer(plugin.iter, &it);
         } else if (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') || character == '_' {
             start_it = it;
             // need to go back one character because `it` is on the next character
-            iterate_buffer_reverse(plugin.state, plugin.iter, &start_it);
+            iterate_buffer_reverse(plugin.iter, &start_it);
             it = start_it;
 
             iterate_buffer_until(plugin, &it, plugin.iter.until_end_of_word);
 
             if is_odin_keyword(plugin, start_it, it) {
-                plugin.buffer.color_char_at(plugin.state, it.buffer, start_it.cursor, it.cursor, 13);
+                plugin.buffer.color_char_at(it.buffer, start_it.cursor, it.cursor, 13);
             } else if character, _, cond := iterate_buffer_peek(plugin, &it); cond {
                 if character == '(' {
-                    plugin.buffer.color_char_at(plugin.state, it.buffer, start_it.cursor, it.cursor, 11);
+                    plugin.buffer.color_char_at(it.buffer, start_it.cursor, it.cursor, 11);
                 }
             } else {
                 break;
             }
 
-            iterate_buffer(plugin.state, plugin.iter, &it);
+            iterate_buffer(plugin.iter, &it);
         }
     }
 }
@@ -350,12 +350,12 @@ color_buffer_odin :: proc "c" (plugin: Plugin, buffer: rawptr) {
 color_buffer_rust :: proc "c" (plugin: Plugin, buffer: rawptr) {
     context = runtime.default_context();
 
-    start_it := plugin.iter.get_buffer_iterator(plugin.state, buffer);
-    it := plugin.iter.get_buffer_iterator(plugin.state, buffer);
+    start_it := plugin.iter.get_buffer_iterator(buffer);
+    it := plugin.iter.get_buffer_iterator(buffer);
 
-    buffer := plugin.buffer.get_buffer_info(plugin.state);
+    buffer := plugin.buffer.get_buffer_info();
 
-    for character in iterate_buffer(plugin.state, plugin.iter, &it) {
+    for character in iterate_buffer(plugin.iter, &it) {
         if it.cursor.line > buffer.glyph_buffer_height && (it.cursor.line - buffer.top_line) > buffer.glyph_buffer_height {
             break;
         }
@@ -363,56 +363,56 @@ color_buffer_rust :: proc "c" (plugin: Plugin, buffer: rawptr) {
         if character == '/' {
             start_it = it;
             // need to go back one character because `it` is on the next character
-            iterate_buffer_reverse(plugin.state, plugin.iter, &start_it);
+            iterate_buffer_reverse(plugin.iter, &start_it);
 
-            character, _, succ := iterate_buffer(plugin.state, plugin.iter, &it);
+            character, _, succ := iterate_buffer(plugin.iter, &it);
             if !succ { break; }
 
             if character == '/' {
                 iterate_buffer_until(plugin, &it, plugin.iter.until_line_break);
-                plugin.buffer.color_char_at(plugin.state, it.buffer, start_it.cursor, it.cursor, 9);
+                plugin.buffer.color_char_at(it.buffer, start_it.cursor, it.cursor, 9);
             } else if character == '*' {
                 // TODO: block comments
             }
         } else if character == '\'' && false {
             start_it = it;
             // need to go back one character because `it` is on the next character
-            iterate_buffer_reverse(plugin.state, plugin.iter, &start_it);
+            iterate_buffer_reverse(plugin.iter, &start_it);
 
             // jump into the quoted text
             iterate_buffer_until(plugin, &it, plugin.iter.until_single_quote);
-            plugin.buffer.color_char_at(plugin.state, it.buffer, start_it.cursor, it.cursor, 12);
+            plugin.buffer.color_char_at(it.buffer, start_it.cursor, it.cursor, 12);
 
-            iterate_buffer(plugin.state, plugin.iter, &it);
+            iterate_buffer(plugin.iter, &it);
         } else if character == '"' {
             start_it = it;
             // need to go back one character because `it` is on the next character
-            iterate_buffer_reverse(plugin.state, plugin.iter, &start_it);
+            iterate_buffer_reverse(plugin.iter, &start_it);
 
             // jump into the quoted text
             iterate_buffer_until(plugin, &it, plugin.iter.until_double_quote);
-            plugin.buffer.color_char_at(plugin.state, it.buffer, start_it.cursor, it.cursor, 12);
+            plugin.buffer.color_char_at(it.buffer, start_it.cursor, it.cursor, 12);
 
-            iterate_buffer(plugin.state, plugin.iter, &it);
+            iterate_buffer(plugin.iter, &it);
         } else if (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') || character == '_' {
             start_it = it;
             // need to go back one character because `it` is on the next character
-            iterate_buffer_reverse(plugin.state, plugin.iter, &start_it);
+            iterate_buffer_reverse(plugin.iter, &start_it);
             it = start_it;
 
             iterate_buffer_until(plugin, &it, plugin.iter.until_end_of_word);
 
             if is_rust_keyword(plugin, start_it, it) {
-                plugin.buffer.color_char_at(plugin.state, it.buffer, start_it.cursor, it.cursor, 13);
+                plugin.buffer.color_char_at(it.buffer, start_it.cursor, it.cursor, 13);
             } else if character, _, cond := iterate_buffer_peek(plugin, &it); cond {
                 if character == '(' || character == '<' {
-                    plugin.buffer.color_char_at(plugin.state, it.buffer, start_it.cursor, it.cursor, 11);
+                    plugin.buffer.color_char_at(it.buffer, start_it.cursor, it.cursor, 11);
                 }
             } else {
                 break;
             }
 
-            iterate_buffer(plugin.state, plugin.iter, &it);
+            iterate_buffer(plugin.iter, &it);
         }
     }
 }
