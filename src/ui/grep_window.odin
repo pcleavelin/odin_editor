@@ -27,6 +27,8 @@ foreign rg {
     drop_match_array :: proc(match_array: ExternMatchArray) ---
 }
 
+import "core:os"
+import "core:path/filepath"
 import "core:math"
 import "core:fmt"
 import "core:runtime"
@@ -50,7 +52,7 @@ transmute_extern_matches :: proc(extern_matches: ExternMatchArray, dest: ^[dynam
 
             path: string = "";
             if match.path_ptr != nil && match.path_len > 0 {
-                path = strings.string_from_ptr(match.path_ptr, match.path_len);
+                path, _ = filepath.abs(strings.string_from_ptr(match.path_ptr, match.path_len));
             }
 
             text: string = "";
@@ -88,14 +90,32 @@ create_grep_window :: proc() -> ^GrepWindow {
         win := cast(^GrepWindow)(state.window);
 
         if win.matches != nil && len(win.matches) > 0 {
-            buffer, err := core.new_file_buffer(context.allocator, strings.clone(win.matches[win.selected_match].path));
-            if err.type != .None {
-                fmt.println("Failed to create file buffer:", err);
-            } else {
-                runtime.append(&state.buffers, buffer);
-                state.current_buffer = len(state.buffers)-1;
+            should_create_buffer := true;
+            for buffer, index in state.buffers {
+                if strings.compare(buffer.file_path, win.matches[win.selected_match].path) == 0 {
+                    state.current_buffer = index;
+                    should_create_buffer = false;
+                    break;
+                }
+            }
 
-                buffer := &state.buffers[state.current_buffer];
+            buffer: ^core.FileBuffer = nil;
+            err := core.no_error();
+
+            if should_create_buffer {
+                new_buffer, err := core.new_file_buffer(context.allocator, strings.clone(win.matches[win.selected_match].path));
+                if err.type != .None {
+                    fmt.println("Failed to open/create file buffer:", err);
+                } else {
+                    runtime.append(&state.buffers, new_buffer);
+                    state.current_buffer = len(state.buffers)-1;
+                    buffer = &state.buffers[state.current_buffer];
+                }
+            } else {
+                buffer = &state.buffers[state.current_buffer];
+            }
+
+            if buffer != nil {
                 buffer.cursor.line = win.matches[win.selected_match].line-1;
                 buffer.cursor.col = 0;
                 buffer.glyph_buffer_height = math.min(256, int((state.screen_height - state.source_font_height*2) / state.source_font_height)) + 1;
@@ -198,7 +218,7 @@ grep_files :: proc(win: ^core.Window, state: ^core.State) {
     }
     pattern := strings.clone_to_cstring(strings.to_string(builder));
 
-    win.extern_matches = rg_search(pattern, "./src");
+    win.extern_matches = rg_search(pattern, strings.clone_to_cstring(state.directory));
     transmute_extern_matches(win.extern_matches, &win.matches);
 }
 
@@ -241,7 +261,8 @@ draw_grep_window :: proc(win: ^core.Window, state: ^core.State) {
         show_line_numbers = false);
 
     for match, index in win.matches {
-        text := raylib.TextFormat("%s:%d:%d: %s", match.path, match.line, match.col, match.text);
+        relative_file_path, _ := filepath.rel(state.directory, match.path)
+        text := raylib.TextFormat("%s:%d:%d: %s", relative_file_path, match.line, match.col, match.text);
         text_width := raylib.MeasureTextEx(state.font, text, f32(state.source_font_height), 0);
 
         if index == win.selected_match {

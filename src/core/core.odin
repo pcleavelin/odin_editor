@@ -45,6 +45,8 @@ State :: struct {
     screen_width: int,
     font: raylib.Font,
 
+    directory: string,
+
     source_font_width: int,
     source_font_height: int,
     line_number_padding: int,

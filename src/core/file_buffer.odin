@@ -1,6 +1,7 @@
 package core;
 
 import "core:os"
+import "core:path/filepath"
 import "core:mem"
 import "core:fmt"
 import "core:math"
@@ -45,6 +46,7 @@ Glyph :: struct #packed {
 FileBuffer :: struct {
     allocator: mem.Allocator,
 
+    directory: string,
     file_path: string,
     top_line: int,
     cursor: Cursor,
@@ -561,7 +563,7 @@ new_virtual_file_buffer :: proc(allocator: mem.Allocator) -> FileBuffer {
     return buffer;
 }
 
-new_file_buffer :: proc(allocator: mem.Allocator, file_path: string) -> (FileBuffer, Error) {
+new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: string = "") -> (FileBuffer, Error) {
     context.allocator = allocator;
 
     fd, err := os.open(file_path);
@@ -570,13 +572,26 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string) -> (FileBuf
     }
     defer os.close(fd);
 
+    fi, fstat_err := os.fstat(fd);
+    if fstat_err > 0 {
+        return FileBuffer{}, make_error(ErrorType.FileIOError, fmt.aprintf("failed to get file info: errno=%x", fstat_err));
+    }
+
+    dir: string;
+    if base_dir != "" {
+        dir = base_dir;
+    } else {
+        dir = filepath.dir(fi.fullpath);
+    }
+
     if original_content, success := os.read_entire_file_from_handle(fd); success {
         width := 256;
         height := 256;
 
         buffer := FileBuffer {
             allocator = allocator,
-            file_path = file_path,
+            directory = dir,
+            file_path = fi.fullpath,
 
             original_content = slice.clone_to_dynamic(original_content),
             added_content = make([dynamic]u8, 0, 1024*1024),

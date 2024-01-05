@@ -1,6 +1,7 @@
 package ui;
 
 import "core:math"
+import "core:path/filepath"
 import "vendor:raylib"
 
 import "../core"
@@ -87,7 +88,8 @@ draw_buffer_list_window :: proc(win: ^core.Window, state: ^core.State) {
 
     for _, index in state.buffers {
         buffer := &state.buffers[index];
-        text := raylib.TextFormat("%s:%d", buffer.file_path, buffer.cursor.line+1);
+        relative_file_path, _ := filepath.rel(state.directory, buffer.file_path)
+        text := raylib.TextFormat("%s:%d", relative_file_path, buffer.cursor.line+1);
         text_width := raylib.MeasureTextEx(state.font, text, f32(state.source_font_height), 0);
 
         if index == win.selected_buffer {

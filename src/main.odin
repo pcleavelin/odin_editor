@@ -1,6 +1,7 @@
 package main
 
 import "core:os"
+import "core:path/filepath"
 import "core:math"
 import "core:strings"
 import "core:runtime"
@@ -190,12 +191,14 @@ main :: proc() {
         source_font_height = 16,
         input_map = core.new_input_map(),
         window = nil,
+
+        directory = os.get_current_directory(),
     };
     state.current_input_map = &state.input_map;
     register_default_input_actions(&state.input_map);
 
     for arg in os.args[1:] {
-        buffer, err := core.new_file_buffer(context.allocator, arg);
+        buffer, err := core.new_file_buffer(context.allocator, arg, state.directory);
         if err.type != .None {
             fmt.println("Failed to create file buffer:", err);
             continue;
@@ -300,6 +303,14 @@ main :: proc() {
                         theme.get_palette_raylib_color(.Background1));
             }
 
+            relative_file_path, _ := filepath.rel(state.directory, buffer.file_path)
+            raylib.DrawTextEx(
+                state.font,
+                raylib.TextFormat("%s", relative_file_path),
+                raylib.Vector2 { 8 + 4 + 6 * f32(state.source_font_width), f32(state.screen_height - state.source_font_height) },
+                f32(state.source_font_height),
+                0,
+                theme.get_palette_raylib_color(.Foreground1));
             raylib.DrawTextEx(
                 state.font,
                 line_info_text,
