@@ -66,6 +66,8 @@ State :: struct {
     current_input_map: ^InputMap,
 
     plugins: [dynamic]plugin.Interface,
+    plugin_vtable: plugin.Plugin,
+    highlighters: map[string]plugin.OnColorBufferProc
 }
 
 EditorAction :: proc(state: ^State);

@@ -7,12 +7,11 @@ import "core:fmt"
 OnInitializeProc :: proc "c" (plugin: Plugin);
 OnExitProc :: proc "c" (/* probably needs some state eventually */);
 OnDrawProc :: proc "c" (plugin: Plugin);
+OnColorBufferProc :: proc "c" (plugin: Plugin, buffer: rawptr);
 Interface :: struct {
     on_initialize: OnInitializeProc,
     on_exit: OnExitProc,
     on_draw: OnDrawProc,
-
-    plugin: Plugin,
 }
 
 BufferIndex :: struct {
@@ -45,18 +44,19 @@ BufferInfo :: struct {
 
 Buffer :: struct {
     get_buffer_info: proc "c" (state: rawptr) -> BufferInfo,
-    color_char_at: proc "c" (buffer: rawptr, start_cursor: Cursor, end_cursor: Cursor, palette_index: i32),
+    color_char_at: proc "c" (state: rawptr, buffer: rawptr, start_cursor: Cursor, end_cursor: Cursor, palette_index: i32),
 }
 
 Iterator :: struct {
     get_current_buffer_iterator: proc "c" (state: rawptr) -> BufferIter,
+    get_buffer_iterator: proc "c" (state: rawptr, buffer: rawptr) -> BufferIter,
     get_char_at_iter: proc "c" (state: rawptr, it: ^BufferIter) -> u8,
 
     iterate_buffer: proc "c" (state: rawptr, it: ^BufferIter) -> IterateResult,
     iterate_buffer_reverse: proc "c" (state: rawptr, it: ^BufferIter) -> IterateResult,
     iterate_buffer_until: proc "c" (state: rawptr, it: ^BufferIter, until_proc: rawptr),
     iterate_buffer_until_reverse: proc "c" (state: rawptr, it: ^BufferIter, until_proc: rawptr),
-    iterate_buffer_peek: proc "c" (state: rawptr, it: ^BufferIter, iter_proc: rawptr) -> IterateResult,
+    iterate_buffer_peek: proc "c" (state: rawptr, it: ^BufferIter) -> IterateResult,
 
     until_line_break: rawptr,
     until_single_quote: rawptr,
@@ -68,6 +68,8 @@ Plugin :: struct {
     state: rawptr,
     iter: Iterator,
     buffer: Buffer,
+
+    register_highlighter: proc "c" (state: rawptr, extension: cstring, on_color_buffer: OnColorBufferProc),
 }
 
 load_proc_address :: proc(lib_path: string, library: dynlib.Library, symbol: string, $ProcType: typeid) -> ProcType

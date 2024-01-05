@@ -48,6 +48,8 @@ FileBuffer :: struct {
 
     directory: string,
     file_path: string,
+    extension: string,
+
     top_line: int,
     cursor: Cursor,
 
@@ -584,6 +586,8 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
         dir = filepath.dir(fi.fullpath);
     }
 
+    extension := filepath.ext(fi.fullpath);
+
     if original_content, success := os.read_entire_file_from_handle(fd); success {
         width := 256;
         height := 256;
@@ -592,6 +596,7 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
             allocator = allocator,
             directory = dir,
             file_path = fi.fullpath,
+            extension = extension,
 
             original_content = slice.clone_to_dynamic(original_content),
             added_content = make([dynamic]u8, 0, 1024*1024),
@@ -916,13 +921,9 @@ update_glyph_buffer :: proc(buffer: ^FileBuffer) {
 
 draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, font: raylib.Font, show_line_numbers: bool = true) {
     update_glyph_buffer(buffer);
-    for plugin in state.plugins {
-        if plugin.on_initialize != nil {
-            plugin.on_draw(plugin.plugin);
-        }
+    if highlighter, exists := state.highlighters[buffer.extension]; exists {
+        highlighter(state.plugin_vtable, buffer);
     }
-    //color_buffer(buffer);
-    //update_glyph_buffer(buffer);
 
     padding := 0;
     if show_line_numbers {
