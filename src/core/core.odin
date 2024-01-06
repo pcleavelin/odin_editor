@@ -70,8 +70,9 @@ State :: struct {
     highlighters: map[string]plugin.OnColorBufferProc
 }
 
+PluginEditorAction :: proc "c" (plugin: plugin.Plugin);
 EditorAction :: proc(state: ^State);
-InputGroup :: union {EditorAction, InputMap}
+InputGroup :: union {PluginEditorAction, EditorAction, InputMap}
 Action :: struct {
     action: InputGroup,
     description: string,
@@ -97,6 +98,18 @@ delete_input_map :: proc(input_map: ^InputMap) {
 // NOTE(pcleavelin): might be a bug in the compiler where it can't coerce
 // `EditorAction` to `InputGroup` when given as a proc parameter, that is why there
 // are two functions
+register_plugin_key_action_single :: proc(input_map: ^InputMap, key: raylib.KeyboardKey, action: PluginEditorAction, description: string = "") {
+    if ok := key in input_map.key_actions; ok {
+        // TODO: log that key is already registered
+        fmt.eprintln("plugin key already registered with single action", key);
+    }
+
+    input_map.key_actions[key] = Action {
+        action = action,
+        description = description,
+    };
+}
+
 register_key_action_single :: proc(input_map: ^InputMap, key: raylib.KeyboardKey, action: EditorAction, description: string = "") {
     if ok := key in input_map.key_actions; ok {
         // TODO: log that key is already registered
@@ -145,5 +158,5 @@ register_ctrl_key_action_group :: proc(input_map: ^InputMap, key: raylib.Keyboar
     };
 }
 
-register_key_action :: proc{register_key_action_single, register_key_action_group};
+register_key_action :: proc{register_plugin_key_action_single, register_key_action_single, register_key_action_group};
 register_ctrl_key_action :: proc{register_ctrl_key_action_single, register_ctrl_key_action_group};

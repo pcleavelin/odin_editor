@@ -1,4 +1,4 @@
-// The default syntax highlighter plugin for Odin
+// The default syntax highlighter plugin for Odin & Rust
 package highlighter;
 
 import "core:runtime"

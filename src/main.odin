@@ -29,6 +29,8 @@ do_normal_mode :: proc(state: ^State, buffer: ^FileBuffer) {
             for key, action in &state.current_input_map.ctrl_key_actions {
                 if raylib.IsKeyPressed(key) {
                     switch value in action.action {
+                        case core.PluginEditorAction:
+                            value(state.plugin_vtable);
                         case core.EditorAction:
                             value(state);
                         case core.InputMap:
@@ -40,6 +42,8 @@ do_normal_mode :: proc(state: ^State, buffer: ^FileBuffer) {
             for key, action in state.current_input_map.key_actions {
                 if raylib.IsKeyPressed(key) {
                     switch value in action.action {
+                        case core.PluginEditorAction:
+                            value(state.plugin_vtable);
                         case core.EditorAction:
                             value(state);
                         case core.InputMap:
@@ -90,10 +94,10 @@ switch_to_buffer :: proc(state: ^State, item: ^ui.MenuBarItem) {
 }
 
 register_default_leader_actions :: proc(input_map: ^core.InputMap) {
-    core.register_key_action(input_map, .B, proc(state: ^State) {
-        state.window = ui.create_buffer_list_window();
-        state.current_input_map = &state.window.input_map;
-    }, "show list of open buffers");
+    // core.register_key_action(input_map, .B, proc(state: ^State) {
+    //     state.window = ui.create_buffer_list_window();
+    //     state.current_input_map = &state.window.input_map;
+    // }, "show list of open buffers");
     core.register_key_action(input_map, .R, proc(state: ^State) {
         state.window = ui.create_grep_window();
         state.current_input_map = &state.window.input_map;
@@ -231,6 +235,59 @@ main :: proc() {
                 fmt.eprintln("Highlighter already registered for", extension, "files");
             } else {
                 state.highlighters[extension] = on_color_buffer;
+            }
+        },
+        register_input_group = proc "c" (input_map: rawptr, key: plugin.Key, register_group: plugin.InputGroupProc) {
+            context = state.ctx;
+
+            to_be_edited_map: ^core.InputMap = nil;
+            key := raylib.KeyboardKey(int(key));
+
+            if input_map != nil {
+                to_be_edited_map = transmute(^core.InputMap)input_map;
+            } else {
+                to_be_edited_map = state.current_input_map;
+            }
+
+            if action, exists := to_be_edited_map.key_actions[key]; exists {
+                switch value in action.action {
+                    case core.PluginEditorAction:
+                        fmt.eprintln("Plugin attempted to register input group on existing key action (added from Plugin)");
+                    case core.EditorAction:
+                        fmt.eprintln("Plugin attempted to register input group on existing key action");
+                    case core.InputMap:
+                        input_map := &(&to_be_edited_map.key_actions[key]).action.(core.InputMap);
+                        register_group(state.plugin_vtable, transmute(rawptr)input_map);
+                }
+            } else {
+                core.register_key_action(to_be_edited_map, key, core.new_input_map(), "PLUGIN INPUT GROUP");
+                register_group(state.plugin_vtable, &(&to_be_edited_map.key_actions[key]).action.(core.InputMap));
+            }
+        },
+        register_input = proc "c" (input_map: rawptr, key: plugin.Key, input_action: plugin.InputActionProc, description: cstring) {
+            context = state.ctx;
+
+            to_be_edited_map: ^core.InputMap = nil;
+            key := raylib.KeyboardKey(int(key));
+            description := strings.clone(string(description));
+
+            if input_map != nil {
+                to_be_edited_map = transmute(^core.InputMap)input_map;
+            } else {
+                to_be_edited_map = state.current_input_map;
+            }
+
+            if action, exists := to_be_edited_map.key_actions[key]; exists {
+                switch value in action.action {
+                    case core.PluginEditorAction:
+                        fmt.eprintln("Plugin attempted to register key action on existing key action (added from Plugin)");
+                    case core.EditorAction:
+                        fmt.eprintln("Plugin attempted to register input key action on existing key action");
+                    case core.InputMap:
+                        fmt.eprintln("Plugin attempted to register input key action on existing input group");
+                }
+            } else {
+                core.register_key_action(to_be_edited_map, key, input_action, description);
             }
         },
         iter = plugin.Iterator {
