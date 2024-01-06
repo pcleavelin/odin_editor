@@ -51,7 +51,7 @@ create_buffer_list_window :: proc() -> ^BufferListWindow {
     list_window^ = BufferListWindow {
         window = core.Window {
             input_map = input_map,
-            draw = draw_buffer_list_window,
+            //draw = draw_buffer_list_window,
         },
     };
 

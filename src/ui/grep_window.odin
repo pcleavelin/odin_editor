@@ -160,7 +160,7 @@ create_grep_window :: proc() -> ^GrepWindow {
     grep_window^ = GrepWindow {
         window = core.Window {
             input_map = input_map,
-            draw = draw_grep_window,
+            //draw = draw_grep_window,
             get_buffer = grep_window_get_buffer,
             free = free_grep_window,
         },

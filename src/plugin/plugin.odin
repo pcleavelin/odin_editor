@@ -3,6 +3,7 @@ package plugin;
 import "core:intrinsics"
 import "core:dynlib"
 import "core:fmt"
+import "vendor:raylib"
 
 OnInitializeProc :: proc "c" (plugin: Plugin);
 OnExitProc :: proc "c" (/* probably needs some state eventually */);
@@ -185,6 +186,7 @@ OnColorBufferProc :: proc "c" (plugin: Plugin, buffer: rawptr);
 InputGroupProc :: proc "c" (plugin: Plugin, input_map: rawptr);
 InputActionProc :: proc "c" (plugin: Plugin);
 WindowInputProc :: proc "c" (plugin: Plugin, window: rawptr);
+WindowDrawProc :: proc "c" (plugin: Plugin, window: rawptr);
 Plugin :: struct {
     state: rawptr,
     iter: Iterator,
@@ -195,7 +197,9 @@ Plugin :: struct {
     register_input_group: proc "c" (input_map: rawptr, key: Key, register_group: InputGroupProc),
     register_input: proc "c" (input_map: rawptr, key: Key, input_action: InputActionProc, description: cstring),
 
-    create_window: proc "c" (register_group: InputGroupProc) -> rawptr,
+    create_window: proc "c" (register_group: InputGroupProc, draw_proc: WindowDrawProc) -> rawptr,
+
+    draw_rect: type_of(raylib.DrawRectangle),
 }
 
 load_proc_address :: proc(lib_path: string, library: dynlib.Library, symbol: string, $ProcType: typeid) -> ProcType

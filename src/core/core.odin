@@ -11,7 +11,7 @@ Mode :: enum {
     Insert,
 }
 
-WindowDrawProc :: proc(win: ^Window, state: ^State);
+WindowDrawProc :: proc "c" (plugin: plugin.Plugin, win: rawptr);
 WindowFreeProc :: proc(win: ^Window, state: ^State);
 WindowGetBufferProc :: proc(win: ^Window) -> ^FileBuffer;
 Window :: struct {

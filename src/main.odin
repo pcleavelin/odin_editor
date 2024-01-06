@@ -290,6 +290,22 @@ main :: proc() {
                 core.register_key_action(to_be_edited_map, key, input_action, description);
             }
         },
+        create_window = proc "c" (register_group: plugin.InputGroupProc, draw_proc: plugin.WindowDrawProc) -> rawptr {
+            context = state.ctx;
+            window := new(core.Window);
+            window^ = core.Window {
+                input_map = core.new_input_map(),
+                draw = draw_proc,
+            };
+
+            register_group(state.plugin_vtable, transmute(rawptr)&window.input_map);
+
+            state.window = window;
+            state.current_input_map = &window.input_map;
+
+            return window;
+        },
+        draw_rect = raylib.DrawRectangle,
         iter = plugin.Iterator {
             get_current_buffer_iterator = proc "c" () -> plugin.BufferIter {
                 context = state.ctx;
@@ -676,7 +692,7 @@ main :: proc() {
                 theme.get_palette_raylib_color(.Background1));
 
             if state.window != nil && state.window.draw != nil {
-                state.window->draw(&state);
+                state.window.draw(state.plugin_vtable, state.window);
             }
 
             if state.current_input_map != &state.input_map {
