@@ -5,6 +5,8 @@ import "core:dynlib"
 import "core:fmt"
 import "vendor:raylib"
 
+import "../theme"
+
 OnInitializeProc :: proc "c" (plugin: Plugin);
 OnExitProc :: proc "c" (/* probably needs some state eventually */);
 OnDrawProc :: proc "c" (plugin: Plugin);
@@ -37,20 +39,29 @@ IterateResult :: struct {
 }
 
 BufferInfo :: struct {
+    buffer: rawptr,
+    file_path: cstring,
+
+    cursor: Cursor,
+
     glyph_buffer_width: int,
     glyph_buffer_height: int,
     top_line: int,
 }
 
 Buffer :: struct {
-    get_buffer_info: proc "c" () -> BufferInfo,
+    get_num_buffers: proc "c" () -> int,
+    get_buffer_info: proc "c" (buffer: rawptr) -> BufferInfo,
+    get_buffer_info_from_index: proc "c" (buffer_index: int) -> BufferInfo,
     color_char_at: proc "c" (buffer: rawptr, start_cursor: Cursor, end_cursor: Cursor, palette_index: i32),
+    set_current_buffer: proc "c" (buffer_index: int),
 }
 
 Iterator :: struct {
     get_current_buffer_iterator: proc "c" () -> BufferIter,
     get_buffer_iterator: proc "c" (buffer: rawptr) -> BufferIter,
     get_char_at_iter: proc "c" (it: ^BufferIter) -> u8,
+    get_buffer_list_iter: proc "c" (prev_buffer: ^int) -> int,
 
     iterate_buffer: proc "c" (it: ^BufferIter) -> IterateResult,
     iterate_buffer_reverse: proc "c" (it: ^BufferIter) -> IterateResult,
@@ -62,6 +73,37 @@ Iterator :: struct {
     until_single_quote: rawptr,
     until_double_quote: rawptr,
     until_end_of_word: rawptr,
+}
+
+OnColorBufferProc :: proc "c" (plugin: Plugin, buffer: rawptr);
+InputGroupProc :: proc "c" (plugin: Plugin, input_map: rawptr);
+InputActionProc :: proc "c" (plugin: Plugin);
+WindowInputProc :: proc "c" (plugin: Plugin, window: rawptr);
+WindowDrawProc :: proc "c" (plugin: Plugin, window: rawptr);
+WindowFreeProc :: proc "c" (plugin: Plugin, window: rawptr);
+Plugin :: struct {
+    state: rawptr,
+    iter: Iterator,
+    buffer: Buffer,
+
+    register_highlighter: proc "c" (extension: cstring, on_color_buffer: OnColorBufferProc),
+
+    register_input_group: proc "c" (input_map: rawptr, key: Key, register_group: InputGroupProc),
+    register_input: proc "c" (input_map: rawptr, key: Key, input_action: InputActionProc, description: cstring),
+
+    create_window: proc "c" (user_data: rawptr, register_group: InputGroupProc, draw_proc: WindowDrawProc, free_window_proc: WindowFreeProc) -> rawptr,
+    get_window: proc "c" () -> rawptr,
+
+    request_window_close: proc "c" (),
+    get_screen_width: proc "c" () -> int,
+    get_screen_height: proc "c" () -> int,
+    get_font_width: proc "c" () -> int,
+    get_font_height: proc "c" () -> int,
+    get_current_directory: proc "c" () -> cstring,
+
+    draw_rect: proc "c" (x: i32, y: i32, width: i32, height: i32, color: theme.PaletteColor),
+    draw_text: proc "c" (text: cstring, x: f32, y: f32, color: theme.PaletteColor),
+    draw_buffer: proc "c" (buffer_index: int, x: int, y: int, glyph_buffer_width: int, glyph_buffer_height: int, show_line_numbers: bool),
 }
 
 Key :: enum {
@@ -181,26 +223,6 @@ Key :: enum {
     VOLUME_DOWN   = 25,  // Key: Android volume down button
 }
 
-
-OnColorBufferProc :: proc "c" (plugin: Plugin, buffer: rawptr);
-InputGroupProc :: proc "c" (plugin: Plugin, input_map: rawptr);
-InputActionProc :: proc "c" (plugin: Plugin);
-WindowInputProc :: proc "c" (plugin: Plugin, window: rawptr);
-WindowDrawProc :: proc "c" (plugin: Plugin, window: rawptr);
-Plugin :: struct {
-    state: rawptr,
-    iter: Iterator,
-    buffer: Buffer,
-
-    register_highlighter: proc "c" (extension: cstring, on_color_buffer: OnColorBufferProc),
-
-    register_input_group: proc "c" (input_map: rawptr, key: Key, register_group: InputGroupProc),
-    register_input: proc "c" (input_map: rawptr, key: Key, input_action: InputActionProc, description: cstring),
-
-    create_window: proc "c" (register_group: InputGroupProc, draw_proc: WindowDrawProc) -> rawptr,
-
-    draw_rect: type_of(raylib.DrawRectangle),
-}
 
 load_proc_address :: proc(lib_path: string, library: dynlib.Library, symbol: string, $ProcType: typeid) -> ProcType
     where intrinsics.type_is_proc(ProcType)

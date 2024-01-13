@@ -11,17 +11,19 @@ Mode :: enum {
     Insert,
 }
 
-WindowDrawProc :: proc "c" (plugin: plugin.Plugin, win: rawptr);
-WindowFreeProc :: proc(win: ^Window, state: ^State);
+WindowDrawProc :: proc "c" (plugin: plugin.Plugin, user_data: rawptr);
+WindowFreeProc :: proc "c" (plugin: plugin.Plugin, user_data: rawptr);
 WindowGetBufferProc :: proc(win: ^Window) -> ^FileBuffer;
 Window :: struct {
     input_map: InputMap,
     draw: WindowDrawProc,
-    free: WindowFreeProc,
+    free_user_data: WindowFreeProc,
 
     get_buffer: WindowGetBufferProc,
 
     // TODO: create hook for when mode changes happen
+
+    user_data: rawptr,
 }
 request_window_close :: proc(state: ^State) {
     state.should_close_window = true;
@@ -29,8 +31,8 @@ request_window_close :: proc(state: ^State) {
 
 close_window_and_free :: proc(state: ^State) {
     if state.window != nil {
-        if state.window.free != nil {
-            state.window->free(state);
+        if state.window.free_user_data != nil {
+            state.window.free_user_data(state.plugin_vtable, state.window.user_data);
         }
 
         delete_input_map(&state.window.input_map);

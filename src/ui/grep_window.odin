@@ -162,7 +162,7 @@ create_grep_window :: proc() -> ^GrepWindow {
             input_map = input_map,
             //draw = draw_grep_window,
             get_buffer = grep_window_get_buffer,
-            free = free_grep_window,
+            // free_user_data = free_grep_window,
         },
 
         input_buffer = core.new_virtual_file_buffer(context.allocator),

@@ -290,12 +290,15 @@ main :: proc() {
                 core.register_key_action(to_be_edited_map, key, input_action, description);
             }
         },
-        create_window = proc "c" (register_group: plugin.InputGroupProc, draw_proc: plugin.WindowDrawProc) -> rawptr {
+        create_window = proc "c" (user_data: rawptr, register_group: plugin.InputGroupProc, draw_proc: plugin.WindowDrawProc, free_window_proc: plugin.WindowFreeProc) -> rawptr {
             context = state.ctx;
             window := new(core.Window);
             window^ = core.Window {
                 input_map = core.new_input_map(),
                 draw = draw_proc,
+                free_user_data = free_window_proc,
+
+                user_data = user_data,
             };
 
             register_group(state.plugin_vtable, transmute(rawptr)&window.input_map);
@@ -305,7 +308,68 @@ main :: proc() {
 
             return window;
         },
-        draw_rect = raylib.DrawRectangle,
+        get_window = proc "c" () -> rawptr {
+            if state.window != nil {
+                return state.window.user_data;
+            }
+
+            return nil;
+        },
+        request_window_close = proc "c" () {
+            context = state.ctx;
+
+            core.request_window_close(&state);
+        },
+        get_screen_width = proc "c" () -> int {
+            return state.screen_width;
+        },
+        get_screen_height = proc "c" () -> int {
+            return state.screen_height;
+        },
+        get_font_width = proc "c" () -> int {
+            return state.source_font_width;
+        },
+        get_font_height = proc "c" () -> int {
+            return state.source_font_height;
+        },
+        get_current_directory = proc "c" () -> cstring {
+            context = state.ctx;
+
+            return strings.clone_to_cstring(state.directory, context.temp_allocator);
+        },
+        draw_rect = proc "c" (x: i32, y: i32, width: i32, height: i32, color: theme.PaletteColor) {
+            context = state.ctx;
+
+            raylib.DrawRectangle(x, y, width, height, theme.get_palette_raylib_color(color));
+        },
+        draw_text = proc "c" (text: cstring, x: f32, y: f32, color: theme.PaletteColor) {
+            context = state.ctx;
+
+            raylib.DrawTextEx(
+                state.font,
+                text,
+                raylib.Vector2 {
+                    x,
+                    y,
+                },
+                f32(state.source_font_height),
+                0,
+                theme.get_palette_raylib_color(color)
+            );
+        },
+        draw_buffer = proc "c" (buffer_index: int, x: int, y: int, glyph_buffer_width: int, glyph_buffer_height: int, show_line_numbers: bool) {
+            context = state.ctx;
+            state.buffers[buffer_index].glyph_buffer_width = glyph_buffer_width;
+            state.buffers[buffer_index].glyph_buffer_height = glyph_buffer_height;
+
+            core.draw_file_buffer(
+                &state,
+                &state.buffers[buffer_index],
+                x,
+                y,
+                state.font,
+                show_line_numbers);
+        },
         iter = plugin.Iterator {
             get_current_buffer_iterator = proc "c" () -> plugin.BufferIter {
                 context = state.ctx;
@@ -363,6 +427,11 @@ main :: proc() {
                 }
 
                 return core.get_character_at_iter(internal_it);
+            },
+            get_buffer_list_iter = proc "c" (prev_buffer: ^int) -> int {
+                context = state.ctx;
+
+                return core.next_buffer(&state, prev_buffer);
             },
             iterate_buffer = proc "c" (it: ^plugin.BufferIter) -> plugin.IterateResult {
                 context = state.ctx;
@@ -513,16 +582,22 @@ main :: proc() {
             until_end_of_word = transmute(rawptr)core.until_end_of_word,
         },
         buffer = plugin.Buffer {
-            get_buffer_info = proc "c" () -> plugin.BufferInfo {
+            get_num_buffers = proc "c" () -> int {
                 context = state.ctx;
 
-                buffer := &state.buffers[state.current_buffer];
+                return len(state.buffers);
+            },
+            get_buffer_info = proc "c" (buffer: rawptr) -> plugin.BufferInfo {
+                context = state.ctx;
+                buffer := cast(^core.FileBuffer)buffer;
 
-                return plugin.BufferInfo {
-                    glyph_buffer_width = buffer.glyph_buffer_width,
-                    glyph_buffer_height = buffer.glyph_buffer_height,
-                    top_line = buffer.top_line,
-                };
+                return core.into_buffer_info(&state, buffer);
+            },
+            get_buffer_info_from_index = proc "c" (buffer_index: int) -> plugin.BufferInfo {
+                context = state.ctx;
+                buffer := &state.buffers[buffer_index];
+
+                return core.into_buffer_info(&state, buffer);
             },
             color_char_at = proc "c" (buffer: rawptr, start_cursor: plugin.Cursor, end_cursor: plugin.Cursor, palette_index: i32) {
                 buffer := cast(^core.FileBuffer)buffer;
@@ -546,6 +621,9 @@ main :: proc() {
                 };
 
                 core.color_character(buffer, start_cursor, end_cursor, cast(theme.PaletteColor)palette_index);
+            },
+            set_current_buffer = proc "c" (buffer_index: int) {
+                state.current_buffer = buffer_index;
             }
         }
     };
@@ -692,7 +770,7 @@ main :: proc() {
                 theme.get_palette_raylib_color(.Background1));
 
             if state.window != nil && state.window.draw != nil {
-                state.window.draw(state.plugin_vtable, state.window);
+                state.window.draw(state.plugin_vtable, state.window.user_data);
             }
 
             if state.current_input_map != &state.input_map {
@@ -764,6 +842,8 @@ main :: proc() {
         }
 
         ui.test_menu_bar(&state, &menu_bar_state, 0,0, mouse_pos, raylib.IsMouseButtonReleased(.LEFT), state.source_font_height);
+
+        runtime.free_all(context.temp_allocator);
     }
 
     for plugin in state.plugins {

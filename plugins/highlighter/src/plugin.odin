@@ -280,10 +280,10 @@ is_rust_keyword :: proc(plugin: Plugin, start: BufferIter, end: BufferIter) -> (
 color_buffer_odin :: proc "c" (plugin: Plugin, buffer: rawptr) {
     context = runtime.default_context();
 
-    start_it := plugin.iter.get_buffer_iterator(buffer);
-    it := plugin.iter.get_buffer_iterator(buffer);
+    buffer := plugin.buffer.get_buffer_info(buffer);
 
-    buffer := plugin.buffer.get_buffer_info();
+    start_it := plugin.iter.get_buffer_iterator(buffer.buffer);
+    it := plugin.iter.get_buffer_iterator(buffer.buffer);
 
     for character in iterate_buffer(plugin.iter, &it) {
         if it.cursor.line > buffer.glyph_buffer_height && (it.cursor.line - buffer.top_line) > buffer.glyph_buffer_height {
@@ -350,10 +350,10 @@ color_buffer_odin :: proc "c" (plugin: Plugin, buffer: rawptr) {
 color_buffer_rust :: proc "c" (plugin: Plugin, buffer: rawptr) {
     context = runtime.default_context();
 
-    start_it := plugin.iter.get_buffer_iterator(buffer);
-    it := plugin.iter.get_buffer_iterator(buffer);
+    buffer := plugin.buffer.get_buffer_info(buffer);
 
-    buffer := plugin.buffer.get_buffer_info();
+    start_it := plugin.iter.get_buffer_iterator(buffer.buffer);
+    it := plugin.iter.get_buffer_iterator(buffer.buffer);
 
     for character in iterate_buffer(plugin.iter, &it) {
         if it.cursor.line > buffer.glyph_buffer_height && (it.cursor.line - buffer.top_line) > buffer.glyph_buffer_height {

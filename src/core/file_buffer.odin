@@ -11,6 +11,7 @@ import "core:strings"
 import "vendor:raylib"
 
 import "../theme"
+import "../plugin"
 
 ScrollDir :: enum {
     Up,
@@ -617,151 +618,46 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
     }
 }
 
+next_buffer :: proc(state: ^State, prev_buffer: ^int) -> int {
+    index := prev_buffer^;
+
+    if prev_buffer^ >= len(state.buffers)-1 {
+        prev_buffer^ = -1;
+    } else {
+        prev_buffer^ += 1;
+    }
+
+    return index;
+}
+
+into_buffer_info:: proc(state: ^State, buffer: ^FileBuffer) -> plugin.BufferInfo {
+    return plugin.BufferInfo {
+        buffer = buffer,
+        cursor = plugin.Cursor {
+            col = buffer.cursor.col,
+            line = buffer.cursor.line,
+            index = plugin.BufferIndex {
+                slice_index = buffer.cursor.index.slice_index,
+                content_index = buffer.cursor.index.content_index,
+            }
+        },
+        file_path = strings.clone_to_cstring(buffer.file_path, context.temp_allocator),
+        glyph_buffer_width = buffer.glyph_buffer_width,
+        glyph_buffer_height = buffer.glyph_buffer_height,
+        top_line = buffer.top_line,
+    };
+}
+into_buffer_info_from_index :: proc(state: ^State, buffer_index: int) -> plugin.BufferInfo {
+    buffer := &state.buffers[buffer_index];
+    return into_buffer_info(state, buffer);
+}
+
 free_file_buffer :: proc(buffer: ^FileBuffer) {
     delete(buffer.original_content);
     delete(buffer.added_content);
     delete(buffer.content_slices);
     delete(buffer.glyph_buffer);
     delete(buffer.input_buffer);
-}
-
-is_keyword :: proc(start: FileBufferIter, end: FileBufferIter) -> (matches: bool) {
-    keywords := []string {
-        "using",
-        "transmute",
-        "cast",
-        "distinct",
-        "opaque",
-        "where",
-        "struct",
-        "enum",
-        "union",
-        "bit_field",
-        "bit_set",
-        "if",
-        "when",
-        "else",
-        "do",
-        "for",
-        "switch",
-        "case",
-        "continue",
-        "break",
-        "size_of",
-        "offset_of",
-        "type_info_of",
-        "typeid_of",
-        "type_of",
-        "align_of",
-        "or_return",
-        "or_else",
-        "inline",
-        "no_inline",
-        "string",
-        "cstring",
-        "bool",
-        "b8",
-        "b16",
-        "b32",
-        "b64",
-        "rune",
-        "any",
-        "rawptr",
-        "f16",
-        "f32",
-        "f64",
-        "f16le",
-        "f16be",
-        "f32le",
-        "f32be",
-        "f64le",
-        "f64be",
-        "u8",
-        "u16",
-        "u32",
-        "u64",
-        "u128",
-        "u16le",
-        "u32le",
-        "u64le",
-        "u128le",
-        "u16be",
-        "u32be",
-        "u64be",
-        "u128be",
-        "uint",
-        "uintptr",
-        "i8",
-        "i16",
-        "i32",
-        "i64",
-        "i128",
-        "i16le",
-        "i32le",
-        "i64le",
-        "i128le",
-        "i16be",
-        "i32be",
-        "i64be",
-        "i128be",
-        "int",
-        "complex",
-        "complex32",
-        "complex64",
-        "complex128",
-        "quaternion",
-        "quaternion64",
-        "quaternion128",
-        "quaternion256",
-        "matrix",
-        "typeid",
-        "true",
-        "false",
-        "nil",
-        "dynamic",
-        "map",
-        "proc",
-        "in",
-        "notin",
-        "not_in",
-        "import",
-        "export",
-        "foreign",
-        "const",
-        "package",
-        "return",
-        "defer",
-    };
-
-    for keyword in keywords {
-        it := start;
-        keyword_index := 0;
-
-        for character in iterate_file_buffer(&it) {
-            if character != keyword[keyword_index] {
-                break;
-            }
-
-            keyword_index += 1;
-            if keyword_index >= len(keyword)-1 && it == end {
-                if get_character_at_iter(it) == keyword[keyword_index] {
-                    matches = true;
-                }
-
-                break;
-            } else if keyword_index >= len(keyword)-1 {
-                break;
-            } else if it == end {
-                break;
-            }
-        }
-
-        if matches {
-            break;
-        }
-    }
-
-    return;
 }
 
 color_character :: proc(buffer: ^FileBuffer, start: Cursor, end: Cursor, palette_index: theme.PaletteColor) {
