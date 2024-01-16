@@ -13,9 +13,12 @@ import "vendor:raylib"
 import "core"
 import "theme"
 import "ui"
+import "plugin"
 
 State :: core.State;
 FileBuffer :: core.FileBuffer;
+
+state := core.State {};
 
 // TODO: use buffer list in state
 do_normal_mode :: proc(state: ^State, buffer: ^FileBuffer) {
@@ -26,6 +29,8 @@ do_normal_mode :: proc(state: ^State, buffer: ^FileBuffer) {
             for key, action in &state.current_input_map.ctrl_key_actions {
                 if raylib.IsKeyPressed(key) {
                     switch value in action.action {
+                        case core.PluginEditorAction:
+                            value(state.plugin_vtable);
                         case core.EditorAction:
                             value(state);
                         case core.InputMap:
@@ -37,6 +42,8 @@ do_normal_mode :: proc(state: ^State, buffer: ^FileBuffer) {
             for key, action in state.current_input_map.key_actions {
                 if raylib.IsKeyPressed(key) {
                     switch value in action.action {
+                        case core.PluginEditorAction:
+                            value(state.plugin_vtable);
                         case core.EditorAction:
                             value(state);
                         case core.InputMap:
@@ -55,6 +62,10 @@ do_insert_mode :: proc(state: ^State, buffer: ^FileBuffer) {
     for key > 0 {
         if key >= 32 && key <= 125 && len(buffer.input_buffer) < 1024-1 {
             append(&buffer.input_buffer, u8(key));
+
+            for hook_proc in state.hooks[plugin.Hook.BufferInput] {
+                hook_proc(state.plugin_vtable, buffer);
+            }
         }
 
         key = raylib.GetCharPressed();
@@ -74,6 +85,10 @@ do_insert_mode :: proc(state: ^State, buffer: ^FileBuffer) {
 
     if raylib.IsKeyPressed(.BACKSPACE) {
         core.delete_content(buffer, 1);
+
+        for hook_proc in state.hooks[plugin.Hook.BufferInput] {
+            hook_proc(state.plugin_vtable, buffer);
+        }
     }
 }
 
@@ -87,15 +102,6 @@ switch_to_buffer :: proc(state: ^State, item: ^ui.MenuBarItem) {
 }
 
 register_default_leader_actions :: proc(input_map: ^core.InputMap) {
-    core.register_key_action(input_map, .B, proc(state: ^State) {
-        state.window = ui.create_buffer_list_window();
-        state.current_input_map = &state.window.input_map;
-    }, "show list of open buffers");
-    core.register_key_action(input_map, .R, proc(state: ^State) {
-        state.window = ui.create_grep_window();
-        state.current_input_map = &state.window.input_map;
-        state.mode = .Insert;
-    }, "live grep");
     core.register_key_action(input_map, .Q, proc(state: ^State) {
         state.current_input_map = &state.input_map;
     }, "close this help");
@@ -185,14 +191,519 @@ register_default_input_actions :: proc(input_map: ^core.InputMap) {
     register_default_go_actions(&(&input_map.key_actions[.G]).action.(core.InputMap));
 }
 
+load_plugin :: proc(info: os.File_Info, in_err: os.Errno, state: rawptr) -> (err: os.Errno, skip_dir: bool) {
+    state := cast(^State)state;
+
+    relative_file_path, rel_error := filepath.rel(state.directory, info.fullpath);
+    extension := filepath.ext(info.fullpath);
+
+    if extension == ".dylib" || extension == ".dll" || extension == ".so" {
+        if loaded_plugin, succ := plugin.try_load_plugin(info.fullpath); succ {
+            append(&state.plugins, loaded_plugin);
+
+            if rel_error == .None {
+                fmt.println("Loaded", relative_file_path);
+            } else {
+                fmt.println("Loaded", info.fullpath);
+            }
+        }
+    }
+
+    return in_err, skip_dir;
+}
+
 main :: proc() {
-    state := State {
+    state = State {
+        ctx = context,
         source_font_width = 8,
         source_font_height = 16,
         input_map = core.new_input_map(),
         window = nil,
-
         directory = os.get_current_directory(),
+        plugins = make([dynamic]plugin.Interface),
+        highlighters = make(map[string]plugin.OnColorBufferProc),
+        hooks = make(map[plugin.Hook][dynamic]plugin.OnHookProc),
+    };
+    state.plugin_vtable = plugin.Plugin {
+        state = cast(rawptr)&state,
+        register_hook = proc "c" (hook: plugin.Hook, on_hook: plugin.OnHookProc) {
+            context = state.ctx;
+
+            core.add_hook(&state, hook, on_hook);
+        },
+        register_highlighter = proc "c" (extension: cstring, on_color_buffer: plugin.OnColorBufferProc) {
+            context = state.ctx;
+
+            extension := strings.clone(string(extension));
+
+            if _, exists := state.highlighters[extension]; exists {
+                fmt.eprintln("Highlighter already registered for", extension, "files");
+            } else {
+                state.highlighters[extension] = on_color_buffer;
+            }
+        },
+        register_input_group = proc "c" (input_map: rawptr, key: plugin.Key, register_group: plugin.InputGroupProc) {
+            context = state.ctx;
+
+            to_be_edited_map: ^core.InputMap = nil;
+            key := raylib.KeyboardKey(int(key));
+
+            if input_map != nil {
+                to_be_edited_map = transmute(^core.InputMap)input_map;
+            } else {
+                to_be_edited_map = state.current_input_map;
+            }
+
+            if action, exists := to_be_edited_map.key_actions[key]; exists {
+                switch value in action.action {
+                    case core.PluginEditorAction:
+                        fmt.eprintln("Plugin attempted to register input group on existing key action (added from Plugin)");
+                    case core.EditorAction:
+                        fmt.eprintln("Plugin attempted to register input group on existing key action");
+                    case core.InputMap:
+                        input_map := &(&to_be_edited_map.key_actions[key]).action.(core.InputMap);
+                        register_group(state.plugin_vtable, transmute(rawptr)input_map);
+                }
+            } else {
+                core.register_key_action(to_be_edited_map, key, core.new_input_map(), "PLUGIN INPUT GROUP");
+                register_group(state.plugin_vtable, &(&to_be_edited_map.key_actions[key]).action.(core.InputMap));
+            }
+        },
+        register_input = proc "c" (input_map: rawptr, key: plugin.Key, input_action: plugin.InputActionProc, description: cstring) {
+            context = state.ctx;
+
+            to_be_edited_map: ^core.InputMap = nil;
+            key := raylib.KeyboardKey(int(key));
+            description := strings.clone(string(description));
+
+            if input_map != nil {
+                to_be_edited_map = transmute(^core.InputMap)input_map;
+            } else {
+                to_be_edited_map = state.current_input_map;
+            }
+
+            if action, exists := to_be_edited_map.key_actions[key]; exists {
+                switch value in action.action {
+                    case core.PluginEditorAction:
+                        fmt.eprintln("Plugin attempted to register key action on existing key action (added from Plugin)");
+                    case core.EditorAction:
+                        fmt.eprintln("Plugin attempted to register input key action on existing key action");
+                    case core.InputMap:
+                        fmt.eprintln("Plugin attempted to register input key action on existing input group");
+                }
+            } else {
+                core.register_key_action(to_be_edited_map, key, input_action, description);
+            }
+        },
+        create_window = proc "c" (user_data: rawptr, register_group: plugin.InputGroupProc, draw_proc: plugin.WindowDrawProc, free_window_proc: plugin.WindowFreeProc, get_buffer_proc: plugin.WindowGetBufferProc) -> rawptr {
+            context = state.ctx;
+            window := new(core.Window);
+            window^ = core.Window {
+                input_map = core.new_input_map(),
+                draw = draw_proc,
+                get_buffer = get_buffer_proc,
+                free_user_data = free_window_proc,
+
+                user_data = user_data,
+            };
+
+            register_group(state.plugin_vtable, transmute(rawptr)&window.input_map);
+
+            state.window = window;
+            state.current_input_map = &window.input_map;
+
+            return window;
+        },
+        get_window = proc "c" () -> rawptr {
+            if state.window != nil {
+                return state.window.user_data;
+            }
+
+            return nil;
+        },
+        request_window_close = proc "c" () {
+            context = state.ctx;
+
+            core.request_window_close(&state);
+        },
+        get_screen_width = proc "c" () -> int {
+            return state.screen_width;
+        },
+        get_screen_height = proc "c" () -> int {
+            return state.screen_height;
+        },
+        get_font_width = proc "c" () -> int {
+            return state.source_font_width;
+        },
+        get_font_height = proc "c" () -> int {
+            return state.source_font_height;
+        },
+        get_current_directory = proc "c" () -> cstring {
+            context = state.ctx;
+
+            return strings.clone_to_cstring(state.directory, context.temp_allocator);
+        },
+        enter_insert_mode = proc "c" () {
+            state.mode = .Insert;
+        },
+        draw_rect = proc "c" (x: i32, y: i32, width: i32, height: i32, color: theme.PaletteColor) {
+            context = state.ctx;
+
+            raylib.DrawRectangle(x, y, width, height, theme.get_palette_raylib_color(color));
+        },
+        draw_text = proc "c" (text: cstring, x: f32, y: f32, color: theme.PaletteColor) {
+            context = state.ctx;
+
+            text := string(text);
+            for codepoint, index in text {
+                raylib.DrawTextCodepoint(
+                    state.font,
+                    rune(codepoint),
+                    raylib.Vector2 { x + f32(index * state.source_font_width), y },
+                    f32(state.source_font_height),
+                    theme.get_palette_raylib_color(color)
+                );
+            }
+        },
+        draw_buffer_from_index = proc "c" (buffer_index: int, x: int, y: int, glyph_buffer_width: int, glyph_buffer_height: int, show_line_numbers: bool) {
+            context = state.ctx;
+            state.buffers[buffer_index].glyph_buffer_width = glyph_buffer_width;
+            state.buffers[buffer_index].glyph_buffer_height = glyph_buffer_height;
+
+            core.draw_file_buffer(
+                &state,
+                &state.buffers[buffer_index],
+                x,
+                y,
+                state.font,
+                show_line_numbers);
+        },
+        draw_buffer = proc "c" (buffer: rawptr, x: int, y: int, glyph_buffer_width: int, glyph_buffer_height: int, show_line_numbers: bool) {
+            context = state.ctx;
+
+            buffer := transmute(^core.FileBuffer)buffer;
+            buffer.glyph_buffer_width = glyph_buffer_width;
+            buffer.glyph_buffer_height = glyph_buffer_height;
+
+            core.draw_file_buffer(
+                &state,
+                buffer,
+                x,
+                y,
+                state.font,
+                show_line_numbers);
+        },
+        iter = plugin.Iterator {
+            get_current_buffer_iterator = proc "c" () -> plugin.BufferIter {
+                context = state.ctx;
+
+                it := core.new_file_buffer_iter(&state.buffers[state.current_buffer]);
+
+                // TODO: make this into a function
+                return plugin.BufferIter {
+                    cursor = plugin.Cursor {
+                        col = it.cursor.col,
+                        line = it.cursor.line,
+                        index = plugin.BufferIndex {
+                            slice_index = it.cursor.index.slice_index,
+                            content_index = it.cursor.index.content_index,
+                        }
+                    },
+                    buffer = cast(rawptr)it.buffer,
+                    hit_end = it.hit_end,
+                }
+            },
+            get_buffer_iterator = proc "c" (buffer: rawptr) -> plugin.BufferIter {
+                buffer := cast(^core.FileBuffer)buffer;
+                context = state.ctx;
+
+                it := core.new_file_buffer_iter(buffer);
+
+                // TODO: make this into a function
+                return plugin.BufferIter {
+                    cursor = plugin.Cursor {
+                        col = it.cursor.col,
+                        line = it.cursor.line,
+                        index = plugin.BufferIndex {
+                            slice_index = it.cursor.index.slice_index,
+                            content_index = it.cursor.index.content_index,
+                        }
+                    },
+                    buffer = cast(rawptr)it.buffer,
+                    hit_end = it.hit_end,
+                }
+            },
+            get_char_at_iter = proc "c" (it: ^plugin.BufferIter) -> u8 {
+                context = state.ctx;
+
+                internal_it := core.FileBufferIter {
+                    cursor = core.Cursor {
+                        col = it.cursor.col,
+                        line = it.cursor.line,
+                        index = core.FileBufferIndex {
+                            slice_index = it.cursor.index.slice_index,
+                            content_index = it.cursor.index.content_index,
+                        }
+                    },
+                    buffer = cast(^core.FileBuffer)it.buffer,
+                    hit_end = it.hit_end,
+                }
+
+                return core.get_character_at_iter(internal_it);
+            },
+            get_buffer_list_iter = proc "c" (prev_buffer: ^int) -> int {
+                context = state.ctx;
+
+                return core.next_buffer(&state, prev_buffer);
+            },
+            iterate_buffer = proc "c" (it: ^plugin.BufferIter) -> plugin.IterateResult {
+                context = state.ctx;
+
+                // TODO: make this into a function
+                internal_it := core.FileBufferIter {
+                    cursor = core.Cursor {
+                        col = it.cursor.col,
+                        line = it.cursor.line,
+                        index = core.FileBufferIndex {
+                            slice_index = it.cursor.index.slice_index,
+                            content_index = it.cursor.index.content_index,
+                        }
+                    },
+                    buffer = cast(^core.FileBuffer)it.buffer,
+                    hit_end = it.hit_end,
+                }
+
+                char, _, cond := core.iterate_file_buffer(&internal_it);
+
+                it^ = plugin.BufferIter {
+                    cursor = plugin.Cursor {
+                        col = internal_it.cursor.col,
+                        line = internal_it.cursor.line,
+                        index = plugin.BufferIndex {
+                            slice_index = internal_it.cursor.index.slice_index,
+                            content_index = internal_it.cursor.index.content_index,
+                        }
+                    },
+                    buffer = cast(rawptr)internal_it.buffer,
+                    hit_end = internal_it.hit_end,
+                };
+
+                return plugin.IterateResult {
+                    char = char,
+                    should_continue = cond,
+                };
+            },
+            iterate_buffer_reverse = proc "c" (it: ^plugin.BufferIter) -> plugin.IterateResult {
+                context = state.ctx;
+
+                // TODO: make this into a function
+                internal_it := core.FileBufferIter {
+                    cursor = core.Cursor {
+                        col = it.cursor.col,
+                        line = it.cursor.line,
+                        index = core.FileBufferIndex {
+                            slice_index = it.cursor.index.slice_index,
+                            content_index = it.cursor.index.content_index,
+                        }
+                    },
+                    buffer = cast(^core.FileBuffer)it.buffer,
+                    hit_end = it.hit_end,
+                }
+
+                char, _, cond := core.iterate_file_buffer_reverse(&internal_it);
+
+                it^ = plugin.BufferIter {
+                    cursor = plugin.Cursor {
+                        col = internal_it.cursor.col,
+                        line = internal_it.cursor.line,
+                        index = plugin.BufferIndex {
+                            slice_index = internal_it.cursor.index.slice_index,
+                            content_index = internal_it.cursor.index.content_index,
+                        }
+                    },
+                    buffer = cast(rawptr)internal_it.buffer,
+                    hit_end = internal_it.hit_end,
+                };
+
+                return plugin.IterateResult {
+                    char = char,
+                    should_continue = cond,
+                };
+            },
+            iterate_buffer_until = proc "c" (it: ^plugin.BufferIter, until_proc: rawptr) {
+                context = state.ctx;
+
+                // TODO: make this into a function
+                internal_it := core.FileBufferIter {
+                    cursor = core.Cursor {
+                        col = it.cursor.col,
+                        line = it.cursor.line,
+                        index = core.FileBufferIndex {
+                            slice_index = it.cursor.index.slice_index,
+                            content_index = it.cursor.index.content_index,
+                        }
+                    },
+                    buffer = cast(^core.FileBuffer)it.buffer,
+                    hit_end = it.hit_end,
+                }
+
+                core.iterate_file_buffer_until(&internal_it, transmute(core.UntilProc)until_proc);
+
+                it^ = plugin.BufferIter {
+                    cursor = plugin.Cursor {
+                        col = internal_it.cursor.col,
+                        line = internal_it.cursor.line,
+                        index = plugin.BufferIndex {
+                            slice_index = internal_it.cursor.index.slice_index,
+                            content_index = internal_it.cursor.index.content_index,
+                        }
+                    },
+                    buffer = cast(rawptr)internal_it.buffer,
+                    hit_end = internal_it.hit_end,
+                };
+            },
+            iterate_buffer_peek = proc "c" (it: ^plugin.BufferIter) -> plugin.IterateResult {
+                context = state.ctx;
+
+                // TODO: make this into a function
+                internal_it := core.FileBufferIter {
+                    cursor = core.Cursor {
+                        col = it.cursor.col,
+                        line = it.cursor.line,
+                        index = core.FileBufferIndex {
+                            slice_index = it.cursor.index.slice_index,
+                            content_index = it.cursor.index.content_index,
+                        }
+                    },
+                    buffer = cast(^core.FileBuffer)it.buffer,
+                    hit_end = it.hit_end,
+                }
+
+                char, _, cond := core.iterate_peek(&internal_it, core.iterate_file_buffer);
+
+                it^ = plugin.BufferIter {
+                    cursor = plugin.Cursor {
+                        col = internal_it.cursor.col,
+                        line = internal_it.cursor.line,
+                        index = plugin.BufferIndex {
+                            slice_index = internal_it.cursor.index.slice_index,
+                            content_index = internal_it.cursor.index.content_index,
+                        }
+                    },
+                    buffer = cast(rawptr)internal_it.buffer,
+                    hit_end = internal_it.hit_end,
+                };
+
+                return plugin.IterateResult {
+                    char = char,
+                    should_continue = cond,
+                };
+            },
+            until_line_break = transmute(rawptr)core.until_line_break,
+            until_single_quote = transmute(rawptr)core.until_single_quote,
+            until_double_quote = transmute(rawptr)core.until_double_quote,
+            until_end_of_word = transmute(rawptr)core.until_end_of_word,
+        },
+        buffer = plugin.Buffer {
+            get_num_buffers = proc "c" () -> int {
+                context = state.ctx;
+
+                return len(state.buffers);
+            },
+            get_buffer_info = proc "c" (buffer: rawptr) -> plugin.BufferInfo {
+                context = state.ctx;
+                buffer := cast(^core.FileBuffer)buffer;
+
+                return core.into_buffer_info(&state, buffer);
+            },
+            get_buffer_info_from_index = proc "c" (buffer_index: int) -> plugin.BufferInfo {
+                context = state.ctx;
+                buffer := &state.buffers[buffer_index];
+
+                return core.into_buffer_info(&state, buffer);
+            },
+            color_char_at = proc "c" (buffer: rawptr, start_cursor: plugin.Cursor, end_cursor: plugin.Cursor, palette_index: i32) {
+                buffer := cast(^core.FileBuffer)buffer;
+                context = state.ctx;
+
+                start_cursor := core.Cursor {
+                    col = start_cursor.col,
+                    line = start_cursor.line,
+                    index = core.FileBufferIndex {
+                        slice_index = start_cursor.index.slice_index,
+                        content_index = start_cursor.index.content_index,
+                    }
+                };
+                end_cursor := core.Cursor {
+                    col = end_cursor.col,
+                    line = end_cursor.line,
+                    index = core.FileBufferIndex {
+                        slice_index = end_cursor.index.slice_index,
+                        content_index = end_cursor.index.content_index,
+                    }
+                };
+
+                core.color_character(buffer, start_cursor, end_cursor, cast(theme.PaletteColor)palette_index);
+            },
+            set_current_buffer = proc "c" (buffer_index: int) {
+                state.current_buffer = buffer_index;
+            },
+            open_buffer = proc "c" (path: cstring, line: int, col: int) {
+                context = state.ctx;
+
+                path := string(path);
+                should_create_buffer := true;
+                for buffer, index in state.buffers {
+                    if strings.compare(buffer.file_path, path) == 0 {
+                        state.current_buffer = index;
+                        should_create_buffer = false;
+                        break;
+                    }
+                }
+
+                buffer: ^core.FileBuffer = nil;
+                err := core.no_error();
+
+                if should_create_buffer {
+                    new_buffer, err := core.new_file_buffer(context.allocator, strings.clone(path));
+                    if err.type != .None {
+                        fmt.println("Failed to open/create file buffer:", err);
+                    } else {
+                        runtime.append(&state.buffers, new_buffer);
+                        state.current_buffer = len(state.buffers)-1;
+                        buffer = &state.buffers[state.current_buffer];
+                    }
+                } else {
+                    buffer = &state.buffers[state.current_buffer];
+                }
+
+                if buffer != nil {
+                    buffer.cursor.line = line;
+                    buffer.cursor.col = col;
+                    buffer.glyph_buffer_height = math.min(256, int((state.screen_height - state.source_font_height*2) / state.source_font_height)) + 1;
+                    buffer.glyph_buffer_width = math.min(256, int((state.screen_width - state.source_font_width) / state.source_font_width));
+                    core.update_file_buffer_index_from_cursor(buffer);
+                }
+            },
+            open_virtual_buffer = proc "c" () -> rawptr {
+                context = state.ctx;
+
+                buffer := new(FileBuffer);
+                buffer^ = core.new_virtual_file_buffer(context.allocator);
+
+                return buffer;
+            },
+            free_virtual_buffer = proc "c" (buffer: rawptr) {
+                context = state.ctx;
+
+                if buffer != nil {
+                    buffer := cast(^core.FileBuffer)buffer;
+
+                    core.free_file_buffer(buffer);
+                    free(buffer);
+                }
+            },
+        }
     };
     state.current_input_map = &state.input_map;
     register_default_input_actions(&state.input_map);
@@ -214,6 +725,16 @@ main :: proc() {
         };
 
         runtime.append(&buffer_items, item);
+    }
+
+    // Load plugins
+    // TODO(pcleavelin): Get directory of binary instead of shells current working directory
+    filepath.walk(filepath.join({ os.get_current_directory(), "bin" }), load_plugin, transmute(rawptr)&state);
+
+    for plugin in state.plugins {
+        if plugin.on_initialize != nil {
+            plugin.on_initialize(state.plugin_vtable);
+        }
     }
 
     raylib.InitWindow(640, 480, "odin_editor - [back to basics]");
@@ -248,6 +769,14 @@ main :: proc() {
             defer raylib.EndDrawing();
 
             raylib.ClearBackground(theme.get_palette_raylib_color(.Background));
+
+            // TODO: be more granular in /what/ is being draw by the plugin
+            for plugin in state.plugins {
+                if plugin.on_initialize != nil {
+                    //plugin.on_draw(plugin.plugin);
+                }
+            }
+
             core.draw_file_buffer(&state, buffer, 32, state.source_font_height, state.font);
             ui.draw_menu_bar(&state, &menu_bar_state, 0, 0, i32(state.screen_width), i32(state.screen_height), state.source_font_height);
 
@@ -320,7 +849,7 @@ main :: proc() {
                 theme.get_palette_raylib_color(.Background1));
 
             if state.window != nil && state.window.draw != nil {
-                state.window->draw(&state);
+                state.window.draw(state.plugin_vtable, state.window.user_data);
             }
 
             if state.current_input_map != &state.input_map {
@@ -374,13 +903,15 @@ main :: proc() {
         switch state.mode {
             case .Normal:
                 if state.window != nil && state.window.get_buffer != nil {
-                    do_normal_mode(&state, state.window->get_buffer());
+                    buffer := transmute(^core.FileBuffer)(state.window.get_buffer(state.plugin_vtable, state.window.user_data));
+                    do_normal_mode(&state, buffer);
                 } else {
                     do_normal_mode(&state, buffer);
                 }
             case .Insert:
                 if state.window != nil && state.window.get_buffer != nil {
-                    do_insert_mode(&state, state.window->get_buffer());
+                    buffer := transmute(^core.FileBuffer)(state.window.get_buffer(state.plugin_vtable, state.window.user_data));
+                    do_insert_mode(&state, buffer);
                 } else {
                     do_insert_mode(&state, buffer);
                 }
@@ -392,5 +923,13 @@ main :: proc() {
         }
 
         ui.test_menu_bar(&state, &menu_bar_state, 0,0, mouse_pos, raylib.IsMouseButtonReleased(.LEFT), state.source_font_height);
+
+        runtime.free_all(context.temp_allocator);
+    }
+
+    for plugin in state.plugins {
+        if plugin.on_exit != nil {
+            plugin.on_exit();
+        }
     }
 }

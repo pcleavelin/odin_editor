@@ -11,6 +11,7 @@ import "core:strings"
 import "vendor:raylib"
 
 import "../theme"
+import "../plugin"
 
 ScrollDir :: enum {
     Up,
@@ -48,6 +49,8 @@ FileBuffer :: struct {
 
     directory: string,
     file_path: string,
+    extension: string,
+
     top_line: int,
     cursor: Cursor,
 
@@ -584,6 +587,8 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
         dir = filepath.dir(fi.fullpath);
     }
 
+    extension := filepath.ext(fi.fullpath);
+
     if original_content, success := os.read_entire_file_from_handle(fd); success {
         width := 256;
         height := 256;
@@ -592,6 +597,7 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
             allocator = allocator,
             directory = dir,
             file_path = fi.fullpath,
+            extension = extension,
 
             original_content = slice.clone_to_dynamic(original_content),
             added_content = make([dynamic]u8, 0, 1024*1024),
@@ -612,151 +618,50 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
     }
 }
 
+next_buffer :: proc(state: ^State, prev_buffer: ^int) -> int {
+    index := prev_buffer^;
+
+    if prev_buffer^ >= len(state.buffers)-1 {
+        prev_buffer^ = -1;
+    } else {
+        prev_buffer^ += 1;
+    }
+
+    return index;
+}
+
+into_buffer_info :: proc(state: ^State, buffer: ^FileBuffer) -> plugin.BufferInfo {
+    return plugin.BufferInfo {
+        buffer = buffer,
+        input = plugin.BufferInput {
+            bytes = raw_data(buffer.input_buffer),
+            length = len(buffer.input_buffer),
+        },
+        cursor = plugin.Cursor {
+            col = buffer.cursor.col,
+            line = buffer.cursor.line,
+            index = plugin.BufferIndex {
+                slice_index = buffer.cursor.index.slice_index,
+                content_index = buffer.cursor.index.content_index,
+            }
+        },
+        file_path = strings.clone_to_cstring(buffer.file_path, context.temp_allocator),
+        glyph_buffer_width = buffer.glyph_buffer_width,
+        glyph_buffer_height = buffer.glyph_buffer_height,
+        top_line = buffer.top_line,
+    };
+}
+into_buffer_info_from_index :: proc(state: ^State, buffer_index: int) -> plugin.BufferInfo {
+    buffer := &state.buffers[buffer_index];
+    return into_buffer_info(state, buffer);
+}
+
 free_file_buffer :: proc(buffer: ^FileBuffer) {
     delete(buffer.original_content);
     delete(buffer.added_content);
     delete(buffer.content_slices);
     delete(buffer.glyph_buffer);
     delete(buffer.input_buffer);
-}
-
-is_keyword :: proc(start: FileBufferIter, end: FileBufferIter) -> (matches: bool) {
-    keywords := []string {
-        "using",
-        "transmute",
-        "cast",
-        "distinct",
-        "opaque",
-        "where",
-        "struct",
-        "enum",
-        "union",
-        "bit_field",
-        "bit_set",
-        "if",
-        "when",
-        "else",
-        "do",
-        "for",
-        "switch",
-        "case",
-        "continue",
-        "break",
-        "size_of",
-        "offset_of",
-        "type_info_of",
-        "typeid_of",
-        "type_of",
-        "align_of",
-        "or_return",
-        "or_else",
-        "inline",
-        "no_inline",
-        "string",
-        "cstring",
-        "bool",
-        "b8",
-        "b16",
-        "b32",
-        "b64",
-        "rune",
-        "any",
-        "rawptr",
-        "f16",
-        "f32",
-        "f64",
-        "f16le",
-        "f16be",
-        "f32le",
-        "f32be",
-        "f64le",
-        "f64be",
-        "u8",
-        "u16",
-        "u32",
-        "u64",
-        "u128",
-        "u16le",
-        "u32le",
-        "u64le",
-        "u128le",
-        "u16be",
-        "u32be",
-        "u64be",
-        "u128be",
-        "uint",
-        "uintptr",
-        "i8",
-        "i16",
-        "i32",
-        "i64",
-        "i128",
-        "i16le",
-        "i32le",
-        "i64le",
-        "i128le",
-        "i16be",
-        "i32be",
-        "i64be",
-        "i128be",
-        "int",
-        "complex",
-        "complex32",
-        "complex64",
-        "complex128",
-        "quaternion",
-        "quaternion64",
-        "quaternion128",
-        "quaternion256",
-        "matrix",
-        "typeid",
-        "true",
-        "false",
-        "nil",
-        "dynamic",
-        "map",
-        "proc",
-        "in",
-        "notin",
-        "not_in",
-        "import",
-        "export",
-        "foreign",
-        "const",
-        "package",
-        "return",
-        "defer",
-    };
-
-    for keyword in keywords {
-        it := start;
-        keyword_index := 0;
-
-        for character in iterate_file_buffer(&it) {
-            if character != keyword[keyword_index] {
-                break;
-            }
-
-            keyword_index += 1;
-            if keyword_index >= len(keyword)-1 && it == end {
-                if get_character_at_iter(it) == keyword[keyword_index] {
-                    matches = true;
-                }
-
-                break;
-            } else if keyword_index >= len(keyword)-1 {
-                break;
-            } else if it == end {
-                break;
-            }
-        }
-
-        if matches {
-            break;
-        }
-    }
-
-    return;
 }
 
 color_character :: proc(buffer: ^FileBuffer, start: Cursor, end: Cursor, palette_index: theme.PaletteColor) {
@@ -790,73 +695,6 @@ color_character :: proc(buffer: ^FileBuffer, start: Cursor, end: Cursor, palette
 
         for i in start_col..<math.min(end_col+1, buffer.glyph_buffer_width) {
             buffer.glyph_buffer[i + j * buffer.glyph_buffer_width].color = palette_index;
-        }
-    }
-}
-
-color_buffer :: proc(buffer: ^FileBuffer) {
-    start_it := new_file_buffer_iter(buffer);
-    it := new_file_buffer_iter(buffer);
-
-    for character in iterate_file_buffer(&it) {
-        if it.cursor.line > it.buffer.glyph_buffer_height && (it.cursor.line - it.buffer.top_line) > it.buffer.glyph_buffer_height {
-            break;
-        }
-
-        if character == '/' {
-            start_it = it;
-            // need to go back one character because `it` is on the next character
-            iterate_file_buffer_reverse(&start_it);
-
-            character, _, succ := iterate_file_buffer(&it);
-            if !succ { break; }
-
-            if character == '/' {
-                iterate_file_buffer_until(&it, until_line_break);
-                color_character(buffer, start_it.cursor, it.cursor, .Foreground4);
-            } else if character == '*' {
-                // TODO: block comments
-            }
-        } else if character == '\'' {
-            start_it = it;
-            // need to go back one character because `it` is on the next character
-            iterate_file_buffer_reverse(&start_it);
-
-            // jump into the quoted text
-            iterate_file_buffer_until(&it, until_single_quote);
-            color_character(buffer, start_it.cursor, it.cursor, .Yellow);
-
-            iterate_file_buffer(&it);
-        } else if character == '"' {
-            start_it = it;
-            // need to go back one character because `it` is on the next character
-            iterate_file_buffer_reverse(&start_it);
-
-            // jump into the quoted text
-            iterate_file_buffer_until(&it, until_double_quote);
-            color_character(buffer, start_it.cursor, it.cursor, .Yellow);
-
-            iterate_file_buffer(&it);
-        } else if (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') || character == '_' {
-            start_it = it;
-            // need to go back one character because `it` is on the next character
-            iterate_file_buffer_reverse(&start_it);
-            it = start_it;
-
-            iterate_file_buffer_until(&it, until_end_of_word);
-
-            // TODO: color keywords
-            if is_keyword(start_it, it) {
-                color_character(buffer, start_it.cursor, it.cursor, .Blue);
-            } else if character, _, cond := iterate_peek(&it, iterate_file_buffer); cond {
-                if character == '(' {
-                    color_character(buffer, start_it.cursor, it.cursor, .Green);
-                }
-            } else {
-                break;
-            }
-
-            iterate_file_buffer(&it);
         }
     }
 }
@@ -916,7 +754,9 @@ update_glyph_buffer :: proc(buffer: ^FileBuffer) {
 
 draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, font: raylib.Font, show_line_numbers: bool = true) {
     update_glyph_buffer(buffer);
-    color_buffer(buffer);
+    if highlighter, exists := state.highlighters[buffer.extension]; exists {
+        highlighter(state.plugin_vtable, buffer);
+    }
 
     padding := 0;
     if show_line_numbers {
@@ -960,7 +800,7 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, fon
         text_y := y + state.source_font_height * j;
 
         if show_line_numbers {
-            raylib.DrawTextEx(font, raylib.TextFormat("%d", begin + j + 1), raylib.Vector2 { f32(x), f32(text_y) }, f32(state.source_font_height), 0, theme.get_palette_raylib_color(.Background3));
+            raylib.DrawTextEx(font, raylib.TextFormat("%d", begin + j + 1), raylib.Vector2 { f32(x), f32(text_y) }, f32(state.source_font_height), 0, theme.get_palette_raylib_color(.Background4));
         }
 
         for i in 0..<buffer.glyph_buffer_width {

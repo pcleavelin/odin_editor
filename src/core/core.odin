@@ -1,24 +1,26 @@
 package core
 
+import "core:runtime"
 import "core:fmt"
 import "vendor:raylib"
+
+import "../plugin"
 
 Mode :: enum {
     Normal,
     Insert,
 }
 
-WindowDrawProc :: proc(win: ^Window, state: ^State);
-WindowFreeProc :: proc(win: ^Window, state: ^State);
-WindowGetBufferProc :: proc(win: ^Window) -> ^FileBuffer;
 Window :: struct {
     input_map: InputMap,
-    draw: WindowDrawProc,
-    free: WindowFreeProc,
+    draw: plugin.WindowDrawProc,
+    free_user_data: plugin.WindowFreeProc,
 
-    get_buffer: WindowGetBufferProc,
+    get_buffer: plugin.WindowGetBufferProc,
 
     // TODO: create hook for when mode changes happen
+
+    user_data: rawptr,
 }
 request_window_close :: proc(state: ^State) {
     state.should_close_window = true;
@@ -26,8 +28,8 @@ request_window_close :: proc(state: ^State) {
 
 close_window_and_free :: proc(state: ^State) {
     if state.window != nil {
-        if state.window.free != nil {
-            state.window->free(state);
+        if state.window.free_user_data != nil {
+            state.window.free_user_data(state.plugin_vtable, state.window.user_data);
         }
 
         delete_input_map(&state.window.input_map);
@@ -39,6 +41,8 @@ close_window_and_free :: proc(state: ^State) {
 }
 
 State :: struct {
+    ctx: runtime.Context,
+
     mode: Mode,
     should_close: bool,
     screen_height: int,
@@ -59,10 +63,24 @@ State :: struct {
 
     input_map: InputMap,
     current_input_map: ^InputMap,
+
+    plugins: [dynamic]plugin.Interface,
+    plugin_vtable: plugin.Plugin,
+    highlighters: map[string]plugin.OnColorBufferProc,
+    hooks: map[plugin.Hook][dynamic]plugin.OnHookProc,
 }
 
+add_hook :: proc(state: ^State, hook: plugin.Hook, hook_proc: plugin.OnHookProc) {
+    if _, exists := state.hooks[hook]; !exists {
+        state.hooks[hook] = make([dynamic]plugin.OnHookProc);
+    }
+
+    runtime.append(&state.hooks[hook], hook_proc);
+}
+
+PluginEditorAction :: proc "c" (plugin: plugin.Plugin);
 EditorAction :: proc(state: ^State);
-InputGroup :: union {EditorAction, InputMap}
+InputGroup :: union {PluginEditorAction, EditorAction, InputMap}
 Action :: struct {
     action: InputGroup,
     description: string,
@@ -88,6 +106,18 @@ delete_input_map :: proc(input_map: ^InputMap) {
 // NOTE(pcleavelin): might be a bug in the compiler where it can't coerce
 // `EditorAction` to `InputGroup` when given as a proc parameter, that is why there
 // are two functions
+register_plugin_key_action_single :: proc(input_map: ^InputMap, key: raylib.KeyboardKey, action: PluginEditorAction, description: string = "") {
+    if ok := key in input_map.key_actions; ok {
+        // TODO: log that key is already registered
+        fmt.eprintln("plugin key already registered with single action", key);
+    }
+
+    input_map.key_actions[key] = Action {
+        action = action,
+        description = description,
+    };
+}
+
 register_key_action_single :: proc(input_map: ^InputMap, key: raylib.KeyboardKey, action: EditorAction, description: string = "") {
     if ok := key in input_map.key_actions; ok {
         // TODO: log that key is already registered
@@ -136,5 +166,5 @@ register_ctrl_key_action_group :: proc(input_map: ^InputMap, key: raylib.Keyboar
     };
 }
 
-register_key_action :: proc{register_key_action_single, register_key_action_group};
+register_key_action :: proc{register_plugin_key_action_single, register_key_action_single, register_key_action_group};
 register_ctrl_key_action :: proc{register_ctrl_key_action_single, register_ctrl_key_action_group};
