@@ -34,13 +34,13 @@ OnDraw :: proc "c" (plugin: Plugin) {
 iterate_buffer :: proc(iter_funcs: Iterator, it: ^BufferIter) -> (character: u8, idx: BufferIndex, cond: bool) {
     result := iter_funcs.iterate_buffer(it);
 
-    return result.char, it.cursor.index, result.should_stop;
+    return result.char, it.cursor.index, result.should_continue;
 }
 
 iterate_buffer_reverse :: proc(iter_funcs: Iterator, it: ^BufferIter) -> (character: u8, idx: BufferIndex, cond: bool) {
     result := iter_funcs.iterate_buffer_reverse(it);
 
-    return result.char, it.cursor.index, result.should_stop;
+    return result.char, it.cursor.index, result.should_continue;
 }
 
 iterate_buffer_until :: proc(plugin: Plugin, it: ^BufferIter, until_proc: rawptr) {
@@ -50,7 +50,7 @@ iterate_buffer_until :: proc(plugin: Plugin, it: ^BufferIter, until_proc: rawptr
 iterate_buffer_peek :: proc(plugin: Plugin, it: ^BufferIter) -> (character: u8, idx: BufferIndex, cond: bool) {
     result := plugin.iter.iterate_buffer_peek(it);
 
-    return result.char, it.cursor.index, result.should_stop;
+    return result.char, it.cursor.index, result.should_continue;
 }
 
 is_odin_keyword :: proc(plugin: Plugin, start: BufferIter, end: BufferIter) -> (matches: bool) {

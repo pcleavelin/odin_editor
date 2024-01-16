@@ -62,6 +62,10 @@ do_insert_mode :: proc(state: ^State, buffer: ^FileBuffer) {
     for key > 0 {
         if key >= 32 && key <= 125 && len(buffer.input_buffer) < 1024-1 {
             append(&buffer.input_buffer, u8(key));
+
+            for hook_proc in state.hooks[plugin.Hook.BufferInput] {
+                hook_proc(state.plugin_vtable, buffer);
+            }
         }
 
         key = raylib.GetCharPressed();
@@ -81,6 +85,10 @@ do_insert_mode :: proc(state: ^State, buffer: ^FileBuffer) {
 
     if raylib.IsKeyPressed(.BACKSPACE) {
         core.delete_content(buffer, 1);
+
+        for hook_proc in state.hooks[plugin.Hook.BufferInput] {
+            hook_proc(state.plugin_vtable, buffer);
+        }
     }
 }
 
@@ -94,15 +102,6 @@ switch_to_buffer :: proc(state: ^State, item: ^ui.MenuBarItem) {
 }
 
 register_default_leader_actions :: proc(input_map: ^core.InputMap) {
-    // core.register_key_action(input_map, .B, proc(state: ^State) {
-    //     state.window = ui.create_buffer_list_window();
-    //     state.current_input_map = &state.window.input_map;
-    // }, "show list of open buffers");
-    core.register_key_action(input_map, .R, proc(state: ^State) {
-        state.window = ui.create_grep_window();
-        state.current_input_map = &state.window.input_map;
-        state.mode = .Insert;
-    }, "live grep");
     core.register_key_action(input_map, .Q, proc(state: ^State) {
         state.current_input_map = &state.input_map;
     }, "close this help");
@@ -223,9 +222,15 @@ main :: proc() {
         directory = os.get_current_directory(),
         plugins = make([dynamic]plugin.Interface),
         highlighters = make(map[string]plugin.OnColorBufferProc),
+        hooks = make(map[plugin.Hook][dynamic]plugin.OnHookProc),
     };
     state.plugin_vtable = plugin.Plugin {
         state = cast(rawptr)&state,
+        register_hook = proc "c" (hook: plugin.Hook, on_hook: plugin.OnHookProc) {
+            context = state.ctx;
+
+            core.add_hook(&state, hook, on_hook);
+        },
         register_highlighter = proc "c" (extension: cstring, on_color_buffer: plugin.OnColorBufferProc) {
             context = state.ctx;
 
@@ -290,12 +295,13 @@ main :: proc() {
                 core.register_key_action(to_be_edited_map, key, input_action, description);
             }
         },
-        create_window = proc "c" (user_data: rawptr, register_group: plugin.InputGroupProc, draw_proc: plugin.WindowDrawProc, free_window_proc: plugin.WindowFreeProc) -> rawptr {
+        create_window = proc "c" (user_data: rawptr, register_group: plugin.InputGroupProc, draw_proc: plugin.WindowDrawProc, free_window_proc: plugin.WindowFreeProc, get_buffer_proc: plugin.WindowGetBufferProc) -> rawptr {
             context = state.ctx;
             window := new(core.Window);
             window^ = core.Window {
                 input_map = core.new_input_map(),
                 draw = draw_proc,
+                get_buffer = get_buffer_proc,
                 free_user_data = free_window_proc,
 
                 user_data = user_data,
@@ -337,6 +343,9 @@ main :: proc() {
 
             return strings.clone_to_cstring(state.directory, context.temp_allocator);
         },
+        enter_insert_mode = proc "c" () {
+            state.mode = .Insert;
+        },
         draw_rect = proc "c" (x: i32, y: i32, width: i32, height: i32, color: theme.PaletteColor) {
             context = state.ctx;
 
@@ -357,7 +366,7 @@ main :: proc() {
                 theme.get_palette_raylib_color(color)
             );
         },
-        draw_buffer = proc "c" (buffer_index: int, x: int, y: int, glyph_buffer_width: int, glyph_buffer_height: int, show_line_numbers: bool) {
+        draw_buffer_from_index = proc "c" (buffer_index: int, x: int, y: int, glyph_buffer_width: int, glyph_buffer_height: int, show_line_numbers: bool) {
             context = state.ctx;
             state.buffers[buffer_index].glyph_buffer_width = glyph_buffer_width;
             state.buffers[buffer_index].glyph_buffer_height = glyph_buffer_height;
@@ -365,6 +374,21 @@ main :: proc() {
             core.draw_file_buffer(
                 &state,
                 &state.buffers[buffer_index],
+                x,
+                y,
+                state.font,
+                show_line_numbers);
+        },
+        draw_buffer = proc "c" (buffer: rawptr, x: int, y: int, glyph_buffer_width: int, glyph_buffer_height: int, show_line_numbers: bool) {
+            context = state.ctx;
+
+            buffer := transmute(^core.FileBuffer)buffer;
+            buffer.glyph_buffer_width = glyph_buffer_width;
+            buffer.glyph_buffer_height = glyph_buffer_height;
+
+            core.draw_file_buffer(
+                &state,
+                buffer,
                 x,
                 y,
                 state.font,
@@ -467,7 +491,7 @@ main :: proc() {
 
                 return plugin.IterateResult {
                     char = char,
-                    should_stop = cond,
+                    should_continue = cond,
                 };
             },
             iterate_buffer_reverse = proc "c" (it: ^plugin.BufferIter) -> plugin.IterateResult {
@@ -504,7 +528,7 @@ main :: proc() {
 
                 return plugin.IterateResult {
                     char = char,
-                    should_stop = cond,
+                    should_continue = cond,
                 };
             },
             iterate_buffer_until = proc "c" (it: ^plugin.BufferIter, until_proc: rawptr) {
@@ -573,7 +597,7 @@ main :: proc() {
 
                 return plugin.IterateResult {
                     char = char,
-                    should_stop = cond,
+                    should_continue = cond,
                 };
             },
             until_line_break = transmute(rawptr)core.until_line_break,
@@ -624,7 +648,62 @@ main :: proc() {
             },
             set_current_buffer = proc "c" (buffer_index: int) {
                 state.current_buffer = buffer_index;
-            }
+            },
+            open_buffer = proc "c" (path: cstring, line: int, col: int) {
+                context = state.ctx;
+
+                path := string(path);
+                should_create_buffer := true;
+                for buffer, index in state.buffers {
+                    if strings.compare(buffer.file_path, path) == 0 {
+                        state.current_buffer = index;
+                        should_create_buffer = false;
+                        break;
+                    }
+                }
+
+                buffer: ^core.FileBuffer = nil;
+                err := core.no_error();
+
+                if should_create_buffer {
+                    new_buffer, err := core.new_file_buffer(context.allocator, strings.clone(path));
+                    if err.type != .None {
+                        fmt.println("Failed to open/create file buffer:", err);
+                    } else {
+                        runtime.append(&state.buffers, new_buffer);
+                        state.current_buffer = len(state.buffers)-1;
+                        buffer = &state.buffers[state.current_buffer];
+                    }
+                } else {
+                    buffer = &state.buffers[state.current_buffer];
+                }
+
+                if buffer != nil {
+                    buffer.cursor.line = line;
+                    buffer.cursor.col = col;
+                    buffer.glyph_buffer_height = math.min(256, int((state.screen_height - state.source_font_height*2) / state.source_font_height)) + 1;
+                    buffer.glyph_buffer_width = math.min(256, int((state.screen_width - state.source_font_width) / state.source_font_width));
+                    core.update_file_buffer_index_from_cursor(buffer);
+                }
+            },
+            open_virtual_buffer = proc "c" () -> rawptr {
+                context = state.ctx;
+
+                buffer := new(FileBuffer);
+                buffer^ = core.new_virtual_file_buffer(context.allocator);
+
+                return buffer;
+            },
+            free_virtual_buffer = proc "c" (buffer: rawptr) {
+                context = state.ctx;
+
+                if buffer != nil {
+                    buffer := cast(^core.FileBuffer)buffer;
+
+                    core.free_file_buffer(buffer);
+                    free(buffer);
+                }
+            },
         }
     };
     state.current_input_map = &state.input_map;
@@ -824,13 +903,15 @@ main :: proc() {
         switch state.mode {
             case .Normal:
                 if state.window != nil && state.window.get_buffer != nil {
-                    do_normal_mode(&state, state.window->get_buffer());
+                    buffer := transmute(^core.FileBuffer)(state.window.get_buffer(state.plugin_vtable, state.window.user_data));
+                    do_normal_mode(&state, buffer);
                 } else {
                     do_normal_mode(&state, buffer);
                 }
             case .Insert:
                 if state.window != nil && state.window.get_buffer != nil {
-                    do_insert_mode(&state, state.window->get_buffer());
+                    buffer := transmute(^core.FileBuffer)(state.window.get_buffer(state.plugin_vtable, state.window.user_data));
+                    do_insert_mode(&state, buffer);
                 } else {
                     do_insert_mode(&state, buffer);
                 }

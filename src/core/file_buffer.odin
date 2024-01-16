@@ -630,9 +630,13 @@ next_buffer :: proc(state: ^State, prev_buffer: ^int) -> int {
     return index;
 }
 
-into_buffer_info:: proc(state: ^State, buffer: ^FileBuffer) -> plugin.BufferInfo {
+into_buffer_info :: proc(state: ^State, buffer: ^FileBuffer) -> plugin.BufferInfo {
     return plugin.BufferInfo {
         buffer = buffer,
+        input = plugin.BufferInput {
+            bytes = raw_data(buffer.input_buffer),
+            length = len(buffer.input_buffer),
+        },
         cursor = plugin.Cursor {
             col = buffer.cursor.col,
             line = buffer.cursor.line,

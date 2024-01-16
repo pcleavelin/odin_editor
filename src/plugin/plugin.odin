@@ -35,12 +35,18 @@ BufferIter :: struct {
 
 IterateResult :: struct {
     char: u8,
-    should_stop: bool,
+    should_continue: bool,
+}
+
+BufferInput :: struct {
+    bytes: [^]u8,
+    length: int,
 }
 
 BufferInfo :: struct {
     buffer: rawptr,
     file_path: cstring,
+    input: BufferInput,
 
     cursor: Cursor,
 
@@ -55,6 +61,10 @@ Buffer :: struct {
     get_buffer_info_from_index: proc "c" (buffer_index: int) -> BufferInfo,
     color_char_at: proc "c" (buffer: rawptr, start_cursor: Cursor, end_cursor: Cursor, palette_index: i32),
     set_current_buffer: proc "c" (buffer_index: int),
+
+    open_buffer: proc "c" (path: cstring, line: int, col: int),
+    open_virtual_buffer: proc "c" () -> rawptr,
+    free_virtual_buffer: proc "c" (buffer: rawptr),
 }
 
 Iterator :: struct {
@@ -78,20 +88,24 @@ Iterator :: struct {
 OnColorBufferProc :: proc "c" (plugin: Plugin, buffer: rawptr);
 InputGroupProc :: proc "c" (plugin: Plugin, input_map: rawptr);
 InputActionProc :: proc "c" (plugin: Plugin);
+OnHookProc :: proc "c" (plugin: Plugin, buffer: rawptr);
+
 WindowInputProc :: proc "c" (plugin: Plugin, window: rawptr);
 WindowDrawProc :: proc "c" (plugin: Plugin, window: rawptr);
+WindowGetBufferProc :: proc(plugin: Plugin, window: rawptr) -> rawptr;
 WindowFreeProc :: proc "c" (plugin: Plugin, window: rawptr);
 Plugin :: struct {
     state: rawptr,
     iter: Iterator,
     buffer: Buffer,
 
+    register_hook: proc "c" (hook: Hook, on_hook: OnHookProc),
     register_highlighter: proc "c" (extension: cstring, on_color_buffer: OnColorBufferProc),
 
     register_input_group: proc "c" (input_map: rawptr, key: Key, register_group: InputGroupProc),
     register_input: proc "c" (input_map: rawptr, key: Key, input_action: InputActionProc, description: cstring),
 
-    create_window: proc "c" (user_data: rawptr, register_group: InputGroupProc, draw_proc: WindowDrawProc, free_window_proc: WindowFreeProc) -> rawptr,
+    create_window: proc "c" (user_data: rawptr, register_group: InputGroupProc, draw_proc: WindowDrawProc, free_window_proc: WindowFreeProc, get_buffer_proc: WindowGetBufferProc) -> rawptr,
     get_window: proc "c" () -> rawptr,
 
     request_window_close: proc "c" (),
@@ -100,10 +114,16 @@ Plugin :: struct {
     get_font_width: proc "c" () -> int,
     get_font_height: proc "c" () -> int,
     get_current_directory: proc "c" () -> cstring,
+    enter_insert_mode: proc "c" (),
 
     draw_rect: proc "c" (x: i32, y: i32, width: i32, height: i32, color: theme.PaletteColor),
     draw_text: proc "c" (text: cstring, x: f32, y: f32, color: theme.PaletteColor),
-    draw_buffer: proc "c" (buffer_index: int, x: int, y: int, glyph_buffer_width: int, glyph_buffer_height: int, show_line_numbers: bool),
+    draw_buffer_from_index: proc "c" (buffer_index: int, x: int, y: int, glyph_buffer_width: int, glyph_buffer_height: int, show_line_numbers: bool),
+    draw_buffer: proc "c" (buffer: rawptr, x: int, y: int, glyph_buffer_width: int, glyph_buffer_height: int, show_line_numbers: bool),
+}
+
+Hook :: enum {
+    BufferInput = 0,
 }
 
 Key :: enum {

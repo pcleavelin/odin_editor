@@ -11,15 +11,12 @@ Mode :: enum {
     Insert,
 }
 
-WindowDrawProc :: proc "c" (plugin: plugin.Plugin, user_data: rawptr);
-WindowFreeProc :: proc "c" (plugin: plugin.Plugin, user_data: rawptr);
-WindowGetBufferProc :: proc(win: ^Window) -> ^FileBuffer;
 Window :: struct {
     input_map: InputMap,
-    draw: WindowDrawProc,
-    free_user_data: WindowFreeProc,
+    draw: plugin.WindowDrawProc,
+    free_user_data: plugin.WindowFreeProc,
 
-    get_buffer: WindowGetBufferProc,
+    get_buffer: plugin.WindowGetBufferProc,
 
     // TODO: create hook for when mode changes happen
 
@@ -69,7 +66,16 @@ State :: struct {
 
     plugins: [dynamic]plugin.Interface,
     plugin_vtable: plugin.Plugin,
-    highlighters: map[string]plugin.OnColorBufferProc
+    highlighters: map[string]plugin.OnColorBufferProc,
+    hooks: map[plugin.Hook][dynamic]plugin.OnHookProc,
+}
+
+add_hook :: proc(state: ^State, hook: plugin.Hook, hook_proc: plugin.OnHookProc) {
+    if _, exists := state.hooks[hook]; !exists {
+        state.hooks[hook] = make([dynamic]plugin.OnHookProc);
+    }
+
+    runtime.append(&state.hooks[hook], hook_proc);
 }
 
 PluginEditorAction :: proc "c" (plugin: plugin.Plugin);

@@ -1,2 +1,2 @@
 bin/
-lib-rg/target
+**/target

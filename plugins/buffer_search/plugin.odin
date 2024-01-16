@@ -75,7 +75,7 @@ open_buffer_window :: proc "c" (plugin: Plugin) {
 
             plugin.request_window_close();
         }, "switch to buffer")
-    }, draw_buffer_window, free_buffer_window);
+    }, draw_buffer_window, free_buffer_window, nil);
 }
 
 free_buffer_window :: proc "c" (plugin: Plugin, win: rawptr) {
@@ -149,7 +149,7 @@ draw_buffer_window :: proc "c" (plugin: Plugin, win: rawptr) {
         text_width := len(text) * source_font_width;
 
         if index == win.selected_index {
-            plugin.draw_buffer(
+            plugin.draw_buffer_from_index(
                 index,
                 int(win_rec.x + win_margin.x + win_rec.width / 2),
                 int(win_rec.y + win_margin.y),
