@@ -800,7 +800,7 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, fon
         text_y := y + state.source_font_height * j;
 
         if show_line_numbers {
-            raylib.DrawTextEx(font, raylib.TextFormat("%d", begin + j + 1), raylib.Vector2 { f32(x), f32(text_y) }, f32(state.source_font_height), 0, theme.get_palette_raylib_color(.Background3));
+            raylib.DrawTextEx(font, raylib.TextFormat("%d", begin + j + 1), raylib.Vector2 { f32(x), f32(text_y) }, f32(state.source_font_height), 0, theme.get_palette_raylib_color(.Background4));
         }
 
         for i in 0..<buffer.glyph_buffer_width {

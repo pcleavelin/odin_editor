@@ -354,17 +354,16 @@ main :: proc() {
         draw_text = proc "c" (text: cstring, x: f32, y: f32, color: theme.PaletteColor) {
             context = state.ctx;
 
-            raylib.DrawTextEx(
-                state.font,
-                text,
-                raylib.Vector2 {
-                    x,
-                    y,
-                },
-                f32(state.source_font_height),
-                0,
-                theme.get_palette_raylib_color(color)
-            );
+            text := string(text);
+            for codepoint, index in text {
+                raylib.DrawTextCodepoint(
+                    state.font,
+                    rune(codepoint),
+                    raylib.Vector2 { x + f32(index * state.source_font_width), y },
+                    f32(state.source_font_height),
+                    theme.get_palette_raylib_color(color)
+                );
+            }
         },
         draw_buffer_from_index = proc "c" (buffer_index: int, x: int, y: int, glyph_buffer_width: int, glyph_buffer_height: int, show_line_numbers: bool) {
             context = state.ctx;
@@ -729,7 +728,8 @@ main :: proc() {
     }
 
     // Load plugins
-    filepath.walk(filepath.join({ state.directory, "bin" }), load_plugin, transmute(rawptr)&state);
+    // TODO(pcleavelin): Get directory of binary instead of shells current working directory
+    filepath.walk(filepath.join({ os.get_current_directory(), "bin" }), load_plugin, transmute(rawptr)&state);
 
     for plugin in state.plugins {
         if plugin.on_initialize != nil {

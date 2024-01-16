@@ -1,10 +1,18 @@
-use std::{error::Error, ffi::OsString, path::Path, str::FromStr};
+use std::{
+    error::Error,
+    ffi::OsString,
+    path::Path,
+    str::FromStr,
+    sync::mpsc::{Receiver, Sender},
+    thread,
+};
 
 use grep::{
-    regex::RegexMatcher,
+    regex::{RegexMatcher, RegexMatcherBuilder},
     searcher::{BinaryDetection, SearcherBuilder, Sink, SinkError},
 };
 use plugin_rs_bindings::{Buffer, Closure, Hook, InputMap, Key, PaletteColor, Plugin};
+use std::sync::mpsc::channel;
 use walkdir::WalkDir;
 
 #[derive(Debug)]
@@ -73,7 +81,10 @@ impl Sink for SimpleSink {
 }
 
 fn search(pattern: &str, paths: &[OsString]) -> Result<SimpleSink, Box<dyn Error>> {
-    let matcher = RegexMatcher::new_line_matcher(pattern)?;
+    let matcher = RegexMatcherBuilder::new()
+        .case_smart(true)
+        .fixed_strings(true)
+        .build(pattern)?;
     let mut searcher = SearcherBuilder::new()
         .binary_detection(BinaryDetection::quit(b'\x00'))
         .line_number(true)
@@ -81,7 +92,15 @@ fn search(pattern: &str, paths: &[OsString]) -> Result<SimpleSink, Box<dyn Error
 
     let mut sink = SimpleSink::default();
     for path in paths {
-        for result in WalkDir::new(path) {
+        for result in WalkDir::new(path).into_iter().filter_entry(|dent| {
+            if dent.file_type().is_dir()
+                && (dent.path().ends_with("target") || dent.path().ends_with(".git"))
+            {
+                return false;
+            }
+
+            true
+        }) {
             let dent = match result {
                 Ok(dent) => dent,
                 Err(err) => {
@@ -105,18 +124,24 @@ fn search(pattern: &str, paths: &[OsString]) -> Result<SimpleSink, Box<dyn Error
     Ok(sink)
 }
 
-#[derive(Default)]
+enum Message {
+    Search((String, Vec<OsString>)),
+    Quit,
+}
+
 struct GrepWindow {
     sink: Option<SimpleSink>,
     selected_match: usize,
     top_index: usize,
     input_buffer: Option<Buffer>,
+
+    tx: Sender<Message>,
+    rx: Receiver<SimpleSink>,
 }
 
 #[no_mangle]
 pub extern "C" fn OnInitialize(plugin: Plugin) {
     println!("Grep Plugin Initialized");
-
     plugin.register_hook(Hook::BufferInput, on_buffer_input);
     plugin.register_input_group(
         None,
@@ -126,11 +151,17 @@ pub extern "C" fn OnInitialize(plugin: Plugin) {
                 input_map,
                 Key::R,
                 Closure!((plugin: Plugin) => {
+                    let (window_tx, thread_rx) = channel();
+                    let (thread_tx, window_rx) = channel();
+                    create_search_thread(thread_tx, thread_rx);
+
                     let window = GrepWindow {
                         selected_match: 0,
                         top_index: 0,
                         input_buffer: Some(plugin.buffer_table.open_virtual_buffer()),
                         sink: None,
+                        tx: window_tx,
+                        rx: window_rx,
                     };
 
                     plugin.create_window(window, Closure!((plugin: Plugin, input_map: InputMap) => {
@@ -212,6 +243,24 @@ pub extern "C" fn OnInitialize(plugin: Plugin) {
     );
 }
 
+fn create_search_thread(tx: Sender<SimpleSink>, rx: Receiver<Message>) {
+    thread::spawn(move || {
+        while let Ok(message) = rx.recv() {
+            match message {
+                Message::Search((pattern, paths)) => {
+                    if let Ok(sink) = search(&pattern, &paths) {
+                        if let Err(err) = tx.send(sink) {
+                            eprintln!("error getting grep results: {err:?}");
+                            return;
+                        }
+                    }
+                }
+                Message::Quit => return,
+            }
+        }
+    });
+}
+
 #[no_mangle]
 pub extern "C" fn OnExit(_plugin: Plugin) {
     println!("Grep Plugin Exiting");
@@ -239,6 +288,13 @@ extern "C" fn draw_window(plugin: Plugin, window: *const std::ffi::c_void) {
     let directory = Path::new(dir.as_ref());
 
     (plugin.draw_rect)(x, y, width, height, PaletteColor::Background4);
+    (plugin.draw_rect)(
+        x + font_width,
+        y + font_height,
+        width - font_width * 2,
+        height - font_height * 3,
+        PaletteColor::Background3,
+    );
 
     if let Some(buffer) = window.input_buffer {
         (plugin.draw_rect)(
@@ -258,12 +314,17 @@ extern "C" fn draw_window(plugin: Plugin, window: *const std::ffi::c_void) {
         );
     }
 
+    if let Ok(sink) = window.rx.try_recv() {
+        window.sink = Some(sink);
+    }
+
     if let Some(sink) = &window.sink {
         if !sink.matches.is_empty() {
             let num_mats_to_draw = std::cmp::min(
                 (sink.matches.len() - window.top_index) as i32,
                 (height - font_height * 2) / (font_height) - 1,
             );
+            let max_mat_length = (width - font_width * 2) / font_width;
 
             for (i, mat) in sink.matches[window.top_index..].iter().enumerate() {
                 let index = i + window.top_index;
@@ -281,17 +342,24 @@ extern "C" fn draw_window(plugin: Plugin, window: *const std::ffi::c_void) {
                 let matched_text = String::from_utf8_lossy(&mat.text);
                 let text = match mat.line_number {
                     Some(line_number) => format!(
-                        "{} - {}:{}:{}: {}\0",
-                        index, relative_file_path, line_number, mat.column, matched_text
+                        "{}:{}:{}: {}",
+                        relative_file_path, line_number, mat.column, matched_text
                     ),
-                    None => format!("{}:{}: {}\0", relative_file_path, mat.column, matched_text),
+                    None => format!("{}:{}: {}", relative_file_path, mat.column, matched_text),
                 };
+                let text = if text.len() > max_mat_length as usize {
+                    text.as_str().split_at(max_mat_length as usize).0
+                } else {
+                    &text
+                };
+
+                let text = format!("{text}\0");
 
                 if index == window.selected_match {
                     (plugin.draw_rect)(
                         x + font_width,
                         y + font_height + ((index - window.top_index) as i32) * font_height,
-                        (text.len() as i32) * font_width,
+                        (text.chars().count() as i32) * font_width,
                         font_height,
                         PaletteColor::Background2,
                     );
@@ -320,11 +388,18 @@ extern "C" fn on_buffer_input(plugin: Plugin, buffer: Buffer) {
             if let Some(buffer_info) = plugin.buffer_table.get_buffer_info(buffer) {
                 if let Some(input) = buffer_info.input.try_as_str() {
                     let directory = OsString::from_str(plugin.get_current_directory().as_ref());
-                    window.sink = match directory {
-                        Ok(dir) => search(&input, &[dir]).ok(),
+
+                    match directory {
+                        Ok(dir) => {
+                            if let Err(err) = window
+                                .tx
+                                .send(Message::Search((input.to_string(), vec![dir])))
+                            {
+                                eprintln!("failed to grep: {err:?}");
+                            }
+                        }
                         Err(_) => {
                             eprintln!("failed to parse directory");
-                            None
                         }
                     };
                 }
@@ -335,6 +410,8 @@ extern "C" fn on_buffer_input(plugin: Plugin, buffer: Buffer) {
 
 extern "C" fn free_window(plugin: Plugin, window: *const std::ffi::c_void) {
     let mut window = unsafe { Box::<GrepWindow>::from_raw(window as *mut GrepWindow) };
+    let _ = window.tx.send(Message::Quit);
+
     if let Some(buffer) = window.input_buffer {
         plugin.buffer_table.free_virtual_buffer(buffer);
         window.input_buffer = None;
