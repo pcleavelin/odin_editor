@@ -334,15 +334,16 @@ color_buffer_odin :: proc "c" (plugin: Plugin, buffer: rawptr) {
 
             if is_odin_keyword(plugin, start_it, it) {
                 plugin.buffer.color_char_at(it.buffer, start_it.cursor, it.cursor, 13);
+
+                iterate_buffer(plugin.iter, &it);
             } else if character, _, cond := iterate_buffer_peek(plugin, &it); cond {
                 if character == '(' {
                     plugin.buffer.color_char_at(it.buffer, start_it.cursor, it.cursor, 11);
+                    iterate_buffer(plugin.iter, &it);
                 }
             } else {
                 break;
             }
-
-            iterate_buffer(plugin.iter, &it);
         }
     }
 }
@@ -404,15 +405,16 @@ color_buffer_rust :: proc "c" (plugin: Plugin, buffer: rawptr) {
 
             if is_rust_keyword(plugin, start_it, it) {
                 plugin.buffer.color_char_at(it.buffer, start_it.cursor, it.cursor, 13);
+
+                iterate_buffer(plugin.iter, &it);
             } else if character, _, cond := iterate_buffer_peek(plugin, &it); cond {
-                if character == '(' || character == '<' {
+                if character == '(' || character == '<' || character == '!' {
                     plugin.buffer.color_char_at(it.buffer, start_it.cursor, it.cursor, 11);
+                    iterate_buffer(plugin.iter, &it);
                 }
             } else {
                 break;
             }
-
-            iterate_buffer(plugin.iter, &it);
         }
     }
 }
