@@ -8,7 +8,7 @@ use std::{
 };
 
 use grep::{
-    regex::{RegexMatcher, RegexMatcherBuilder},
+    regex::{RegexMatcherBuilder},
     searcher::{BinaryDetection, SearcherBuilder, Sink, SinkError},
 };
 use plugin_rs_bindings::{Buffer, Closure, Hook, InputMap, Key, PaletteColor, Plugin};

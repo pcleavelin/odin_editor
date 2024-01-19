@@ -754,6 +754,8 @@ main :: proc() {
         }
     };
 
+    ui.init();
+
     for !raylib.WindowShouldClose() && !state.should_close {
         state.screen_width = int(raylib.GetScreenWidth());
         state.screen_height = int(raylib.GetScreenHeight());
@@ -778,9 +780,85 @@ main :: proc() {
             }
 
             core.draw_file_buffer(&state, buffer, 32, state.source_font_height, state.font);
-            ui.draw_menu_bar(&state, &menu_bar_state, 0, 0, i32(state.screen_width), i32(state.screen_height), state.source_font_height);
 
-            raylib.DrawRectangle(0, i32(state.screen_height - state.source_font_height), i32(state.screen_width), i32(state.source_font_height), theme.get_palette_raylib_color(.Background2));
+            {
+                ui.push_parent(ui.push_box("main", {}, .Vertical, semantic_size = {ui.make_semantic_size(.PercentOfParent, 100), ui.make_semantic_size(.PercentOfParent, 100)}));
+                defer ui.pop_parent();
+
+                {
+                    ui.push_parent(ui.push_box("top_nav", {.DrawBackground}, semantic_size = {ui.make_semantic_size(.PercentOfParent, 100), ui.make_semantic_size(.Exact, state.source_font_height)}));
+                    defer ui.pop_parent();
+
+                    if ui.button("Editor").clicked {
+                        fmt.println("you clicked the button");
+                    }
+
+                    ui.push_box(
+                        "nav spacer",
+                        {.DrawBackground},
+                        semantic_size = {
+                            ui.make_semantic_size(.Exact, 16),
+                            ui.make_semantic_size(.Exact, state.source_font_height)
+                        }
+                    );
+
+                    if ui.button("Buffers").clicked {
+                        fmt.println("you clicked the button");
+                    }
+
+                    //ui.two_buttons_test("button left", "button right");
+                }
+                {
+                    ui.push_parent(ui.push_box("deezbuffer", {}, semantic_size = {ui.make_semantic_size(.PercentOfParent, 100), ui.make_semantic_size(.Fill, 0)}));
+                    defer ui.pop_parent();
+
+                    ui.spacer("left side");
+                    {
+                        ui.push_parent(ui.spacer("right side"));
+                        defer ui.pop_parent();
+
+                        ui.button("Do you need some help?");
+                    }
+                }
+                {
+                    ui.push_parent(ui.push_box("bottom stats", {.DrawBackground}, semantic_size = {ui.make_semantic_size(.PercentOfParent, 100), ui.make_semantic_size(.Exact, state.source_font_height)}));
+                    defer ui.pop_parent();
+
+                    label := "";
+                    if state.mode == .Insert {
+                        label = "INSERT";
+                    } else if state.mode == .Normal {
+                        label = "NORMAL";
+                    }
+
+                    if ui.button(label).clicked {
+                        fmt.println("you clicked the button");
+                    }
+
+                    ui.spacer("stats inbetween");
+
+                    line_info_text := raylib.TextFormat(
+                        "Line: %d, Col: %d, Len: %d --- Slice Index: %d, Content Index: %d",
+                        //"Line: %d, Col: %d",
+                        buffer.cursor.line + 1,
+                        buffer.cursor.col + 1,
+                        core.file_buffer_line_length(buffer, buffer.cursor.index),
+                        buffer.cursor.index.slice_index,
+                        buffer.cursor.index.content_index
+                    );
+                    ui.button(string(line_info_text));
+                }
+            }
+
+            ui.compute_layout({ state.screen_width, state.screen_height }, state.source_font_width, state.source_font_height);
+
+
+
+            ui.draw(state.font, state.source_font_width, state.source_font_height);
+            ui.prune();
+            //ui.draw_menu_bar(&state, &menu_bar_state, 0, 0, i32(state.screen_width), i32(state.screen_height), state.source_font_height);
+
+            //raylib.DrawRectangle(0, i32(state.screen_height - state.source_font_height), i32(state.screen_width), i32(state.source_font_height), theme.get_palette_raylib_color(.Background2));
 
             line_info_text := raylib.TextFormat(
                 // "Line: %d, Col: %d, Len: %d --- Slice Index: %d, Content Index: %d",
@@ -793,60 +871,60 @@ main :: proc() {
             );
             line_info_width := raylib.MeasureTextEx(state.font, line_info_text, f32(state.source_font_height), 0).x;
 
-            switch state.mode {
-                case .Normal:
-                    raylib.DrawRectangle(
-                        0,
-                        i32(state.screen_height - state.source_font_height),
-                        i32(8 + len("NORMAL")*state.source_font_width),
-                        i32(state.source_font_height),
-                        theme.get_palette_raylib_color(.Foreground4));
-                    raylib.DrawRectangleV(
-                        raylib.Vector2 { f32(state.screen_width) - line_info_width - 8, f32(state.screen_height - state.source_font_height) },
-                        raylib.Vector2 { 8 + line_info_width, f32(state.source_font_height) },
-                        theme.get_palette_raylib_color(.Foreground4));
-                    raylib.DrawTextEx(
-                        state.font,
-                        "NORMAL",
-                        raylib.Vector2 { 4, f32(state.screen_height - state.source_font_height) },
-                        f32(state.source_font_height),
-                        0,
-                        theme.get_palette_raylib_color(.Background1));
-                case .Insert:
-                    raylib.DrawRectangle(
-                        0,
-                        i32(state.screen_height - state.source_font_height),
-                        i32(8 + len("INSERT")*state.source_font_width),
-                        i32(state.source_font_height),
-                        theme.get_palette_raylib_color(.Foreground2));
-                    raylib.DrawRectangleV(
-                        raylib.Vector2 { f32(state.screen_width) - line_info_width - 8, f32(state.screen_height - state.source_font_height) },
-                        raylib.Vector2 { 8 + line_info_width, f32(state.source_font_height) },
-                        theme.get_palette_raylib_color(.Foreground2));
-                    raylib.DrawTextEx(
-                        state.font,
-                        "INSERT",
-                        raylib.Vector2 { 4, f32(state.screen_height - state.source_font_height) },
-                        f32(state.source_font_height),
-                        0,
-                        theme.get_palette_raylib_color(.Background1));
-            }
+            // switch state.mode {
+            //     case .Normal:
+            //         raylib.DrawRectangle(
+            //             0,
+            //             i32(state.screen_height - state.source_font_height),
+            //             i32(8 + len("NORMAL")*state.source_font_width),
+            //             i32(state.source_font_height),
+            //             theme.get_palette_raylib_color(.Foreground4));
+            //         raylib.DrawRectangleV(
+            //             raylib.Vector2 { f32(state.screen_width) - line_info_width - 8, f32(state.screen_height - state.source_font_height) },
+            //             raylib.Vector2 { 8 + line_info_width, f32(state.source_font_height) },
+            //             theme.get_palette_raylib_color(.Foreground4));
+            //         raylib.DrawTextEx(
+            //             state.font,
+            //             "NORMAL",
+            //             raylib.Vector2 { 4, f32(state.screen_height - state.source_font_height) },
+            //             f32(state.source_font_height),
+            //             0,
+            //             theme.get_palette_raylib_color(.Background1));
+            //     case .Insert:
+            //         raylib.DrawRectangle(
+            //             0,
+            //             i32(state.screen_height - state.source_font_height),
+            //             i32(8 + len("INSERT")*state.source_font_width),
+            //             i32(state.source_font_height),
+            //             theme.get_palette_raylib_color(.Foreground2));
+            //         raylib.DrawRectangleV(
+            //             raylib.Vector2 { f32(state.screen_width) - line_info_width - 8, f32(state.screen_height - state.source_font_height) },
+            //             raylib.Vector2 { 8 + line_info_width, f32(state.source_font_height) },
+            //             theme.get_palette_raylib_color(.Foreground2));
+            //         raylib.DrawTextEx(
+            //             state.font,
+            //             "INSERT",
+            //             raylib.Vector2 { 4, f32(state.screen_height - state.source_font_height) },
+            //             f32(state.source_font_height),
+            //             0,
+            //             theme.get_palette_raylib_color(.Background1));
+            // }
 
             relative_file_path, _ := filepath.rel(state.directory, buffer.file_path)
-            raylib.DrawTextEx(
-                state.font,
-                raylib.TextFormat("%s", relative_file_path),
-                raylib.Vector2 { 8 + 4 + 6 * f32(state.source_font_width), f32(state.screen_height - state.source_font_height) },
-                f32(state.source_font_height),
-                0,
-                theme.get_palette_raylib_color(.Foreground1));
-            raylib.DrawTextEx(
-                state.font,
-                line_info_text,
-                raylib.Vector2 { f32(state.screen_width) - line_info_width - 4, f32(state.screen_height - state.source_font_height) },
-                f32(state.source_font_height),
-                0,
-                theme.get_palette_raylib_color(.Background1));
+            // raylib.DrawTextEx(
+            //     state.font,
+            //     raylib.TextFormat("%s", relative_file_path),
+            //     raylib.Vector2 { 8 + 4 + 6 * f32(state.source_font_width), f32(state.screen_height - state.source_font_height) },
+            //     f32(state.source_font_height),
+            //     0,
+            //     theme.get_palette_raylib_color(.Foreground1));
+            // raylib.DrawTextEx(
+            //     state.font,
+            //     line_info_text,
+            //     raylib.Vector2 { f32(state.screen_width) - line_info_width - 4, f32(state.screen_height - state.source_font_height) },
+            //     f32(state.source_font_height),
+            //     0,
+            //     theme.get_palette_raylib_color(.Background1));
 
             if state.window != nil && state.window.draw != nil {
                 state.window.draw(state.plugin_vtable, state.window.user_data);
