@@ -7,6 +7,11 @@ import "vendor:raylib"
 
 import "../theme"
 
+Context :: struct {
+    text_width: proc() -> i32,
+    text_height: proc() -> i32,
+}
+
 root: ^Box = nil;
 current_parent: ^Box = nil;
 persistent: map[Key]^Box = nil;
@@ -454,15 +459,6 @@ draw :: proc(font: raylib.Font, font_width: int, font_height: int, box: ^Box = r
     push_clip(box.computed_pos, box.computed_size);
     defer pop_clip();
 
-    if .DrawBorder in box.flags {
-        raylib.DrawRectangleLines(
-            i32(box.computed_pos.x),
-            i32(box.computed_pos.y),
-            i32(box.computed_size.x),
-            i32(box.computed_size.y),
-            theme.get_palette_raylib_color(.Background4)
-        );
-    }
     if .DrawBackground in box.flags {
         raylib.DrawRectangle(
             i32(box.computed_pos.x),
@@ -470,6 +466,15 @@ draw :: proc(font: raylib.Font, font_width: int, font_height: int, box: ^Box = r
             i32(box.computed_size.x),
             i32(box.computed_size.y),
             theme.get_palette_raylib_color(.Background1)
+        );
+    }
+    if .DrawBorder in box.flags {
+        raylib.DrawRectangleLines(
+            i32(box.computed_pos.x),
+            i32(box.computed_pos.y),
+            i32(box.computed_size.x),
+            i32(box.computed_size.y),
+            theme.get_palette_raylib_color(.Background4)
         );
     }
     if .DrawText in box.flags {
@@ -533,6 +538,12 @@ debug_print :: proc(box: ^Box, depth: int = 0) {
 
 spacer :: proc(label: string) -> ^Box {
     return push_box(label, {}, semantic_size = {make_semantic_size(.Fill, 0), make_semantic_size(.Fill, 0)});
+}
+
+label :: proc(label: string) -> Interaction {
+    box := push_box(label, {.DrawText});
+
+    return test_box(box);
 }
 
 button :: proc(label: string) -> Interaction {

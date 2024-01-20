@@ -212,6 +212,13 @@ load_plugin :: proc(info: os.File_Info, in_err: os.Errno, state: rawptr) -> (err
     return in_err, skip_dir;
 }
 
+ui_font_width :: proc() -> i32 {
+    return i32(state.source_font_width);
+}
+ui_font_height :: proc() -> i32 {
+    return i32(state.source_font_height);
+}
+
 main :: proc() {
     state = State {
         ctx = context,
@@ -224,6 +231,12 @@ main :: proc() {
         highlighters = make(map[string]plugin.OnColorBufferProc),
         hooks = make(map[plugin.Hook][dynamic]plugin.OnHookProc),
     };
+
+    ui_ctx := ui.Context {
+        text_width = ui_font_width,
+        text_height = ui_font_height,
+    }
+
     state.plugin_vtable = plugin.Plugin {
         state = cast(rawptr)&state,
         register_hook = proc "c" (hook: plugin.Hook, on_hook: plugin.OnHookProc) {
@@ -737,9 +750,9 @@ main :: proc() {
         }
     }
 
-    raylib.InitWindow(640, 480, "odin_editor - [back to basics]");
+    raylib.InitWindow(640, 480, "odin_editor - [now with more ui]");
     raylib.SetWindowState({ .WINDOW_RESIZABLE, .VSYNC_HINT });
-    raylib.SetTargetFPS(60);
+    raylib.SetTargetFPS(144);
     raylib.SetExitKey(.KEY_NULL);
 
     // TODO: don't just hard code a MacOS font path
@@ -772,13 +785,6 @@ main :: proc() {
 
             raylib.ClearBackground(theme.get_palette_raylib_color(.Background));
 
-            // TODO: be more granular in /what/ is being draw by the plugin
-            for plugin in state.plugins {
-                if plugin.on_initialize != nil {
-                    //plugin.on_draw(plugin.plugin);
-                }
-            }
-
             core.draw_file_buffer(&state, buffer, 32, state.source_font_height, state.font);
 
             {
@@ -789,7 +795,7 @@ main :: proc() {
                     ui.push_parent(ui.push_box("top_nav", {.DrawBackground}, semantic_size = {ui.make_semantic_size(.PercentOfParent, 100), ui.make_semantic_size(.Exact, state.source_font_height)}));
                     defer ui.pop_parent();
 
-                    if ui.button("Editor").clicked {
+                    if ui.label("Editor").clicked {
                         fmt.println("you clicked the button");
                     }
 
@@ -802,23 +808,12 @@ main :: proc() {
                         }
                     );
 
-                    if ui.button("Buffers").clicked {
+                    if ui.label("Buffers").clicked {
                         fmt.println("you clicked the button");
                     }
-
-                    //ui.two_buttons_test("button left", "button right");
                 }
                 {
-                    ui.push_parent(ui.push_box("deezbuffer", {}, semantic_size = {ui.make_semantic_size(.PercentOfParent, 100), ui.make_semantic_size(.Fill, 0)}));
-                    defer ui.pop_parent();
-
-                    ui.spacer("left side");
-                    {
-                        ui.push_parent(ui.spacer("right side"));
-                        defer ui.pop_parent();
-
-                        ui.button("Do you need some help?");
-                    }
+                    ui.push_box("deezbuffer", {}, semantic_size = {ui.make_semantic_size(.PercentOfParent, 100), ui.make_semantic_size(.Fill, 0)});
                 }
                 {
                     ui.push_parent(ui.push_box("bottom stats", {.DrawBackground}, semantic_size = {ui.make_semantic_size(.PercentOfParent, 100), ui.make_semantic_size(.Exact, state.source_font_height)}));
@@ -837,16 +832,26 @@ main :: proc() {
 
                     ui.spacer("stats inbetween");
 
-                    line_info_text := raylib.TextFormat(
-                        "Line: %d, Col: %d, Len: %d --- Slice Index: %d, Content Index: %d",
-                        //"Line: %d, Col: %d",
-                        buffer.cursor.line + 1,
-                        buffer.cursor.col + 1,
-                        core.file_buffer_line_length(buffer, buffer.cursor.index),
-                        buffer.cursor.index.slice_index,
-                        buffer.cursor.index.content_index
-                    );
-                    ui.button(string(line_info_text));
+                    {
+                        ui.push_parent(ui.push_box("center info", {}, semantic_size = ui.ChildrenSum));
+                        defer ui.pop_parent();
+
+                        line_info_text := raylib.TextFormat(
+                            //"Line: %d, Col: %d, Len: %d --- Slice Index: %d, Content Index: %d --- Frame Time: %fms",
+                            "Line: %d, Col: %d",
+                            buffer.cursor.line + 1,
+                            buffer.cursor.col + 1,
+                            //core.file_buffer_line_length(buffer, buffer.cursor.index),
+                            // buffer.cursor.index.slice_index,
+                            // buffer.cursor.index.content_index,
+                        );
+                        ui.label(string(line_info_text));
+                    }
+
+                    ui.spacer("frame time spacer");
+                    frame_time := (60.0/f32(raylib.GetFPS())) * 10;
+                    frame_time_text := raylib.TextFormat("frame time: %fms", frame_time);
+                    ui.label(string(frame_time_text));
                 }
             }
 
