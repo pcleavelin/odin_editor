@@ -2,7 +2,7 @@ package core
 
 import "core:runtime"
 import "core:fmt"
-import "vendor:raylib"
+import "vendor:sdl2"
 
 import "../plugin"
 
@@ -42,12 +42,13 @@ close_window_and_free :: proc(state: ^State) {
 
 State :: struct {
     ctx: runtime.Context,
+    sdl_renderer: ^sdl2.Renderer,
+    font_atlas: FontAtlas,
 
     mode: Mode,
     should_close: bool,
     screen_height: int,
     screen_width: int,
-    font: raylib.Font,
 
     directory: string,
 
@@ -86,14 +87,14 @@ Action :: struct {
     description: string,
 }
 InputMap :: struct {
-    key_actions: map[raylib.KeyboardKey]Action,
-    ctrl_key_actions: map[raylib.KeyboardKey]Action,
+    key_actions: map[plugin.Key]Action,
+    ctrl_key_actions: map[plugin.Key]Action,
 }
 
 new_input_map :: proc() -> InputMap {
     input_map := InputMap {
-        key_actions = make(map[raylib.KeyboardKey]Action),
-        ctrl_key_actions = make(map[raylib.KeyboardKey]Action),
+        key_actions = make(map[plugin.Key]Action),
+        ctrl_key_actions = make(map[plugin.Key]Action),
     }
 
     return input_map;
@@ -106,7 +107,7 @@ delete_input_map :: proc(input_map: ^InputMap) {
 // NOTE(pcleavelin): might be a bug in the compiler where it can't coerce
 // `EditorAction` to `InputGroup` when given as a proc parameter, that is why there
 // are two functions
-register_plugin_key_action_single :: proc(input_map: ^InputMap, key: raylib.KeyboardKey, action: PluginEditorAction, description: string = "") {
+register_plugin_key_action_single :: proc(input_map: ^InputMap, key: plugin.Key, action: PluginEditorAction, description: string = "") {
     if ok := key in input_map.key_actions; ok {
         // TODO: log that key is already registered
         fmt.eprintln("plugin key already registered with single action", key);
@@ -118,7 +119,7 @@ register_plugin_key_action_single :: proc(input_map: ^InputMap, key: raylib.Keyb
     };
 }
 
-register_key_action_single :: proc(input_map: ^InputMap, key: raylib.KeyboardKey, action: EditorAction, description: string = "") {
+register_key_action_single :: proc(input_map: ^InputMap, key: plugin.Key, action: EditorAction, description: string = "") {
     if ok := key in input_map.key_actions; ok {
         // TODO: log that key is already registered
         fmt.eprintln("key already registered with single action", key);
@@ -130,7 +131,7 @@ register_key_action_single :: proc(input_map: ^InputMap, key: raylib.KeyboardKey
     };
 }
 
-register_key_action_group :: proc(input_map: ^InputMap, key: raylib.KeyboardKey, input_group: InputGroup, description: string = "") {
+register_key_action_group :: proc(input_map: ^InputMap, key: plugin.Key, input_group: InputGroup, description: string = "") {
     if ok := key in input_map.key_actions; ok {
         // TODO: log that key is already registered
         fmt.eprintln("key already registered with single action", key);
@@ -142,7 +143,7 @@ register_key_action_group :: proc(input_map: ^InputMap, key: raylib.KeyboardKey,
     };
 }
 
-register_ctrl_key_action_single :: proc(input_map: ^InputMap, key: raylib.KeyboardKey, action: EditorAction, description: string = "") {
+register_ctrl_key_action_single :: proc(input_map: ^InputMap, key: plugin.Key, action: EditorAction, description: string = "") {
     if ok := key in input_map.key_actions; ok {
         // TODO: log that key is already registered
         fmt.eprintln("key already registered with single action", key);
@@ -154,7 +155,7 @@ register_ctrl_key_action_single :: proc(input_map: ^InputMap, key: raylib.Keyboa
     };
 }
 
-register_ctrl_key_action_group :: proc(input_map: ^InputMap, key: raylib.KeyboardKey, input_group: InputGroup, description: string = "") {
+register_ctrl_key_action_group :: proc(input_map: ^InputMap, key: plugin.Key, input_group: InputGroup, description: string = "") {
     if ok := key in input_map.key_actions; ok {
         // TODO: log that key is already registered
         fmt.eprintln("key already registered with single action", key);

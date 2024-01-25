@@ -3,21 +3,29 @@ package ui
 import "core:fmt"
 import "core:strings"
 import "core:math"
-import "vendor:raylib"
+import "vendor:sdl2"
 
+import "../core"
 import "../theme"
 
 Context :: struct {
-    text_width: proc() -> i32,
-    text_height: proc() -> i32,
+    root: ^Box,
+    current_parent: ^Box,
+    persistent: map[Key]^Box,
+    current_interaction_index: int,
+
+    clips: [dynamic]Rect,
+    renderer: ^sdl2.Renderer,
+
+    mouse_x: int,
+    mouse_y: int,
+
+    mouse_left_down: bool,
+    last_mouse_left_down: bool,
+
+    mouse_right_down: bool,
+    last_mouse_right_down: bool,
 }
-
-root: ^Box = nil;
-current_parent: ^Box = nil;
-persistent: map[Key]^Box = nil;
-current_interaction_index: int = 0;
-
-clips: [dynamic]Rect = nil;
 
 Rect :: struct {
     pos: [2]int,
@@ -30,6 +38,7 @@ Key :: struct {
 }
 
 Interaction :: struct {
+    hovering: bool,
     clicked: bool,
 }
 
@@ -40,6 +49,7 @@ Flag :: enum {
     DrawText,
     DrawBorder,
     DrawBackground,
+    CustomDrawFunc,
 }
 
 SemanticSizeKind :: enum {
@@ -60,6 +70,7 @@ Axis :: enum {
     Vertical = 1,
 }
 
+CustomDrawFunc :: proc(state: ^core.State, box: ^Box, user_data: rawptr);
 Box :: struct {
     first: ^Box,
     last: ^Box,
@@ -77,30 +88,36 @@ Box :: struct {
     axis: Axis,
     semantic_size: [2]SemanticSize,
     computed_size: [2]int,
+    computed_pos: [2]int,
 
-    computed_pos: [2]int
+    hot: int,
+    active: int,
+
+    custom_draw_func: CustomDrawFunc,
+    user_data: rawptr,
 }
 
-init :: proc() {
-    if persistent == nil {
-        persistent = make(map[Key]^Box);
-    }
+init :: proc(renderer: ^sdl2.Renderer) -> Context {
+    root := new(Box);
+    root.key = gen_key(nil, "root", 69);
 
-    if clips == nil {
-        clips = make([dynamic]Rect);
-    }
-
-    root = new(Box);
-    root.key = gen_key("root", 69);
-    current_parent = root;
+    return Context {
+        root = root,
+        current_parent = root,
+        persistent = make(map[Key]^Box),
+        clips = make([dynamic]Rect),
+        renderer = renderer,
+    };
 }
 
-gen_key :: proc(label: string, value: int) -> Key {
+gen_key :: proc(ctx: ^Context, label: string, value: int) -> Key {
     key_label := ""
-    if current_parent == nil || len(current_parent.key.label) < 1 {
+    if ctx != nil && (ctx.current_parent == nil || len(ctx.current_parent.key.label) < 1) {
         key_label = strings.clone(label);
+    } else if ctx != nil {
+        key_label = fmt.aprintf("%s:%s", ctx.current_parent.key.label, label);
     } else {
-        key_label = fmt.aprintf("%s:%s", current_parent.key.label, label);
+        key_label = fmt.aprintf("%s",label);
     }
 
     return Key {
@@ -109,22 +126,22 @@ gen_key :: proc(label: string, value: int) -> Key {
     };
 }
 
-make_box :: proc(key: Key, label: string, flags: bit_set[Flag], axis: Axis, semantic_size: [2]SemanticSize) -> ^Box {
+make_box :: proc(ctx: ^Context, key: Key, label: string, flags: bit_set[Flag], axis: Axis, semantic_size: [2]SemanticSize) -> ^Box {
     box: ^Box = nil;
 
-    if cached_box, exists := persistent[key]; exists {
-        if cached_box.last_interacted_index < current_interaction_index {
-            old_cached_box := persistent[key];
+    if cached_box, exists := ctx.persistent[key]; exists {
+        if cached_box.last_interacted_index < ctx.current_interaction_index {
+            old_cached_box := ctx.persistent[key];
             free(old_cached_box);
             box = new(Box);
 
-            persistent[key] = box;
+            ctx.persistent[key] = box;
         } else {
             box = cached_box;
         }
     } else {
         box = new(Box);
-        persistent[key] = box;
+        ctx.persistent[key] = box;
     }
 
     box.key = key;
@@ -133,22 +150,20 @@ make_box :: proc(key: Key, label: string, flags: bit_set[Flag], axis: Axis, sema
     box.first = nil;
     box.last = nil;
     box.next = nil;
-    box.prev = current_parent.last;
-    box.parent = current_parent;
+    box.prev = ctx.current_parent.last;
+    box.parent = ctx.current_parent;
     box.flags = flags;
     box.axis = axis;
     box.semantic_size = semantic_size;
-    box.computed_pos = {};
-    box.computed_size = {};
 
-    if current_parent.last != nil {
-        current_parent.last.next = box;
+    if ctx.current_parent.last != nil {
+        ctx.current_parent.last.next = box;
     }
-    if current_parent.first == nil {
-        current_parent.first = box;
+    if ctx.current_parent.first == nil {
+        ctx.current_parent.first = box;
     }
 
-    current_parent.last = box;
+    ctx.current_parent.last = box;
 
     return box;
 }
@@ -178,67 +193,89 @@ ChildrenSum :[2]SemanticSize: {
     }
 };
 
-push_box :: proc(label: string, flags: bit_set[Flag], axis: Axis = .Horizontal, semantic_size: [2]SemanticSize = FitText, value: int = 0) -> ^Box {
-    key := gen_key(label, value);
-    box := make_box(key, label, flags, axis, semantic_size);
+push_box :: proc(ctx: ^Context, label: string, flags: bit_set[Flag], axis: Axis = .Horizontal, semantic_size: [2]SemanticSize = FitText, value: int = 0) -> ^Box {
+    key := gen_key(ctx, label, value);
+    box := make_box(ctx, key, label, flags, axis, semantic_size);
 
     return box;
 }
 
-push_parent :: proc(box: ^Box) {
-    current_parent = box;
+push_parent :: proc(ctx: ^Context, box: ^Box) {
+    ctx.current_parent = box;
 }
 
-pop_parent :: proc() {
-    if current_parent.parent != nil {
-        current_parent = current_parent.parent;
+pop_parent :: proc(ctx: ^Context) {
+    if ctx.current_parent.parent != nil {
+        ctx.current_parent = ctx.current_parent.parent;
     }
 }
 
-test_box :: proc(box: ^Box) -> Interaction {
+test_box :: proc(ctx: ^Context, box: ^Box) -> Interaction {
+    hovering: bool;
+
+    mouse_is_clicked := !ctx.last_mouse_left_down && ctx.mouse_left_down;
+
+    if ctx.mouse_x >= box.computed_pos.x && ctx.mouse_x <= box.computed_pos.x + box.computed_size.x &&
+        ctx.mouse_y >= box.computed_pos.y && ctx.mouse_y <= box.computed_pos.y + box.computed_size.y
+    {
+        hovering = true;
+    }
+
+    if hovering {
+        box.hot += 1;
+    } else {
+        box.hot = 0;
+    }
+
+    if hovering && mouse_is_clicked {
+        fmt.println("hot", box.hot);
+    }
+
     return Interaction {
-        clicked = false,
+        hovering = hovering,
+        clicked = hovering && mouse_is_clicked,
     };
 }
 
-delete_box_children :: proc(box: ^Box, keep_persistent: bool = true) {
+delete_box_children :: proc(ctx: ^Context, box: ^Box, keep_persistent: bool = true) {
     iter := BoxIter { box.first, 0 };
 
     for box in iterate_box(&iter) {
-        delete_box(box, keep_persistent);
+        delete_box(ctx, box, keep_persistent);
     }
 }
 
-delete_box :: proc(box: ^Box, keep_persistent: bool = true) {
-    delete_box_children(box, keep_persistent);
+delete_box :: proc(ctx: ^Context, box: ^Box, keep_persistent: bool = true) {
+    delete_box_children(ctx, box, keep_persistent);
 
-    if !(box.key in persistent) || !keep_persistent {
+    if !(box.key in ctx.persistent) || !keep_persistent {
         delete(box.key.label);
         free(box);
     }
 }
 
-prune :: proc() {
-    iter := BoxIter { root.first, 0 };
+prune :: proc(ctx: ^Context) {
+    iter := BoxIter { ctx.root.first, 0 };
 
     for box in iterate_box(&iter) {
-        delete_box_children(box);
+        delete_box_children(ctx, box);
 
-        if !(box.key in persistent) {
+        if !(box.key in ctx.persistent) {
             free(box);
         }
     }
 
-    root_key := root.key;
-    root^ = {
+    root_key := ctx.root.key;
+    ctx.root^ = {
         key = root_key,
     };
-    current_parent = root;
+    ctx.current_parent = ctx.root;
 }
 
-ancestor_size :: proc(box: ^Box, axis: Axis) -> int {
+// TODO: consider not using `ctx` here
+ancestor_size :: proc(ctx: ^Context, box: ^Box, axis: Axis) -> int {
     if box == nil || box.parent == nil {
-        return root.computed_size[axis];
+        return ctx.root.computed_size[axis];
     }
 
     switch box.parent.semantic_size[axis].kind {
@@ -249,13 +286,13 @@ ancestor_size :: proc(box: ^Box, axis: Axis) -> int {
             return box.parent.computed_size[axis];
 
         case .ChildrenSum:
-            return ancestor_size(box.parent, axis);
+            return ancestor_size(ctx, box.parent, axis);
     }
 
     return 1337;
 }
 
-compute_layout :: proc(canvas_size: [2]int, font_width: int, font_height: int, box: ^Box = root) {
+compute_layout :: proc(ctx: ^Context, canvas_size: [2]int, font_width: int, font_height: int, box: ^Box) {
     if box == nil { return; }
 
     axis := Axis.Horizontal;
@@ -268,8 +305,9 @@ compute_layout :: proc(canvas_size: [2]int, font_width: int, font_height: int, b
         box.computed_pos[axis] = box.prev.computed_pos[axis] + box.prev.computed_size[axis];
     }
 
+    post_compute_size := [2]bool { false, false };
     compute_children := true;
-    if box == root {
+    if box == ctx.root {
         box.computed_size = canvas_size;
     } else {
         switch box.semantic_size.x.kind {
@@ -281,29 +319,30 @@ compute_layout :: proc(canvas_size: [2]int, font_width: int, font_height: int, b
                 box.computed_size.x = box.semantic_size.x.value;
             }
             case .ChildrenSum: {
-                compute_children = false;
-                box.computed_size.x = 0;
+                //compute_children = false;
+                post_compute_size[int(Axis.Horizontal)] = true;
+                // box.computed_size.x = 0;
 
-                iter := BoxIter { box.first, 0 };
-                for child in iterate_box(&iter) {
-                    compute_layout(canvas_size, font_width, font_height, child);
+                // iter := BoxIter { box.first, 0 };
+                // for child in iterate_box(&iter) {
+                //     compute_layout(canvas_size, font_width, font_height, child);
 
-                    switch box.axis {
-                        case .Horizontal: {
-                            box.computed_size.x += child.computed_size.x;
-                        }
-                        case .Vertical: {
-                            if child.computed_size.x > box.computed_size.x {
-                                box.computed_size.x = child.computed_size.x;
-                            }
-                        }
-                    }
-                }
+                //     switch box.axis {
+                //         case .Horizontal: {
+                //             box.computed_size.x += child.computed_size.x;
+                //         }
+                //         case .Vertical: {
+                //             if child.computed_size.x > box.computed_size.x {
+                //                 box.computed_size.x = child.computed_size.x;
+                //             }
+                //         }
+                //     }
+                // }
             }
             case .Fill: {
             }
             case .PercentOfParent: {
-                box.computed_size.x = int(f32(ancestor_size(box, .Horizontal))*(f32(box.semantic_size.x.value)/100.0));
+                box.computed_size.x = int(f32(ancestor_size(ctx, box, .Horizontal))*(f32(box.semantic_size.x.value)/100.0));
             }
         }
         switch box.semantic_size.y.kind {
@@ -315,32 +354,34 @@ compute_layout :: proc(canvas_size: [2]int, font_width: int, font_height: int, b
                 box.computed_size.y = box.semantic_size.y.value;
             }
             case .ChildrenSum: {
-                compute_children = false;
-                should_post_compute := false;
-                number_of_fills := 0;
-                box.computed_size.y = 0;
-                parent_size := ancestor_size(box, .Vertical);
+                //compute_children = false;
+                post_compute_size[Axis.Vertical] = true;
 
-                iter := BoxIter { box.first, 0 };
-                for child in iterate_box(&iter) {
-                    compute_layout(canvas_size, font_width, font_height, child);
+                // should_post_compute := false;
+                // number_of_fills := 0;
+                // box.computed_size.y = 0;
+                // parent_size := ancestor_size(box, .Vertical);
 
-                    if child.semantic_size.y.kind == .Fill {
-                        number_of_fills += 1;
-                        should_post_compute := true;
-                    }
+                // iter := BoxIter { box.first, 0 };
+                // for child in iterate_box(&iter) {
+                //     compute_layout(canvas_size, font_width, font_height, child);
 
-                    switch box.axis {
-                        case .Horizontal: {
-                            if child.computed_size.y > box.computed_size.y {
-                                box.computed_size.y = child.computed_size.y;
-                            }
-                        }
-                        case .Vertical: {
-                            box.computed_size.y += child.computed_size.y;
-                        }
-                    }
-                }
+                //     if child.semantic_size.y.kind == .Fill {
+                //         number_of_fills += 1;
+                //         should_post_compute := true;
+                //     }
+
+                //     switch box.axis {
+                //         case .Horizontal: {
+                //             if child.computed_size.y > box.computed_size.y {
+                //                 box.computed_size.y = child.computed_size.y;
+                //             }
+                //         }
+                //         case .Vertical: {
+                //             box.computed_size.y += child.computed_size.y;
+                //         }
+                //     }
+                // }
 
                 // if should_post_compute {
                 //     iter := BoxIter { box.first, 0 };
@@ -354,7 +395,7 @@ compute_layout :: proc(canvas_size: [2]int, font_width: int, font_height: int, b
             case .Fill: {
             }
             case .PercentOfParent: {
-                box.computed_size.y = int(f32(ancestor_size(box, .Vertical))*(f32(box.semantic_size.y.value)/100.0));
+                box.computed_size.y = int(f32(ancestor_size(ctx, box, .Vertical))*(f32(box.semantic_size.y.value)/100.0));
             }
         }
     }
@@ -374,7 +415,7 @@ compute_layout :: proc(canvas_size: [2]int, font_width: int, font_height: int, b
         our_size := box.computed_size;
 
         for child in iterate_box(&iter) {
-            compute_layout(canvas_size, font_width, font_height, child);
+            compute_layout(ctx, canvas_size, font_width, font_height, child);
             if child.semantic_size[box.axis].kind == .Fill {
                 number_of_fills[box.axis] += 1;
                 should_post_compute = true;
@@ -383,12 +424,12 @@ compute_layout :: proc(canvas_size: [2]int, font_width: int, font_height: int, b
             }
         }
 
-        if should_post_compute {
+        if true || should_post_compute {
             iter := BoxIter { box.first, 0 };
             for child in iterate_box(&iter) {
                 for axis in 0..<2 {
                     if child.semantic_size[axis].kind == .Fill {
-                        if child_size[axis] >= our_size[axis] {
+                        if false && child_size[axis] >= our_size[axis] {
                             child.computed_size[axis] = our_size[axis] / number_of_fills[axis];
                         } else {
                             child.computed_size[axis] = (our_size[axis] - child_size[axis]) / number_of_fills[axis];
@@ -396,17 +437,56 @@ compute_layout :: proc(canvas_size: [2]int, font_width: int, font_height: int, b
                     }
                 }
 
-                compute_layout(canvas_size, font_width, font_height, child);
+                compute_layout(ctx, canvas_size, font_width, font_height, child);
+
+                if child.label == "2" {
+                    fmt.println(child.label, child.computed_size, box.label, our_size, child_size, number_of_fills);
+                }
+            }
+        }
+    }
+
+    if post_compute_size[Axis.Horizontal] {
+        box.computed_size[Axis.Horizontal] = 0;
+
+        iter := BoxIter { box.first, 0 };
+        for child in iterate_box(&iter) {
+            switch box.axis {
+                case .Horizontal: {
+                    box.computed_size[Axis.Horizontal] += child.computed_size[Axis.Horizontal];
+                }
+                case .Vertical: {
+                    if child.computed_size[Axis.Horizontal] > box.computed_size[Axis.Horizontal] {
+                        box.computed_size[Axis.Horizontal] = child.computed_size[Axis.Horizontal];
+                    }
+                }
+            }
+        }
+    }
+    if post_compute_size[Axis.Vertical] {
+        box.computed_size[Axis.Vertical] = 0;
+
+        iter := BoxIter { box.first, 0 };
+        for child in iterate_box(&iter) {
+            switch box.axis {
+                case .Horizontal: {
+                    if child.computed_size[Axis.Vertical] > box.computed_size[Axis.Vertical] {
+                        box.computed_size[Axis.Vertical] = child.computed_size[Axis.Vertical];
+                    }
+                }
+                case .Vertical: {
+                    box.computed_size[Axis.Vertical] += child.computed_size[Axis.Vertical];
+                }
             }
         }
     }
 }
 
-push_clip :: proc(pos: [2]int, size: [2]int) {
+push_clip :: proc(ctx: ^Context, pos: [2]int, size: [2]int) {
     rect := Rect { pos, size };
 
-    if len(clips) > 0 {
-        parent_rect := clips[len(clips)-1];
+    if len(ctx.clips) > 0 {
+        parent_rect := ctx.clips[len(ctx.clips)-1];
 
         if rect.pos.x >= parent_rect.pos.x &&
             rect.pos.y >= parent_rect.pos.y &&
@@ -426,72 +506,96 @@ push_clip :: proc(pos: [2]int, size: [2]int) {
         }
     }
 
-    raylib.BeginScissorMode(
+    sdl2.RenderSetClipRect(ctx.renderer, &sdl2.Rect {
         i32(rect.pos.x),
         i32(rect.pos.y),
         i32(rect.size.x),
         i32(rect.size.y)
-    );
+    });
 
-    append(&clips, rect);
+    // raylib.BeginScissorMode(
+    //     i32(rect.pos.x),
+    //     i32(rect.pos.y),
+    //     i32(rect.size.x),
+    //     i32(rect.size.y)
+    // );
+
+    append(&ctx.clips, rect);
 }
 
-pop_clip :: proc() {
-    raylib.EndScissorMode();
+pop_clip :: proc(ctx: ^Context) {
+    //raylib.EndScissorMode();
 
-    if len(clips) > 0 {
-        rect := pop(&clips);
+    if len(ctx.clips) > 0 {
+        rect := pop(&ctx.clips);
 
-        raylib.BeginScissorMode(
+        sdl2.RenderSetClipRect(ctx.renderer, &sdl2.Rect {
             i32(rect.pos.x),
             i32(rect.pos.y),
             i32(rect.size.x),
             i32(rect.size.y)
-        );
+        });
+        // raylib.BeginScissorMode(
+        //     i32(rect.pos.x),
+        //     i32(rect.pos.y),
+        //     i32(rect.size.x),
+        //     i32(rect.size.y)
+        // );
+    } else {
+        sdl2.RenderSetClipRect(ctx.renderer, nil);
     }
 }
 
-draw :: proc(font: raylib.Font, font_width: int, font_height: int, box: ^Box = root) {
+draw :: proc(ctx: ^Context, state: ^core.State, font_width: int, font_height: int, box: ^Box) {
     if box == nil { return; }
 
     // NOTE: for some reason if you place this right before the
     // for loop, the clipping only works for the first child. Compiler bug?
-    push_clip(box.computed_pos, box.computed_size);
-    defer pop_clip();
+    push_clip(ctx, box.computed_pos, box.computed_size);
+    defer pop_clip(ctx);
 
-    if .DrawBackground in box.flags {
-        raylib.DrawRectangle(
-            i32(box.computed_pos.x),
-            i32(box.computed_pos.y),
-            i32(box.computed_size.x),
-            i32(box.computed_size.y),
-            theme.get_palette_raylib_color(.Background1)
+    if .Hoverable in box.flags && box.hot > 0 {
+        core.draw_rect(
+            state,
+            box.computed_pos.x,
+            box.computed_pos.y,
+            box.computed_size.x,
+            box.computed_size.y,
+            .Background2
         );
     }
+    else if .DrawBackground in box.flags {
+        core.draw_rect(
+            state,
+            box.computed_pos.x,
+            box.computed_pos.y,
+            box.computed_size.x,
+            box.computed_size.y,
+            .Background1
+        );
+    }
+
     if .DrawBorder in box.flags {
-        raylib.DrawRectangleLines(
-            i32(box.computed_pos.x),
-            i32(box.computed_pos.y),
-            i32(box.computed_size.x),
-            i32(box.computed_size.y),
-            theme.get_palette_raylib_color(.Background4)
+        core.draw_rect_outline(
+            state,
+            box.computed_pos.x,
+            box.computed_pos.y,
+            box.computed_size.x,
+            box.computed_size.y,
+            .Background4
         );
     }
     if .DrawText in box.flags {
-        for codepoint, index in box.label {
-            raylib.DrawTextCodepoint(
-                font,
-                rune(codepoint),
-                raylib.Vector2 { f32(box.computed_pos.x + index * font_width), f32(box.computed_pos.y) },
-                f32(font_height),
-                theme.get_palette_raylib_color(.Foreground1)
-            );
-        }
+        core.draw_text(state, box.label, box.computed_pos.x, box.computed_pos.y);
+    }
+
+    if .CustomDrawFunc in box.flags && box.custom_draw_func != nil {
+        box.custom_draw_func(state, box, box.user_data);
     }
 
     iter := BoxIter { box.first, 0 };
     for child in iterate_box(&iter) {
-        draw(font, font_width, font_height, child);
+        draw(ctx, state, font_width, font_height, child);
     }
 }
 
@@ -514,7 +618,7 @@ iterate_box :: proc(iter: ^BoxIter, print: bool = false) -> (box: ^Box, idx: int
     return box, iter.index, true;
 }
 
-debug_print :: proc(box: ^Box, depth: int = 0) {
+debug_print :: proc(ctx: ^Context, box: ^Box, depth: int = 0) {
     iter := BoxIter { box.first, 0 };
 
     for box, idx in iterate_box(&iter, true) {
@@ -525,56 +629,69 @@ debug_print :: proc(box: ^Box, depth: int = 0) {
             fmt.print(">");
         }
         fmt.println(idx, "Box", box.label, "#", box.key.label, "first", transmute(rawptr)box.first, "parent", transmute(rawptr)box.parent, box.computed_size);
-        debug_print(box, depth+1);
+        debug_print(ctx, box, depth+1);
     }
 
     if depth == 0 {
         fmt.println("persistent");
-        for p in persistent {
+        for p in ctx.persistent {
             fmt.println(p);
         }
     }
 }
 
-spacer :: proc(label: string) -> ^Box {
-    return push_box(label, {}, semantic_size = {make_semantic_size(.Fill, 0), make_semantic_size(.Fill, 0)});
+spacer :: proc(ctx: ^Context, label: string, flags: bit_set[Flag] = {}, semantic_size: [2]SemanticSize = {{.Fill, 0}, {.Fill,0}}) -> ^Box {
+    return push_box(ctx, label, flags, semantic_size = semantic_size);
 }
 
-label :: proc(label: string) -> Interaction {
-    box := push_box(label, {.DrawText});
+label :: proc(ctx: ^Context, label: string) -> Interaction {
+    box := push_box(ctx, label, {.DrawText, .Hoverable});
 
-    return test_box(box);
+    return test_box(ctx, box);
 }
 
-button :: proc(label: string) -> Interaction {
-    box := push_box(label, {.Clickable, .Hoverable, .DrawText, .DrawBorder, .DrawBackground});
+button :: proc(ctx: ^Context, label: string) -> Interaction {
+    box := push_box(ctx, label, {.Clickable, .Hoverable, .DrawText, .DrawBorder, .DrawBackground});
 
-    return test_box(box);
+    return test_box(ctx, box);
 }
 
-two_buttons_test :: proc(label1: string, label2: string) {
-    push_parent(push_box("two_button_container", {.DrawBorder}, .Vertical, semantic_size = ChildrenSum));
+custom :: proc(ctx: ^Context, label: string, draw_func: CustomDrawFunc, user_data: rawptr) -> Interaction {
+    box := push_box(ctx, label, {.DrawBorder, .CustomDrawFunc}, semantic_size = { make_semantic_size(.Fill), make_semantic_size(.Fill) });
+    box.custom_draw_func = draw_func;
+    box.user_data = user_data;
 
-    button("1");
-    button("2");
-    button(label1);
-    button(label2);
-    button("5");
-    button("6");
+    return test_box(ctx, box);
+}
 
-    push_parent(push_box("two_button_container_inner", {.DrawBorder}, semantic_size = ChildrenSum));
-    button("second first button");
+two_buttons_test :: proc(ctx: ^Context, label1: string, label2: string) {
+    push_parent(ctx, push_box(ctx, "TWO BUTTONS TEST", {.DrawBorder}, .Vertical, semantic_size = {make_semantic_size(.PercentOfParent, 100), { .Fill, 256}}));
+
+    button(ctx, "Row 1");
+    button(ctx, "Row 2");
+    button(ctx, label1);
+    button(ctx, label2);
+    button(ctx, "Row 5");
+    button(ctx, "Row 6");
+
     {
-        push_parent(push_box("two_button_container_inner", {.DrawBorder}, .Vertical, semantic_size = {make_semantic_size(.PercentOfParent, 50), { .Exact, 256}}));
-        defer pop_parent();
+        push_parent(ctx, push_box(ctx, "two_button_container_inner", {.DrawBorder}, semantic_size = {make_semantic_size(.Fill, 0), { .Fill, 64}}));
+        defer pop_parent(ctx);
 
-        button("first inner most button");
-        button("inner_button2");
-        button("inner_button3");
+        push_box(ctx, "1", {.DrawText, .DrawBackground, .DrawBorder}, semantic_size = {make_semantic_size(.Fill, 100), { .FitText, 256}})
+        push_box(ctx, "2", {.DrawText, .DrawBackground, .DrawBorder}, semantic_size = {make_semantic_size(.Fill, 100), { .FitText, 256}})
+
+        {
+            push_parent(ctx, push_box(ctx, "two_button_container_inner_inner", {.DrawBorder}, .Vertical, semantic_size = {make_semantic_size(.Fill, 50), { .ChildrenSum, 256}}));
+            defer pop_parent(ctx);
+
+            button(ctx, "this is a test button");
+            button(ctx, "me in the middle");
+            button(ctx, "look at me, I'm a test button too");
+        }
+
+        push_box(ctx, "End", {.DrawBorder, .DrawBackground, .DrawText}, .Horizontal, semantic_size = {make_semantic_size(.Fill, 0), { .FitText, 0}})
     }
-    button("inner_button3");
-
-    pop_parent();
-    button("Help me I'm falling");
-    pop_parent();
+    button(ctx, "Help me I'm falling");
+    pop_parent(ctx);
 }

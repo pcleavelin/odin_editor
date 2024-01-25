@@ -8,7 +8,7 @@ use std::{
 };
 
 use grep::{
-    regex::{RegexMatcherBuilder},
+    regex::RegexMatcherBuilder,
     searcher::{BinaryDetection, SearcherBuilder, Sink, SinkError},
 };
 use plugin_rs_bindings::{Buffer, Closure, Hook, InputMap, Key, PaletteColor, Plugin};
@@ -213,17 +213,19 @@ pub extern "C" fn OnInitialize(plugin: Plugin) {
                                     None => 0,
                                 };
 
-                                let index_threshold = std::cmp::max(max_mats_to_draw-4, 0) as usize;
+                                if match_count > 0 {
+                                    let index_threshold = std::cmp::max(max_mats_to_draw-4, 0) as usize;
 
-                                if window.selected_match < match_count-1 {
-                                    window.selected_match += 1;
+                                    if window.selected_match < match_count-1 {
+                                        window.selected_match += 1;
 
-                                    if window.selected_match - window.top_index > index_threshold {
-                                        window.top_index += 1;
+                                        if window.selected_match - window.top_index > index_threshold {
+                                            window.top_index += 1;
+                                        }
+                                    } else {
+                                        window.selected_match = 0;
+                                        window.top_index = 0;
                                     }
-                                } else {
-                                    window.selected_match = 0;
-                                    window.top_index = 0;
                                 }
                             }
                         }), "move selection down\0".as_ptr());

@@ -59,6 +59,8 @@
             fixed-odin
             local-rust
             rust-analyzer
+            SDL2
+            SDL2_ttf
             darwin.apple_sdk.frameworks.CoreData
             darwin.apple_sdk.frameworks.Kernel
             darwin.apple_sdk.frameworks.CoreVideo

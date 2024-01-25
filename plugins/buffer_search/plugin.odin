@@ -4,7 +4,6 @@ package buffer_search;
 import "core:runtime"
 import "core:fmt"
 import "core:path/filepath"
-import "vendor:raylib"
 
 import p "../../src/plugin"
 import "../../src/theme"
@@ -109,24 +108,24 @@ draw_buffer_window :: proc "c" (plugin: Plugin, win: rawptr) {
     source_font_width := plugin.get_font_width();
     source_font_height := plugin.get_font_height();
 
-    win_rec := raylib.Rectangle {
-        x = f32(screen_width/8),
-        y = f32(screen_height/8),
-        width = f32(screen_width - screen_width/4),
-        height = f32(screen_height - screen_height/4),
+    win_rec := [4]f32 {
+        f32(screen_width/8),
+        f32(screen_height/8),
+        f32(screen_width - screen_width/4),
+        f32(screen_height - screen_height/4),
     };
     plugin.draw_rect(
         i32(win_rec.x),
         i32(win_rec.y),
-        i32(win_rec.width),
-        i32(win_rec.height),
+        i32(win_rec.z),
+        i32(win_rec.w),
         .Background4
     );
 
-    win_margin := raylib.Vector2 { f32(source_font_width), f32(source_font_height) };
+    win_margin := [2]f32 { f32(source_font_width), f32(source_font_height) };
 
-    buffer_prev_width := (win_rec.width - win_margin.x*2) / 2;
-    buffer_prev_height := win_rec.height - win_margin.y*2;
+    buffer_prev_width := (win_rec.z - win_margin.x*2) / 2;
+    buffer_prev_height := win_rec.w - win_margin.y*2;
 
     glyph_buffer_width := int(buffer_prev_width) / source_font_width - 1;
     glyph_buffer_height := int(buffer_prev_height) / source_font_height;
@@ -134,7 +133,7 @@ draw_buffer_window :: proc "c" (plugin: Plugin, win: rawptr) {
     directory := string(plugin.get_current_directory());
 
     plugin.draw_rect(
-        i32(win_rec.x + win_rec.width / 2),
+        i32(win_rec.x + win_rec.z / 2),
         i32(win_rec.y + win_margin.y),
         i32(buffer_prev_width),
         i32(buffer_prev_height),
@@ -151,7 +150,7 @@ draw_buffer_window :: proc "c" (plugin: Plugin, win: rawptr) {
         if index == win.selected_index {
             plugin.draw_buffer_from_index(
                 index,
-                int(win_rec.x + win_margin.x + win_rec.width / 2),
+                int(win_rec.x + win_margin.x + win_rec.z / 2),
                 int(win_rec.y + win_margin.y),
                 glyph_buffer_width,
                 glyph_buffer_height,
