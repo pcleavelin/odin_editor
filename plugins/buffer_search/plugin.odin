@@ -98,11 +98,58 @@ buffer_list_iter :: proc(plugin: Plugin, buffer_index: ^int) -> (int, int, bool)
 
 draw_buffer_window :: proc "c" (plugin: Plugin, win: rawptr) {
     context = runtime.default_context();
+    runtime.free_all(context.temp_allocator);
+
     win := cast(^BufferListWindow)win;
     if win == nil {
         return;
     }
 
+    screen_width := plugin.get_screen_width();
+    screen_height := plugin.get_screen_height();
+    directory := string(plugin.get_current_directory());
+
+    canvas := plugin.ui.floating(plugin.ui.ui_context, "buffer search canvas", {screen_width/8, screen_height/8});
+
+    plugin.ui.push_parent(plugin.ui.ui_context, canvas);
+    {
+        defer plugin.ui.pop_parent(plugin.ui.ui_context);
+
+        ui_window := plugin.ui.rect(plugin.ui.ui_context, "buffer search window", true, .Horizontal, {{4, 75}, {4, 75}});
+        plugin.ui.push_parent(plugin.ui.ui_context, ui_window);
+        {
+            defer plugin.ui.pop_parent(plugin.ui.ui_context);
+
+            buffer_list_view := plugin.ui.rect(plugin.ui.ui_context, "buffer list view", false, .Vertical, {{4, 60}, {3, 0}});
+            plugin.ui.push_parent(plugin.ui.ui_context, buffer_list_view);
+            {
+                defer plugin.ui.pop_parent(plugin.ui.ui_context);
+
+                _buffer_index := 0;
+                for index in buffer_list_iter(plugin, &_buffer_index) {
+                    buffer := plugin.buffer.get_buffer_info_from_index(index);
+                    relative_file_path, _ := filepath.rel(directory, string(buffer.file_path), context.temp_allocator)
+                    text := fmt.ctprintf("%s:%d", relative_file_path, buffer.cursor.line+1);
+
+                    if index == win.selected_index {
+                        plugin.ui.button(plugin.ui.ui_context, text);
+                    } else {
+                        plugin.ui.label(plugin.ui.ui_context, text);
+                    }
+                }
+            }
+
+            buffer_preview := plugin.ui.rect(plugin.ui.ui_context, "buffer preview", false, .Horizontal, {{3, 0}, {3, 0}});
+            plugin.ui.push_parent(plugin.ui.ui_context, buffer_preview);
+            {
+                defer plugin.ui.pop_parent(plugin.ui.ui_context);
+
+                plugin.ui.buffer_from_index(plugin.ui.ui_context, win.selected_index, false);
+            }
+        }
+    }
+
+    /*
     screen_width := plugin.get_screen_width();
     screen_height := plugin.get_screen_height();
     source_font_width := plugin.get_font_width();
@@ -173,4 +220,5 @@ draw_buffer_window :: proc "c" (plugin: Plugin, win: rawptr) {
 
         runtime.free_all(context.temp_allocator);
     }
+    */
 }

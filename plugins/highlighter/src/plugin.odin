@@ -277,6 +277,9 @@ is_rust_keyword :: proc(plugin: Plugin, start: BufferIter, end: BufferIter) -> (
     return;
 }
 
+// TODO: split logic into single line coloring, and multi-line coloring.
+// single line coloring can be done directly on the glyph buffer
+// (with some edge cases, literally, the edge of the screen)
 color_buffer_odin :: proc "c" (plugin: Plugin, buffer: rawptr) {
     context = runtime.default_context();
 

@@ -84,6 +84,47 @@ Iterator :: struct {
     until_end_of_word: rawptr,
 }
 
+UiInteraction :: struct {
+    hovering: bool,
+    clicked: bool
+}
+
+UiAxis :: enum {
+    Horizontal = 0,
+    Vertical,
+}
+
+UiSemanticSize :: struct {
+    kind: int,
+    value: int,
+}
+
+UiBox :: rawptr;
+
+UiPushParentProc :: proc "c" (ui_context: rawptr, box: UiBox);
+UiPopParentProc :: proc "c" (ui_context: rawptr);
+UiFloatingProc :: proc "c" (ui_context: rawptr, label: cstring, pos: [2]int) -> UiBox;
+UiCreateBoxProc :: proc "c" (ui_context: rawptr, label: cstring) -> UiBox;
+UiRectProc ::  proc "c" (ui_context: rawptr, label: cstring, border: bool, axis: UiAxis, size: [2]UiSemanticSize) -> UiBox;
+UiSimpleProc :: proc "c" (ui_context: rawptr, label: cstring) -> UiInteraction;
+UiBufferProc :: proc "c" (ui_context: rawptr, buffer: rawptr, show_line_numbers: bool);
+UiBufferIndexProc :: proc "c" (ui_context: rawptr, buffer: int, show_line_numbers: bool);
+Ui :: struct {
+    ui_context: rawptr,
+
+    push_parent: UiPushParentProc,
+    pop_parent: UiPopParentProc,
+
+    floating: UiFloatingProc,
+    rect: UiRectProc,
+
+    button: UiSimpleProc,
+    label: UiSimpleProc,
+
+    buffer: UiBufferProc,
+    buffer_from_index: UiBufferIndexProc,
+}
+
 OnColorBufferProc :: proc "c" (plugin: Plugin, buffer: rawptr);
 InputGroupProc :: proc "c" (plugin: Plugin, input_map: rawptr);
 InputActionProc :: proc "c" (plugin: Plugin);
@@ -97,6 +138,7 @@ Plugin :: struct {
     state: rawptr,
     iter: Iterator,
     buffer: Buffer,
+    ui: Ui,
 
     register_hook: proc "c" (hook: Hook, on_hook: OnHookProc),
     register_highlighter: proc "c" (extension: cstring, on_color_buffer: OnColorBufferProc),

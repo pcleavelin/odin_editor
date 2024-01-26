@@ -6,7 +6,7 @@ import "vendor:sdl2/ttf"
 
 import "../theme"
 
-scale :: 2;
+scale :: 1;
 start_char :: ' ';
 end_char :: '~';
 

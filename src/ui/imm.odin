@@ -49,11 +49,12 @@ Flag :: enum {
     DrawText,
     DrawBorder,
     DrawBackground,
+    Floating,
     CustomDrawFunc,
 }
 
 SemanticSizeKind :: enum {
-    FitText,
+    FitText = 0,
     Exact,
     ChildrenSum,
     Fill,
@@ -126,6 +127,7 @@ gen_key :: proc(ctx: ^Context, label: string, value: int) -> Key {
     };
 }
 
+@(private)
 make_box :: proc(ctx: ^Context, key: Key, label: string, flags: bit_set[Flag], axis: Axis, semantic_size: [2]SemanticSize) -> ^Box {
     box: ^Box = nil;
 
@@ -193,6 +195,15 @@ ChildrenSum :[2]SemanticSize: {
     }
 };
 
+Fill :[2]SemanticSize: {
+    SemanticSize {
+        kind = .Fill,
+    },
+    SemanticSize {
+        kind = .Fill,
+    }
+};
+
 push_box :: proc(ctx: ^Context, label: string, flags: bit_set[Flag], axis: Axis = .Horizontal, semantic_size: [2]SemanticSize = FitText, value: int = 0) -> ^Box {
     key := gen_key(ctx, label, value);
     box := make_box(ctx, key, label, flags, axis, semantic_size);
@@ -225,10 +236,6 @@ test_box :: proc(ctx: ^Context, box: ^Box) -> Interaction {
         box.hot += 1;
     } else {
         box.hot = 0;
-    }
-
-    if hovering && mouse_is_clicked {
-        fmt.println("hot", box.hot);
     }
 
     return Interaction {
@@ -265,16 +272,21 @@ prune :: proc(ctx: ^Context) {
         }
     }
 
+    computed_pos := ctx.root.computed_pos;
+    computed_size := ctx.root.computed_size;
     root_key := ctx.root.key;
-    ctx.root^ = {
-        key = root_key,
-    };
+
+    ctx.root.first = nil;
+    ctx.root.last = nil;
+    ctx.root.next = nil;
+    ctx.root.prev = nil;
+    ctx.root.parent = nil;
     ctx.current_parent = ctx.root;
 }
 
 // TODO: consider not using `ctx` here
 ancestor_size :: proc(ctx: ^Context, box: ^Box, axis: Axis) -> int {
-    if box == nil || box.parent == nil {
+    if box == nil || box.parent == nil || .Floating in box.flags {
         return ctx.root.computed_size[axis];
     }
 
@@ -292,17 +304,35 @@ ancestor_size :: proc(ctx: ^Context, box: ^Box, axis: Axis) -> int {
     return 1337;
 }
 
+prev_non_floating_sibling :: proc(ctx: ^Context, box: ^Box) -> ^Box {
+    if box == nil {
+        return nil;
+    } else if box.prev == nil {
+        return nil;
+    } else if !(.Floating in box.prev.flags) {
+        return box.prev;
+    } else {
+        return prev_non_floating_sibling(ctx, box.prev);
+    }
+}
+
 compute_layout :: proc(ctx: ^Context, canvas_size: [2]int, font_width: int, font_height: int, box: ^Box) {
     if box == nil { return; }
 
     axis := Axis.Horizontal;
-    if box.parent != nil {
+    if box.parent != nil && !(.Floating in box.flags) {
         axis = box.parent.axis;
         box.computed_pos = box.parent.computed_pos;
     }
 
-    if box.prev != nil {
-        box.computed_pos[axis] = box.prev.computed_pos[axis] + box.prev.computed_size[axis];
+    if .Floating in box.flags {
+        // box.computed_pos = {0,0};
+    } else if box.prev != nil {
+        prev := prev_non_floating_sibling(ctx, box);
+
+        if prev != nil {
+            box.computed_pos[axis] = prev.computed_pos[axis] + prev.computed_size[axis];
+        }
     }
 
     post_compute_size := [2]bool { false, false };
@@ -415,6 +445,8 @@ compute_layout :: proc(ctx: ^Context, canvas_size: [2]int, font_width: int, font
         our_size := box.computed_size;
 
         for child in iterate_box(&iter) {
+            if .Floating in child.flags { continue; }
+
             compute_layout(ctx, canvas_size, font_width, font_height, child);
             if child.semantic_size[box.axis].kind == .Fill {
                 number_of_fills[box.axis] += 1;
@@ -644,8 +676,19 @@ spacer :: proc(ctx: ^Context, label: string, flags: bit_set[Flag] = {}, semantic
     return push_box(ctx, label, flags, semantic_size = semantic_size);
 }
 
+push_floating :: proc(ctx: ^Context, label: string, pos: [2]int, flags: bit_set[Flag] = {.Floating}, axis: Axis = .Vertical, semantic_size: [2]SemanticSize = Fill) -> ^Box {
+    box := push_box(ctx, label, flags, semantic_size = semantic_size);
+    box.computed_pos = pos;
+
+    return box;
+}
+
+push_rect :: proc(ctx: ^Context, label: string, border: bool = true, axis: Axis = .Vertical, semantic_size: [2]SemanticSize = Fill) -> ^Box {
+    return push_box(ctx, label, {.DrawBackground, .DrawBorder if border else nil}, axis, semantic_size = semantic_size);
+}
+
 label :: proc(ctx: ^Context, label: string) -> Interaction {
-    box := push_box(ctx, label, {.DrawText, .Hoverable});
+    box := push_box(ctx, label, {.DrawText});
 
     return test_box(ctx, box);
 }

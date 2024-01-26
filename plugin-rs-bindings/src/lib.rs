@@ -166,6 +166,137 @@ pub struct IteratorVTable {
     pub until_end_of_word: *const c_void,
 }
 
+#[repr(C)]
+pub struct UiInteraction {
+    pub hovering: bool,
+    pub clicked: bool,
+}
+
+#[repr(C)]
+struct InternalUiSemanticSize {
+    kind: isize,
+    value: isize,
+}
+
+#[repr(isize)]
+pub enum UiAxis {
+    Horizontal = 0,
+    Vertical,
+}
+
+pub enum UiSemanticSize {
+    FitText,
+    Exact(isize),
+    ChildrenSum,
+    Fill,
+    PercentOfParent(isize),
+}
+
+impl From<UiSemanticSize> for InternalUiSemanticSize {
+    fn from(value: UiSemanticSize) -> Self {
+        let (kind, value) = match value {
+            UiSemanticSize::FitText => (0, 0),
+            UiSemanticSize::Exact(value) => (1, value),
+            UiSemanticSize::ChildrenSum => (2, 0),
+            UiSemanticSize::Fill => (3, 0),
+            UiSemanticSize::PercentOfParent(value) => (4, value),
+        };
+
+        Self { kind, value }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct UiContext(*const c_void);
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct UiBox(*const c_void);
+
+type UiPushParentProc = extern "C" fn(ui_context: UiContext, ui_box: UiBox);
+type UiPopParentProc = extern "C" fn(ui_context: UiContext);
+type UiFloatingProc =
+    extern "C" fn(ui_context: UiContext, label: *const i8, pos: [isize; 2]) -> UiBox;
+type UiRectProc = extern "C" fn(
+    ui_context: UiContext,
+    label: *const i8,
+    border: bool,
+    axis: UiAxis,
+    size: [InternalUiSemanticSize; 2],
+) -> UiBox;
+type UiSimpleProc = extern "C" fn(ui_context: UiContext, label: *const i8) -> UiInteraction;
+type UiBufferProc = extern "C" fn(ui_context: UiContext, buffer: Buffer, show_line_numbers: bool);
+
+#[repr(C)]
+pub struct UiVTable {
+    ui_context: UiContext,
+
+    push_parent: UiPushParentProc,
+    pop_parent: UiPopParentProc,
+
+    floating: UiFloatingProc,
+    rect: UiRectProc,
+
+    button: UiSimpleProc,
+    label: UiSimpleProc,
+
+    buffer: UiBufferProc,
+    buffer_from_index: UiBufferProc,
+}
+
+impl UiVTable {
+    pub fn push_parent(&self, ui_box: UiBox) {
+        (self.push_parent)(self.ui_context, ui_box);
+    }
+    pub fn pop_parent(&self) {
+        (self.pop_parent)(self.ui_context);
+    }
+
+    pub fn push_rect(
+        &self,
+        label: &CStr,
+        show_border: bool,
+        axis: UiAxis,
+        horizontal_size: UiSemanticSize,
+        vertical_size: UiSemanticSize,
+        inner: impl FnOnce(&UiVTable),
+    ) {
+        let rect = (self.rect)(
+            self.ui_context,
+            label.as_ptr(),
+            show_border,
+            axis,
+            [horizontal_size.into(), vertical_size.into()],
+        );
+        self.push_parent(rect);
+
+        inner(self);
+
+        self.pop_parent();
+    }
+
+    pub fn push_floating(&self, label: &CStr, x: isize, y: isize, inner: impl FnOnce(&UiVTable)) {
+        let floating = (self.floating)(self.ui_context, label.as_ptr(), [x, y]);
+        self.push_parent(floating);
+
+        inner(self);
+
+        self.pop_parent();
+    }
+
+    pub fn label(&self, label: &CStr) -> UiInteraction {
+        (self.label)(self.ui_context, label.as_ptr())
+    }
+    pub fn button(&self, label: &CStr) -> UiInteraction {
+        (self.button)(self.ui_context, label.as_ptr())
+    }
+
+    pub fn buffer(&self, buffer: Buffer, show_line_numbers: bool) {
+        (self.buffer)(self.ui_context, buffer, show_line_numbers)
+    }
+}
+
 type OnColorBufferProc = extern "C" fn(plugin: Plugin, buffer: *const c_void);
 type OnHookProc = extern "C" fn(plugin: Plugin, buffer: Buffer);
 type InputGroupProc = extern "C" fn(plugin: Plugin, input_map: InputMap);
@@ -176,8 +307,10 @@ type WindowGetBufferProc = extern "C" fn(plugin: Plugin, window: *const c_void) 
 #[repr(C)]
 pub struct Plugin {
     state: *const c_void,
+
     pub iter_table: IteratorVTable,
     pub buffer_table: BufferVTable,
+    pub ui_table: UiVTable,
 
     pub register_hook: extern "C" fn(hook: Hook, on_hook: OnHookProc),
     pub register_highlighter:

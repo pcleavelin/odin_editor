@@ -16,6 +16,13 @@
         local-rust = (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain).override {
           extensions = [ "rust-analysis" ];
         };
+        local-nightly-rust = (pkgs.rust-bin.fromRustupToolchainFile ./plugins/grep/rust-toolchain.toml).override {
+          extensions = [ "rust-analysis" ];
+        };
+        nightly-cargo = pkgs.writeShellScriptBin "nightly-cargo" ''
+          export RUSTC="${local-nightly-rust}/bin/rustc";
+          exec "${local-nightly-rust}/bin/cargo" "$@"
+        '';
         fixed-odin = pkgs.odin.overrideAttrs (finalAttrs: prevAttr: rec {
           src = pkgs.fetchFromGitHub {
             owner = "pcleavelin";
@@ -58,6 +65,7 @@
           buildInputs = with pkgs; (if pkgs.system == "aarch64-darwin" || pkgs.system == "x86_64-darwin" then [
             fixed-odin
             local-rust
+            nightly-cargo
             rust-analyzer
             SDL2
             SDL2_ttf

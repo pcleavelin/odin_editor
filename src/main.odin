@@ -162,6 +162,7 @@ register_default_input_actions :: proc(input_map: ^core.InputMap) {
     // Scale font size
     {
         core.register_ctrl_key_action(input_map, .MINUS, proc(state: ^State) {
+            fmt.print("You pressed <C>-MINUS", state.source_font_height, " ");
             if state.source_font_height > 16 {
                 state.source_font_height -= 2;
                 state.source_font_width = state.source_font_height / 2;
@@ -170,8 +171,11 @@ register_default_input_actions :: proc(input_map: ^core.InputMap) {
                 //state.font = raylib.LoadFontEx("/System/Library/Fonts/Supplemental/Andale Mono.ttf", i32(state.source_font_height*2), nil, 0);
                 //raylib.SetTextureFilter(state.font.texture, .BILINEAR);
             }
+            fmt.println(state.source_font_height);
         }, "increase font size");
         core.register_ctrl_key_action(input_map, .EQUAL, proc(state: ^State) {
+            fmt.println("You pressed <C>-EQUAL");
+
             state.source_font_height += 2;
             state.source_font_width = state.source_font_height / 2;
 
@@ -185,6 +189,7 @@ register_default_input_actions :: proc(input_map: ^core.InputMap) {
     {
         core.register_key_action(input_map, .I, proc(state: ^State) {
             state.mode = .Insert;
+            sdl2.StartTextInput();
         }, "enter insert mode");
         core.register_key_action(input_map, .A, proc(state: ^State) {
             core.move_cursor_right(&state.buffers[state.current_buffer], false);
@@ -240,19 +245,12 @@ draw :: proc(state_with_ui: ^StateWithUi) {
     sdl2.SetRenderDrawColor(state_with_ui.state.sdl_renderer, render_color.r, render_color.g, render_color.b, render_color.a);
     sdl2.RenderClear(state_with_ui.state.sdl_renderer);
 
-    // raylib.ClearBackground(theme.get_palette_raylib_color(.Background));
-
-    // core.draw_file_buffer(state_with_ui.state, buffer, 32, state_with_ui.state.source_font_height);
+    // if state_with_ui.state.window != nil && state_with_ui.state.window.draw != nil {
+    //     state_with_ui.state.window.draw(state_with_ui.state.plugin_vtable, state_with_ui.state.window.user_data);
+    // }
 
     ui.compute_layout(state_with_ui.ui_context, { state_with_ui.state.screen_width, state_with_ui.state.screen_height }, state_with_ui.state.source_font_width, state_with_ui.state.source_font_height, state_with_ui.ui_context.root);
     ui.draw(state_with_ui.ui_context, state_with_ui.state, state_with_ui.state.source_font_width, state_with_ui.state.source_font_height, state_with_ui.ui_context.root);
-    //ui.draw_menu_bar(&state_with_ui.state, &menu_bar_state_with_ui.state, 0, 0, i32(state_with_ui.state.screen_width), i32(state_with_ui.state.screen_height), state_with_ui.state.source_font_height);
-
-    //raylib.DrawRectangle(0, i32(state_with_ui.state.screen_height - state_with_ui.state.source_font_height), i32(state_with_ui.state.screen_width), i32(state_with_ui.state.source_font_height), theme.get_palette_raylib_color(.Background2));
-
-    if state_with_ui.state.window != nil && state_with_ui.state.window.draw != nil {
-        state_with_ui.state.window.draw(state_with_ui.state.plugin_vtable, state_with_ui.state.window.user_data);
-    }
 
     if state_with_ui.state.current_input_map != &state_with_ui.state.input_map {
         longest_description := 0;
@@ -375,20 +373,8 @@ ui_file_buffer :: proc(ctx: ^ui.Context, buffer: ^FileBuffer) -> ui.Interaction 
     return interaction;
 }
 
-main :: proc() {
-    state = State {
-        ctx = context,
-        source_font_width = 8 + 2 * 3,
-        source_font_height = 16 + 2 * 3,
-        input_map = core.new_input_map(),
-        window = nil,
-        directory = os.get_current_directory(),
-        plugins = make([dynamic]plugin.Interface),
-        highlighters = make(map[string]plugin.OnColorBufferProc),
-        hooks = make(map[plugin.Hook][dynamic]plugin.OnHookProc),
-    };
-
-    state.plugin_vtable = plugin.Plugin {
+init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
+    return plugin.Plugin {
         state = cast(rawptr)&state,
         register_hook = proc "c" (hook: plugin.Hook, on_hook: plugin.OnHookProc) {
             context = state.ctx;
@@ -507,6 +493,7 @@ main :: proc() {
         },
         enter_insert_mode = proc "c" () {
             state.mode = .Insert;
+            sdl2.StartTextInput();
         },
         draw_rect = proc "c" (x: i32, y: i32, width: i32, height: i32, color: theme.PaletteColor) {
             context = state.ctx;
@@ -864,8 +851,109 @@ main :: proc() {
                     free(buffer);
                 }
             },
-        }
+        },
+        ui = plugin.Ui {
+            ui_context = ui_context,
+
+            push_parent = proc "c" (ui_context: rawptr, box: plugin.UiBox) {
+                context = state.ctx;
+                ui_context := transmute(^ui.Context)ui_context;
+                box := transmute(^ui.Box)box;
+
+                ui.push_parent(ui_context, box);
+            },
+
+            pop_parent = proc "c" (ui_context: rawptr) {
+                context = state.ctx;
+                ui_context := transmute(^ui.Context)ui_context;
+
+                ui.pop_parent(ui_context);
+            },
+
+            // TODO: allow this to have more flags sent to it
+            floating = proc "c" (ui_context: rawptr, label: cstring, pos: [2]int) -> plugin.UiBox {
+                context = state.ctx;
+                ui_context := transmute(^ui.Context)ui_context;
+                label := strings.clone(string(label), context.temp_allocator);
+
+                return ui.push_floating(ui_context, label, pos);
+            },
+            rect = proc "c" (ui_context: rawptr, label: cstring, border: bool, axis: plugin.UiAxis, size: [2]plugin.UiSemanticSize) -> plugin.UiBox {
+                context = state.ctx;
+                ui_context := transmute(^ui.Context)ui_context;
+                label := strings.clone(string(label), context.temp_allocator);
+
+                size := [2]ui.SemanticSize {
+                    ui.SemanticSize {
+                        kind = ui.SemanticSizeKind(size.x.kind),
+                        value = size.x.value,
+                    },
+                    ui.SemanticSize {
+                        kind = ui.SemanticSizeKind(size.y.kind),
+                        value = size.y.value,
+                    },
+                };
+
+                return ui.push_rect(ui_context, label, border, ui.Axis(axis), size);
+            },
+
+            label = proc "c" (ui_context: rawptr, label: cstring) -> plugin.UiInteraction {
+                context = state.ctx;
+                ui_context := transmute(^ui.Context)ui_context;
+                label := strings.clone(string(label), context.temp_allocator);
+
+                interaction := ui.label(ui_context, label);
+
+                return plugin.UiInteraction {
+                    hovering = interaction.hovering,
+                    clicked = interaction.clicked,
+                };
+            },
+            button = proc "c" (ui_context: rawptr, label: cstring) -> plugin.UiInteraction {
+                context = state.ctx;
+                ui_context := transmute(^ui.Context)ui_context;
+                label := strings.clone(string(label), context.temp_allocator);
+
+                interaction := ui.button(ui_context, label);
+
+                return plugin.UiInteraction {
+                    hovering = interaction.hovering,
+                    clicked = interaction.clicked,
+                };
+            },
+            buffer = proc "c" (ui_context: rawptr, buffer: rawptr, show_line_numbers: bool) {
+                context = state.ctx;
+                ui_context := transmute(^ui.Context)ui_context;
+                buffer := transmute(^FileBuffer)buffer;
+
+                ui_file_buffer(ui_context, buffer);
+            },
+
+            buffer_from_index = proc "c" (ui_context: rawptr, buffer: int, show_line_numbers: bool) {
+                context = state.ctx;
+                ui_context := transmute(^ui.Context)ui_context;
+
+                buffer := &state.buffers[buffer];
+
+                ui_file_buffer(ui_context, buffer);
+            },
+        },
     };
+}
+
+main :: proc() {
+    state = State {
+        ctx = context,
+        source_font_width = 8 + 2 * 3,
+        source_font_height = 16 + 2 * 3,
+        input_map = core.new_input_map(),
+        window = nil,
+        directory = os.get_current_directory(),
+        plugins = make([dynamic]plugin.Interface),
+        highlighters = make(map[string]plugin.OnColorBufferProc),
+        hooks = make(map[plugin.Hook][dynamic]plugin.OnHookProc),
+    };
+
     state.current_input_map = &state.input_map;
     register_default_input_actions(&state.input_map);
 
@@ -877,16 +965,6 @@ main :: proc() {
         }
 
         runtime.append(&state.buffers, buffer);
-    }
-
-    // Load plugins
-    // TODO(pcleavelin): Get directory of binary instead of shells current working directory
-    filepath.walk(filepath.join({ os.get_current_directory(), "bin" }), load_plugin, transmute(rawptr)&state);
-
-    for plugin in state.plugins {
-        if plugin.on_initialize != nil {
-            plugin.on_initialize(state.plugin_vtable);
-        }
     }
 
     if sdl2.Init({.VIDEO}) < 0 {
@@ -936,18 +1014,22 @@ main :: proc() {
         }
     }
 
+    sdl2.StartTextInput();
+    sdl2.StopTextInput();
+
     ui_context := ui.init(state.sdl_renderer);
-
     sdl2.AddEventWatch(expose_event_watcher, &StateWithUi { &state, &ui_context });
+    state.plugin_vtable = init_plugin_vtable(&ui_context);
 
-    // raylib.InitWindow(640, 480, "odin_editor - [now with more ui]");
-    // raylib.SetWindowState({ .WINDOW_RESIZABLE, .VSYNC_HINT });
-    // raylib.SetTargetFPS(144);
-    // raylib.SetExitKey(.KEY_NULL);
+    // Load plugins
+    // TODO(pcleavelin): Get directory of binary instead of shells current working directory
+    filepath.walk(filepath.join({ os.get_current_directory(), "bin" }), load_plugin, transmute(rawptr)&state);
 
-    // TODO: don't just hard code a MacOS font path
-    // state.font = raylib.LoadFontEx("/System/Library/Fonts/Supplemental/Andale Mono.ttf", i32(state.source_font_height), nil, 0);
-    // raylib.SetTextureFilter(state.font.texture, .BILINEAR);
+    for plugin in state.plugins {
+        if plugin.on_initialize != nil {
+            plugin.on_initialize(state.plugin_vtable);
+        }
+    }
 
 
     control_key_pressed: bool;
@@ -958,7 +1040,7 @@ main :: proc() {
         {
             buffer := &state.buffers[state.current_buffer];
 
-            ui.push_parent(&ui_context, ui.push_box(&ui_context, "main", {}, .Vertical, semantic_size = {ui.make_semantic_size(.PercentOfParent, 100), ui.make_semantic_size(.PercentOfParent, 100)}));
+            ui.push_parent(&ui_context, ui.push_box(&ui_context, "main", {}, .Vertical, semantic_size = {ui.make_semantic_size(.Fill, 100), ui.make_semantic_size(.Fill, 100)}));
             defer ui.pop_parent(&ui_context);
 
             {
@@ -1012,7 +1094,7 @@ main :: proc() {
                     defer ui.pop_parent(&ui_context);
 
                     {
-                        if ui_file_buffer(&ui_context, &state.buffers[0+3]).clicked {
+                        if ui_file_buffer(&ui_context, &state.buffers[state.current_buffer]).clicked {
                             state.current_buffer = 3;
                         }
                     }
@@ -1065,6 +1147,10 @@ main :: proc() {
             }
         }
 
+        if state.window != nil && state.window.draw != nil {
+            state.window.draw(state.plugin_vtable, state.window.user_data);
+        }
+
         {
             ui_context.last_mouse_left_down = ui_context.mouse_left_down;
             ui_context.last_mouse_right_down = ui_context.mouse_right_down;
@@ -1091,40 +1177,98 @@ main :: proc() {
                     }
                 }
 
-                if sdl_event.type == .KEYDOWN {
-                    key := plugin.Key(sdl_event.key.keysym.sym);
-                    if key == .LCTRL {
-                        control_key_pressed = true;
-                    } else if state.current_input_map != nil {
-                        if control_key_pressed {
-                            if action, exists := state.current_input_map.ctrl_key_actions[key]; exists {
-                                switch value in action.action {
-                                    case core.PluginEditorAction:
-                                        value(state.plugin_vtable);
-                                    case core.EditorAction:
-                                        value(&state);
-                                    case core.InputMap:
-                                        state.current_input_map = &(&state.current_input_map.ctrl_key_actions[key]).action.(core.InputMap)
-                                }
+                switch state.mode {
+                    case .Normal: {
+                        if sdl_event.type == .KEYDOWN {
+                            key := plugin.Key(sdl_event.key.keysym.sym);
+                            if key == .ESCAPE {
+                                core.request_window_close(&state);
                             }
-                        } else {
-                            if action, exists := state.current_input_map.key_actions[key]; exists {
-                                switch value in action.action {
-                                    case core.PluginEditorAction:
-                                        value(state.plugin_vtable);
-                                    case core.EditorAction:
-                                        value(&state);
-                                    case core.InputMap:
-                                        state.current_input_map = &(&state.current_input_map.key_actions[key]).action.(core.InputMap)
+
+                            if key == .LCTRL {
+                                control_key_pressed = true;
+                            } else if state.current_input_map != nil {
+                                if control_key_pressed {
+                                    if action, exists := state.current_input_map.ctrl_key_actions[key]; exists {
+                                        switch value in action.action {
+                                            case core.PluginEditorAction:
+                                            value(state.plugin_vtable);
+                                            case core.EditorAction:
+                                            value(&state);
+                                            case core.InputMap:
+                                            state.current_input_map = &(&state.current_input_map.ctrl_key_actions[key]).action.(core.InputMap)
+                                        }
+                                    }
+                                } else {
+                                    if action, exists := state.current_input_map.key_actions[key]; exists {
+                                        switch value in action.action {
+                                            case core.PluginEditorAction:
+                                            value(state.plugin_vtable);
+                                            case core.EditorAction:
+                                            value(&state);
+                                            case core.InputMap:
+                                            state.current_input_map = &(&state.current_input_map.key_actions[key]).action.(core.InputMap)
+                                        }
+                                    }
                                 }
                             }
                         }
+                        if sdl_event.type == .KEYUP {
+                            key := plugin.Key(sdl_event.key.keysym.sym);
+                            if key == .LCTRL {
+                                control_key_pressed = false;
+                            }
+                        }
                     }
-                }
-                if sdl_event.type == .KEYUP {
-                    key := plugin.Key(sdl_event.key.keysym.sym);
-                    if key == .LCTRL {
-                        control_key_pressed = false;
+                    case .Insert: {
+                        buffer: ^FileBuffer;
+
+                        if state.window != nil && state.window.get_buffer != nil {
+                            buffer = transmute(^core.FileBuffer)(state.window.get_buffer(state.plugin_vtable, state.window.user_data));
+                        } else {
+                            buffer = &state.buffers[state.current_buffer];
+                        }
+
+                        if sdl_event.type == .KEYDOWN {
+                            key := plugin.Key(sdl_event.key.keysym.sym);
+
+                            #partial switch key {
+                                case .ESCAPE: {
+                                    state.mode = .Normal;
+
+                                    core.insert_content(buffer, buffer.input_buffer[:]);
+                                    runtime.clear(&buffer.input_buffer);
+
+                                    sdl2.StopTextInput();
+                                }
+                                case .BACKSPACE: {
+                                    core.delete_content(buffer, 1);
+
+                                    for hook_proc in state.hooks[plugin.Hook.BufferInput] {
+                                        hook_proc(state.plugin_vtable, buffer);
+                                    }
+                                }
+                                case .ENTER: {
+                                    append(&buffer.input_buffer, '\n');
+                                }
+                            }
+                        }
+
+                        if sdl_event.type == .TEXTINPUT {
+                            for char in sdl_event.text.text {
+                                if char < 1 {
+                                    break;
+                                }
+
+                                if char >= 32 && char <= 125 && len(buffer.input_buffer) < 1024-1 {
+                                    append(&buffer.input_buffer, u8(char));
+
+                                    for hook_proc in state.hooks[plugin.Hook.BufferInput] {
+                                        hook_proc(state.plugin_vtable, buffer);
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
