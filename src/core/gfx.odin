@@ -6,7 +6,7 @@ import "vendor:sdl2/ttf"
 
 import "../theme"
 
-scale :: 1;
+scale :: 2;
 start_char :: ' ';
 end_char :: '~';
 
@@ -26,9 +26,10 @@ gen_font_atlas :: proc(state: ^State, path: cstring) -> FontAtlas {
         // FIXME: check if this failed
         font = ttf.OpenFont(path, font_height),
     }
-    ttf.SetFontKerning(atlas.font, false);
     ttf.SetFontStyle(atlas.font, ttf.STYLE_NORMAL);
-    ttf.SetFontOutline(atlas.font, 0);
+
+    // NOTE: not sure if I like the look of this or not yet
+    // ttf.SetFontHinting(atlas.font, ttf.HINTING_MONO);
 
     minx, maxx, miny, maxy: i32;
     advanced: i32;
@@ -45,20 +46,14 @@ gen_font_atlas :: proc(state: ^State, path: cstring) -> FontAtlas {
             atlas.max_height = int(height);
         }
 
-        // if atlas.max_width%2 != 0 {
-        //     atlas.max_width += 1;
-        // }
     }
 
     font_width := i32(atlas.max_width);
     font_height = i32(atlas.max_height);
-    state.source_font_width = int(font_width/scale);// int(font_width/scale);
-    state.source_font_height = int(font_height/scale);//int(font_height/scale);
-    //fmt.println("font_width:", font_width, "font height:", font_height);
-    //state.source_font_width = int(f32(font_width)/f32(scale));
+    state.source_font_width = int(font_width/scale);
+    state.source_font_height = int(font_height/scale);
 
     temp_surface: ^sdl2.Surface;
-    sdl2.SetHint(sdl2.HINT_RENDER_SCALE_QUALITY, "2");
     // FIXME: check if this failed
     font_surface := sdl2.CreateRGBSurface(0, font_width * (end_char-start_char + 1), font_height, 32, 0xff000000, 0x00ff0000, 0x0000ff00, 0x000000ff);
 
@@ -66,13 +61,23 @@ gen_font_atlas :: proc(state: ^State, path: cstring) -> FontAtlas {
 
     white := sdl2.Color { 0xff, 0xff, 0xff, 0xff };
     for char, index in start_char..=end_char {
-        // ttf.GlyphMetrics32(atlas.font, char, &minx, &maxx, &miny, &maxy, &advanced);
 
         rect.x = i32(index) * font_width;
-        rect.y = 0;//-font_height/8;
+        rect.y = 0;
 
         // FIXME: check if this failed
         temp_surface = ttf.RenderGlyph32_Blended(atlas.font, char, white);
+
+        // NOTE(pcleavelin): holy schmoley batman, it took hours of researching to find out
+        // that the way to properly blend the texture atlas WAS TO DISABLE BLENDING!
+        // and of course it's ONE GUY on a forum that has the answer, but it's for some
+        // reason not even listed on the first page of Google when you search for:
+        // "sdl_ttf rendering antialiasing"
+        //
+        // But the reason why this is needed (I /think/) is because you want to
+        // directly write all the RGBA data to `font_surface` without it attempting to
+        // blend a surface that has pure black
+        sdl2.SetSurfaceBlendMode(temp_surface, .NONE);
 
         src_rect := sdl2.Rect {
             0,
@@ -80,7 +85,6 @@ gen_font_atlas :: proc(state: ^State, path: cstring) -> FontAtlas {
             temp_surface.w,
             temp_surface.h
         };
-        //fmt.println("char", char, src_rect.x, src_rect.y, src_rect.w, src_rect.h, atlas.max_width, atlas.max_height);
 
         // FIXME: check if this failed
         sdl2.BlitSurface(temp_surface, &src_rect, font_surface, &rect);
@@ -90,8 +94,6 @@ gen_font_atlas :: proc(state: ^State, path: cstring) -> FontAtlas {
     // FIXME: check if this failed
     atlas.texture = sdl2.CreateTextureFromSurface(state.sdl_renderer, font_surface);
     sdl2.SetTextureScaleMode(atlas.texture, .Best);
-    // sdl2.SetTextureAlphaMod(atlas.texture, 0xff);
-    // sdl2.SetTextureBlendMode(atlas.texture, .BLEND);
     return atlas;
 }
 
