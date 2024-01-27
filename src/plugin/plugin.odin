@@ -105,7 +105,7 @@ UiPushParentProc :: proc "c" (ui_context: rawptr, box: UiBox);
 UiPopParentProc :: proc "c" (ui_context: rawptr);
 UiFloatingProc :: proc "c" (ui_context: rawptr, label: cstring, pos: [2]int) -> UiBox;
 UiCreateBoxProc :: proc "c" (ui_context: rawptr, label: cstring) -> UiBox;
-UiRectProc ::  proc "c" (ui_context: rawptr, label: cstring, border: bool, axis: UiAxis, size: [2]UiSemanticSize) -> UiBox;
+UiRectProc ::  proc "c" (ui_context: rawptr, label: cstring, background: bool, border: bool, axis: UiAxis, size: [2]UiSemanticSize) -> UiBox;
 UiSimpleProc :: proc "c" (ui_context: rawptr, label: cstring) -> UiInteraction;
 UiBufferProc :: proc "c" (ui_context: rawptr, buffer: rawptr, show_line_numbers: bool);
 UiBufferIndexProc :: proc "c" (ui_context: rawptr, buffer: int, show_line_numbers: bool);
@@ -115,6 +115,7 @@ Ui :: struct {
     push_parent: UiPushParentProc,
     pop_parent: UiPopParentProc,
 
+    spacer: UiSimpleProc,
     floating: UiFloatingProc,
     rect: UiRectProc,
 

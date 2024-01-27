@@ -281,134 +281,130 @@ extern "C" fn draw_window(plugin: Plugin, window: *const std::ffi::c_void) {
     let dir = plugin.get_current_directory();
     let directory = Path::new(dir.as_ref());
 
-    plugin.ui_table.push_floating(
-        c"grep canvas",
-        (screen_width as isize) / 8,
-        (screen_height as isize) / 8,
-        |ui_table| {
+    plugin
+        .ui_table
+        .push_floating(c"grep canvas", 0, 0, |ui_table| {
+            // TODO: make some primitive that centers a Box
+            ui_table.spacer(c"left spacer");
+
             ui_table.push_rect(
-                c"grep window",
-                true,
+                c"centered container",
+                false,
+                false,
                 UiAxis::Vertical,
                 UiSemanticSize::PercentOfParent(75),
-                UiSemanticSize::PercentOfParent(75),
+                UiSemanticSize::Fill,
                 |ui_table| {
-                    if let Ok(sink) = window.rx.try_recv() {
-                        window.sink = Some(sink);
-                    }
-
-                    ui_table.push_rect(
-                        c"results list",
-                        false,
-                        UiAxis::Vertical,
-                        UiSemanticSize::Fill,
-                        UiSemanticSize::Fill,
-                        |ui_table| match &window.sink {
-                            Some(sink) if !sink.matches.is_empty() => {
-                                let num_mats_to_draw = std::cmp::min(
-                                    (sink.matches.len() - window.top_index) as i32,
-                                    (height - font_height) / (font_height),
-                                );
-
-                                for (i, mat) in sink.matches[window.top_index..].iter().enumerate()
-                                {
-                                    let index = i + window.top_index;
-                                    if i as i32 >= num_mats_to_draw {
-                                        break;
-                                    }
-
-                                    let path = Path::new(&mat.path);
-                                    let relative_file_path = path
-                                        .strip_prefix(directory)
-                                        .unwrap_or(path)
-                                        .to_str()
-                                        .unwrap_or("");
-
-                                    let matched_text = String::from_utf8_lossy(&mat.text);
-                                    let text = match mat.line_number {
-                                        Some(line_number) => format!(
-                                            "{}:{}:{}: {}",
-                                            relative_file_path,
-                                            line_number,
-                                            mat.column,
-                                            matched_text
-                                        ),
-                                        None => format!(
-                                            "{}:{}: {}",
-                                            relative_file_path, mat.column, matched_text
-                                        ),
-                                    };
-
-                                    if index == window.selected_match {
-                                        ui_table.button(&CString::new(text).expect("valid text"));
-                                    } else {
-                                        ui_table.label(&CString::new(text).expect("valid text"));
-                                    }
-                                }
-                            }
-                            Some(_) | None => {
-                                ui_table.push_rect(
-                                    c"top spacer",
-                                    false,
-                                    UiAxis::Vertical,
-                                    UiSemanticSize::Fill,
-                                    UiSemanticSize::Fill,
-                                    |ui_table| {},
-                                );
-                                ui_table.push_rect(
-                                    c"centered text container",
-                                    false,
-                                    UiAxis::Horizontal,
-                                    UiSemanticSize::Fill,
-                                    UiSemanticSize::Fill,
-                                    |ui_table| {
-                                        ui_table.push_rect(
-                                            c"left spacer",
-                                            false,
-                                            UiAxis::Vertical,
-                                            UiSemanticSize::Fill,
-                                            UiSemanticSize::Fill,
-                                            |ui_table| {},
-                                        );
-                                        ui_table.label(c"no results");
-                                        ui_table.push_rect(
-                                            c"right spacer",
-                                            false,
-                                            UiAxis::Vertical,
-                                            UiSemanticSize::Fill,
-                                            UiSemanticSize::Fill,
-                                            |ui_table| {},
-                                        );
-                                    },
-                                );
-                                ui_table.push_rect(
-                                    c"bottom spacer",
-                                    false,
-                                    UiAxis::Vertical,
-                                    UiSemanticSize::Fill,
-                                    UiSemanticSize::Fill,
-                                    |ui_table| {},
-                                );
-                            }
-                        },
-                    );
-
+                    ui_table.spacer(c"top spacer");
                     ui_table.push_rect(
                         c"grep window",
-                        false,
+                        true,
+                        true,
                         UiAxis::Vertical,
                         UiSemanticSize::Fill,
-                        UiSemanticSize::Exact(font_height as isize),
+                        UiSemanticSize::PercentOfParent(75),
                         |ui_table| {
-                            if let Some(buffer) = window.input_buffer {
-                                ui_table.buffer(buffer, false);
+                            if let Ok(sink) = window.rx.try_recv() {
+                                window.sink = Some(sink);
                             }
+
+                            ui_table.push_rect(
+                                c"results list",
+                                false,
+                                false,
+                                UiAxis::Vertical,
+                                UiSemanticSize::Fill,
+                                UiSemanticSize::Fill,
+                                |ui_table| match &window.sink {
+                                    Some(sink) if !sink.matches.is_empty() => {
+                                        let num_mats_to_draw = std::cmp::min(
+                                            (sink.matches.len() - window.top_index) as i32,
+                                            (height - font_height) / (font_height),
+                                        );
+
+                                        for (i, mat) in
+                                            sink.matches[window.top_index..].iter().enumerate()
+                                        {
+                                            let index = i + window.top_index;
+                                            if i as i32 >= num_mats_to_draw {
+                                                break;
+                                            }
+
+                                            let path = Path::new(&mat.path);
+                                            let relative_file_path = path
+                                                .strip_prefix(directory)
+                                                .unwrap_or(path)
+                                                .to_str()
+                                                .unwrap_or("");
+
+                                            let matched_text = String::from_utf8_lossy(&mat.text);
+                                            let text = match mat.line_number {
+                                                Some(line_number) => format!(
+                                                    "{}:{}:{}: {}",
+                                                    relative_file_path,
+                                                    line_number,
+                                                    mat.column,
+                                                    matched_text
+                                                ),
+                                                None => format!(
+                                                    "{}:{}: {}",
+                                                    relative_file_path, mat.column, matched_text
+                                                ),
+                                            };
+
+                                            if index == window.selected_match {
+                                                // TODO: don't use button here, but apply a style
+                                                // to `label`
+                                                ui_table.button(
+                                                    &CString::new(text).expect("valid text"),
+                                                );
+                                            } else {
+                                                ui_table.label(
+                                                    &CString::new(text).expect("valid text"),
+                                                );
+                                            }
+                                        }
+                                    }
+                                    Some(_) | None => {
+                                        ui_table.spacer(c"top spacer");
+                                        ui_table.push_rect(
+                                            c"centered text container",
+                                            false,
+                                            false,
+                                            UiAxis::Horizontal,
+                                            UiSemanticSize::Fill,
+                                            UiSemanticSize::Fill,
+                                            |ui_table| {
+                                                ui_table.spacer(c"left spacer");
+                                                ui_table.label(c"no results");
+                                                ui_table.spacer(c"right spacer");
+                                            },
+                                        );
+                                        ui_table.spacer(c"bottom spacer");
+                                    }
+                                },
+                            );
+
+                            ui_table.push_rect(
+                                c"grep window",
+                                true,
+                                false,
+                                UiAxis::Vertical,
+                                UiSemanticSize::Fill,
+                                UiSemanticSize::Exact(font_height as isize),
+                                |ui_table| {
+                                    if let Some(buffer) = window.input_buffer {
+                                        ui_table.buffer(buffer, false);
+                                    }
+                                },
+                            );
                         },
                     );
+                    ui_table.spacer(c"bottom spacer");
                 },
             );
-        },
-    );
+            ui_table.spacer(c"right spacer");
+        });
 }
 
 extern "C" fn on_buffer_input(plugin: Plugin, buffer: Buffer) {

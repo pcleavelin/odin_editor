@@ -109,44 +109,54 @@ draw_buffer_window :: proc "c" (plugin: Plugin, win: rawptr) {
     screen_height := plugin.get_screen_height();
     directory := string(plugin.get_current_directory());
 
-    canvas := plugin.ui.floating(plugin.ui.ui_context, "buffer search canvas", {screen_width/8, screen_height/8});
+    canvas := plugin.ui.floating(plugin.ui.ui_context, "buffer search canvas", {0,0});
 
     plugin.ui.push_parent(plugin.ui.ui_context, canvas);
     {
         defer plugin.ui.pop_parent(plugin.ui.ui_context);
 
-        ui_window := plugin.ui.rect(plugin.ui.ui_context, "buffer search window", true, .Horizontal, {{4, 75}, {4, 75}});
-        plugin.ui.push_parent(plugin.ui.ui_context, ui_window);
+        plugin.ui.spacer(plugin.ui.ui_context, "left spacer");
+        centered_container := plugin.ui.rect(plugin.ui.ui_context, "centered container", false, false, .Vertical, {{4, 75}, {3, 0}});
+        plugin.ui.push_parent(plugin.ui.ui_context, centered_container);
         {
             defer plugin.ui.pop_parent(plugin.ui.ui_context);
 
-            buffer_list_view := plugin.ui.rect(plugin.ui.ui_context, "buffer list view", false, .Vertical, {{4, 60}, {3, 0}});
-            plugin.ui.push_parent(plugin.ui.ui_context, buffer_list_view);
+            plugin.ui.spacer(plugin.ui.ui_context, "top spacer");
+            ui_window := plugin.ui.rect(plugin.ui.ui_context, "buffer search window", true, true, .Horizontal, {{3, 0}, {4, 75}});
+            plugin.ui.push_parent(plugin.ui.ui_context, ui_window);
             {
                 defer plugin.ui.pop_parent(plugin.ui.ui_context);
 
-                _buffer_index := 0;
-                for index in buffer_list_iter(plugin, &_buffer_index) {
-                    buffer := plugin.buffer.get_buffer_info_from_index(index);
-                    relative_file_path, _ := filepath.rel(directory, string(buffer.file_path), context.temp_allocator)
-                    text := fmt.ctprintf("%s:%d", relative_file_path, buffer.cursor.line+1);
+                buffer_list_view := plugin.ui.rect(plugin.ui.ui_context, "buffer list view", false, false, .Vertical, {{4, 60}, {3, 0}});
+                plugin.ui.push_parent(plugin.ui.ui_context, buffer_list_view);
+                {
+                    defer plugin.ui.pop_parent(plugin.ui.ui_context);
 
-                    if index == win.selected_index {
-                        plugin.ui.button(plugin.ui.ui_context, text);
-                    } else {
-                        plugin.ui.label(plugin.ui.ui_context, text);
+                    _buffer_index := 0;
+                    for index in buffer_list_iter(plugin, &_buffer_index) {
+                        buffer := plugin.buffer.get_buffer_info_from_index(index);
+                        relative_file_path, _ := filepath.rel(directory, string(buffer.file_path), context.temp_allocator)
+                        text := fmt.ctprintf("%s:%d", relative_file_path, buffer.cursor.line+1);
+
+                        if index == win.selected_index {
+                            plugin.ui.button(plugin.ui.ui_context, text);
+                        } else {
+                            plugin.ui.label(plugin.ui.ui_context, text);
+                        }
                     }
                 }
-            }
 
-            buffer_preview := plugin.ui.rect(plugin.ui.ui_context, "buffer preview", false, .Horizontal, {{3, 0}, {3, 0}});
-            plugin.ui.push_parent(plugin.ui.ui_context, buffer_preview);
-            {
-                defer plugin.ui.pop_parent(plugin.ui.ui_context);
+                buffer_preview := plugin.ui.rect(plugin.ui.ui_context, "buffer preview", true, false, .Horizontal, {{3, 0}, {3, 0}});
+                plugin.ui.push_parent(plugin.ui.ui_context, buffer_preview);
+                {
+                    defer plugin.ui.pop_parent(plugin.ui.ui_context);
 
-                plugin.ui.buffer_from_index(plugin.ui.ui_context, win.selected_index, false);
+                    plugin.ui.buffer_from_index(plugin.ui.ui_context, win.selected_index, false);
+                }
             }
+            plugin.ui.spacer(plugin.ui.ui_context, "bottom spacer");
         }
+        plugin.ui.spacer(plugin.ui.ui_context, "right spacer");
     }
 
     /*

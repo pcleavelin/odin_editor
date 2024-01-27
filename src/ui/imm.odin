@@ -672,19 +672,21 @@ debug_print :: proc(ctx: ^Context, box: ^Box, depth: int = 0) {
     }
 }
 
-spacer :: proc(ctx: ^Context, label: string, flags: bit_set[Flag] = {}, semantic_size: [2]SemanticSize = {{.Fill, 0}, {.Fill,0}}) -> ^Box {
-    return push_box(ctx, label, flags, semantic_size = semantic_size);
+spacer :: proc(ctx: ^Context, label: string, flags: bit_set[Flag] = {}, semantic_size: [2]SemanticSize = {{.Fill, 0}, {.Fill,0}}) -> Interaction {
+    box := push_box(ctx, label, flags, semantic_size = semantic_size);
+
+    return test_box(ctx, box);
 }
 
-push_floating :: proc(ctx: ^Context, label: string, pos: [2]int, flags: bit_set[Flag] = {.Floating}, axis: Axis = .Vertical, semantic_size: [2]SemanticSize = Fill) -> ^Box {
+push_floating :: proc(ctx: ^Context, label: string, pos: [2]int, flags: bit_set[Flag] = {.Floating}, axis: Axis = .Horizontal, semantic_size: [2]SemanticSize = Fill) -> ^Box {
     box := push_box(ctx, label, flags, semantic_size = semantic_size);
     box.computed_pos = pos;
 
     return box;
 }
 
-push_rect :: proc(ctx: ^Context, label: string, border: bool = true, axis: Axis = .Vertical, semantic_size: [2]SemanticSize = Fill) -> ^Box {
-    return push_box(ctx, label, {.DrawBackground, .DrawBorder if border else nil}, axis, semantic_size = semantic_size);
+push_rect :: proc(ctx: ^Context, label: string, background: bool = true, border: bool = true, axis: Axis = .Vertical, semantic_size: [2]SemanticSize = Fill) -> ^Box {
+    return push_box(ctx, label, {.DrawBackground if background else nil, .DrawBorder if border else nil}, axis, semantic_size = semantic_size);
 }
 
 label :: proc(ctx: ^Context, label: string) -> Interaction {

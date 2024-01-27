@@ -194,6 +194,7 @@ register_default_input_actions :: proc(input_map: ^core.InputMap) {
         core.register_key_action(input_map, .A, proc(state: ^State) {
             core.move_cursor_right(&state.buffers[state.current_buffer], false);
             state.mode = .Insert;
+            sdl2.StartTextInput();
         }, "enter insert mode after character (append)");
     }
 
@@ -341,6 +342,9 @@ expose_event_watcher :: proc "c" (state: rawptr, event: ^sdl2.Event) -> i32 {
 
             state.state.screen_width = int(w);
             state.state.screen_height = int(h);
+            state.state.width_dpi_ratio = f32(w) / f32(event.window.data1);
+            state.state.height_dpi_ratio = f32(h) / f32(event.window.data2);
+
             draw(state);
         }
     }
@@ -870,6 +874,18 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
                 ui.pop_parent(ui_context);
             },
 
+            spacer = proc "c" (ui_context: rawptr, label: cstring) -> plugin.UiInteraction {
+                context = state.ctx;
+                ui_context := transmute(^ui.Context)ui_context;
+                label := strings.clone(string(label), context.temp_allocator);
+
+                interaction := ui.spacer(ui_context, label);
+
+                return plugin.UiInteraction {
+                    hovering = interaction.hovering,
+                    clicked = interaction.clicked,
+                };
+            },
             // TODO: allow this to have more flags sent to it
             floating = proc "c" (ui_context: rawptr, label: cstring, pos: [2]int) -> plugin.UiBox {
                 context = state.ctx;
@@ -878,7 +894,7 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
 
                 return ui.push_floating(ui_context, label, pos);
             },
-            rect = proc "c" (ui_context: rawptr, label: cstring, border: bool, axis: plugin.UiAxis, size: [2]plugin.UiSemanticSize) -> plugin.UiBox {
+            rect = proc "c" (ui_context: rawptr, label: cstring, background: bool, border: bool, axis: plugin.UiAxis, size: [2]plugin.UiSemanticSize) -> plugin.UiBox {
                 context = state.ctx;
                 ui_context := transmute(^ui.Context)ui_context;
                 label := strings.clone(string(label), context.temp_allocator);
@@ -894,7 +910,7 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
                     },
                 };
 
-                return ui.push_rect(ui_context, label, border, ui.Axis(axis), size);
+                return ui.push_rect(ui_context, label, background, border, ui.Axis(axis), size);
             },
 
             label = proc "c" (ui_context: rawptr, label: cstring) -> plugin.UiInteraction {
@@ -944,8 +960,10 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
 main :: proc() {
     state = State {
         ctx = context,
-        source_font_width = 8 + 2 * 3,
-        source_font_height = 16 + 2 * 3,
+        screen_width = 640,
+        screen_height = 480,
+        source_font_width = 8,
+        source_font_height = 16,
         input_map = core.new_input_map(),
         window = nil,
         directory = os.get_current_directory(),
@@ -984,7 +1002,7 @@ main :: proc() {
         0,
         640,
         480,
-        {.SHOWN, .RESIZABLE, .METAL, .ALLOW_HIGHDPI}
+        {.SHOWN, .RESIZABLE, .ALLOW_HIGHDPI}
     );
     defer if sdl_window != nil {
         sdl2.DestroyWindow(sdl_window);
@@ -1014,6 +1032,17 @@ main :: proc() {
         }
     }
 
+    {
+        w,h: i32;
+        sdl2.GetRendererOutputSize(state.sdl_renderer, &w, &h);
+
+        state.width_dpi_ratio = f32(w) / f32(state.screen_width);
+        state.height_dpi_ratio = f32(h) / f32(state.screen_height);
+        state.screen_width = int(w);
+        state.screen_height = int(h);
+    }
+    
+    // Done to clear the buffer
     sdl2.StartTextInput();
     sdl2.StopTextInput();
 
@@ -1031,11 +1060,7 @@ main :: proc() {
         }
     }
 
-
     control_key_pressed: bool;
-
-    state.screen_width = 640; //int(raylib.GetScreenWidth());
-    state.screen_height = 480; //int(raylib.GetScreenHeight());
     for !state.should_close {
         {
             buffer := &state.buffers[state.current_buffer];
@@ -1162,8 +1187,8 @@ main :: proc() {
                 }
 
                 if sdl_event.type == .MOUSEMOTION {
-                    ui_context.mouse_x = int(sdl_event.motion.x);
-                    ui_context.mouse_y = int(sdl_event.motion.y);
+                    ui_context.mouse_x = int(f32(sdl_event.motion.x) * state.width_dpi_ratio);
+                    ui_context.mouse_y = int(f32(sdl_event.motion.y) * state.height_dpi_ratio);
                 }
 
                 if sdl_event.type == .MOUSEBUTTONDOWN || sdl_event.type == .MOUSEBUTTONUP {

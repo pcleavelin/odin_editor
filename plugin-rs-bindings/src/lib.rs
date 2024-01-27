@@ -222,6 +222,7 @@ type UiRectProc = extern "C" fn(
     ui_context: UiContext,
     label: *const i8,
     border: bool,
+    border: bool,
     axis: UiAxis,
     size: [InternalUiSemanticSize; 2],
 ) -> UiBox;
@@ -235,6 +236,7 @@ pub struct UiVTable {
     push_parent: UiPushParentProc,
     pop_parent: UiPopParentProc,
 
+    spacer: UiSimpleProc,
     floating: UiFloatingProc,
     rect: UiRectProc,
 
@@ -253,9 +255,14 @@ impl UiVTable {
         (self.pop_parent)(self.ui_context);
     }
 
+    pub fn spacer(&self, label: &CStr) -> UiInteraction {
+        (self.spacer)(self.ui_context, label.as_ptr())
+    }
+
     pub fn push_rect(
         &self,
         label: &CStr,
+        show_background: bool,
         show_border: bool,
         axis: UiAxis,
         horizontal_size: UiSemanticSize,
@@ -265,6 +272,7 @@ impl UiVTable {
         let rect = (self.rect)(
             self.ui_context,
             label.as_ptr(),
+            show_background,
             show_border,
             axis,
             [horizontal_size.into(), vertical_size.into()],

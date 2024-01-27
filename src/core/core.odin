@@ -49,6 +49,8 @@ State :: struct {
     should_close: bool,
     screen_height: int,
     screen_width: int,
+    width_dpi_ratio: f32,
+    height_dpi_ratio: f32,
 
     directory: string,
 
