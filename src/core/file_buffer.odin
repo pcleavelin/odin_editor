@@ -8,7 +8,6 @@ import "core:math"
 import "core:slice"
 import "core:runtime"
 import "core:strings"
-import "vendor:raylib"
 
 import "../theme"
 import "../plugin"
@@ -752,7 +751,7 @@ update_glyph_buffer :: proc(buffer: ^FileBuffer) {
     }
 }
 
-draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, font: raylib.Font, show_line_numbers: bool = true) {
+draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, show_line_numbers: bool = true) {
     update_glyph_buffer(buffer);
     if highlighter, exists := state.highlighters[buffer.extension]; exists {
         highlighter(state.plugin_vtable, buffer);
@@ -771,9 +770,11 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, fon
 
     // draw cursor
     if state.mode == .Normal {
-        raylib.DrawRectangle(i32(cursor_x), i32(cursor_y), i32(state.source_font_width), i32(state.source_font_height), theme.get_palette_raylib_color(.Background4));
+        draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Background4);
+        //raylib.DrawRectangle(i32(cursor_x), i32(cursor_y), i32(state.source_font_width), i32(state.source_font_height), theme.get_palette_raylib_color(.Background4));
     } else if state.mode == .Insert {
-        raylib.DrawRectangle(i32(cursor_x), i32(cursor_y), i32(state.source_font_width), i32(state.source_font_height), theme.get_palette_raylib_color(.Green));
+        draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Green);
+        // raylib.DrawRectangle(i32(cursor_x), i32(cursor_y), i32(state.source_font_width), i32(state.source_font_height), theme.get_palette_raylib_color(.Green));
 
         num_line_break := 0;
         line_length := 0;
@@ -793,14 +794,16 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, fon
             cursor_x += line_length * state.source_font_width;
         }
 
-        raylib.DrawRectangle(i32(cursor_x), i32(cursor_y), i32(state.source_font_width), i32(state.source_font_height), theme.get_palette_raylib_color(.Blue));
+        draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Blue);
+        //raylib.DrawRectangle(i32(cursor_x), i32(cursor_y), i32(state.source_font_width), i32(state.source_font_height), theme.get_palette_raylib_color(.Blue));
     }
 
     for j in 0..<buffer.glyph_buffer_height {
         text_y := y + state.source_font_height * j;
 
         if show_line_numbers {
-            raylib.DrawTextEx(font, raylib.TextFormat("%d", begin + j + 1), raylib.Vector2 { f32(x), f32(text_y) }, f32(state.source_font_height), 0, theme.get_palette_raylib_color(.Background4));
+            draw_text(state, fmt.tprintf("%d", begin + j + 1), x, text_y);
+            //raylib.DrawTextEx(font, raylib.TextFormat("%d", begin + j + 1), raylib.Vector2 { f32(x), f32(text_y) }, f32(state.source_font_height), 0, theme.get_palette_raylib_color(.Background4));
         }
 
         for i in 0..<buffer.glyph_buffer_width {
@@ -809,7 +812,8 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, fon
 
             if glyph.codepoint == 0 { break; }
 
-            raylib.DrawTextCodepoint(font, rune(glyph.codepoint), raylib.Vector2 { f32(text_x), f32(text_y) }, f32(state.source_font_height), theme.get_palette_raylib_color(glyph.color));
+            draw_codepoint(state, rune(glyph.codepoint), text_x, text_y, glyph.color);
+            //raylib.DrawTextCodepoint(font, rune(glyph.codepoint), raylib.Vector2 { f32(text_x), f32(text_y) }, f32(state.source_font_height), theme.get_palette_raylib_color(glyph.color));
         }
     }
 }

@@ -1,6 +1,6 @@
 use std::{
     error::Error,
-    ffi::OsString,
+    ffi::{CString, OsString},
     path::Path,
     str::FromStr,
     sync::mpsc::{Receiver, Sender},
@@ -8,10 +8,10 @@ use std::{
 };
 
 use grep::{
-    regex::{RegexMatcherBuilder},
+    regex::RegexMatcherBuilder,
     searcher::{BinaryDetection, SearcherBuilder, Sink, SinkError},
 };
-use plugin_rs_bindings::{Buffer, Closure, Hook, InputMap, Key, PaletteColor, Plugin};
+use plugin_rs_bindings::{Buffer, Closure, Hook, InputMap, Key, Plugin, UiAxis, UiSemanticSize};
 use std::sync::mpsc::channel;
 use walkdir::WalkDir;
 
@@ -213,17 +213,19 @@ pub extern "C" fn OnInitialize(plugin: Plugin) {
                                     None => 0,
                                 };
 
-                                let index_threshold = std::cmp::max(max_mats_to_draw-4, 0) as usize;
+                                if match_count > 0 {
+                                    let index_threshold = std::cmp::max(max_mats_to_draw-4, 0) as usize;
 
-                                if window.selected_match < match_count-1 {
-                                    window.selected_match += 1;
+                                    if window.selected_match < match_count-1 {
+                                        window.selected_match += 1;
 
-                                    if window.selected_match - window.top_index > index_threshold {
-                                        window.top_index += 1;
+                                        if window.selected_match - window.top_index > index_threshold {
+                                            window.top_index += 1;
+                                        }
+                                    } else {
+                                        window.selected_match = 0;
+                                        window.top_index = 0;
                                     }
-                                } else {
-                                    window.selected_match = 0;
-                                    window.top_index = 0;
                                 }
                             }
                         }), "move selection down\0".as_ptr());
@@ -271,109 +273,138 @@ extern "C" fn draw_window(plugin: Plugin, window: *const std::ffi::c_void) {
 
     let screen_width = (plugin.get_screen_width)() as i32;
     let screen_height = (plugin.get_screen_height)() as i32;
-    let font_width = (plugin.get_font_width)() as i32;
+
     let font_height = (plugin.get_font_height)() as i32;
 
-    let x = screen_width / 8;
-    let y = screen_height / 8;
-    let width = screen_width - screen_width / 4;
     let height = screen_height - screen_height / 4;
-
-    let buffer_prev_width = (width - font_width * 2) / 2;
-
-    let glyph_buffer_width = buffer_prev_width / font_width - 1;
-    let glyph_buffer_height = 1;
 
     let dir = plugin.get_current_directory();
     let directory = Path::new(dir.as_ref());
 
-    (plugin.draw_rect)(x, y, width, height, PaletteColor::Background4);
-    (plugin.draw_rect)(
-        x + font_width,
-        y + font_height,
-        width - font_width * 2,
-        height - font_height * 3,
-        PaletteColor::Background3,
-    );
+    plugin
+        .ui_table
+        .push_floating(c"grep canvas", 0, 0, |ui_table| {
+            // TODO: make some primitive that centers a Box
+            ui_table.spacer(c"left spacer");
 
-    if let Some(buffer) = window.input_buffer {
-        (plugin.draw_rect)(
-            x + font_width,
-            y + height - font_height * 2,
-            buffer_prev_width,
-            font_height,
-            PaletteColor::Background2,
-        );
-        (plugin.draw_buffer)(
-            buffer,
-            (x + font_width) as isize,
-            (y + height - font_height * 2) as isize,
-            (glyph_buffer_width) as isize,
-            (glyph_buffer_height) as isize,
-            false,
-        );
-    }
+            ui_table.push_rect(
+                c"centered container",
+                false,
+                false,
+                UiAxis::Vertical,
+                UiSemanticSize::PercentOfParent(75),
+                UiSemanticSize::Fill,
+                |ui_table| {
+                    ui_table.spacer(c"top spacer");
+                    ui_table.push_rect(
+                        c"grep window",
+                        true,
+                        true,
+                        UiAxis::Vertical,
+                        UiSemanticSize::Fill,
+                        UiSemanticSize::PercentOfParent(75),
+                        |ui_table| {
+                            if let Ok(sink) = window.rx.try_recv() {
+                                window.sink = Some(sink);
+                            }
 
-    if let Ok(sink) = window.rx.try_recv() {
-        window.sink = Some(sink);
-    }
+                            ui_table.push_rect(
+                                c"results list",
+                                false,
+                                false,
+                                UiAxis::Vertical,
+                                UiSemanticSize::Fill,
+                                UiSemanticSize::Fill,
+                                |ui_table| match &window.sink {
+                                    Some(sink) if !sink.matches.is_empty() => {
+                                        let num_mats_to_draw = std::cmp::min(
+                                            (sink.matches.len() - window.top_index) as i32,
+                                            (height - font_height) / (font_height),
+                                        );
 
-    if let Some(sink) = &window.sink {
-        if !sink.matches.is_empty() {
-            let num_mats_to_draw = std::cmp::min(
-                (sink.matches.len() - window.top_index) as i32,
-                (height - font_height * 2) / (font_height) - 1,
-            );
-            let max_mat_length = (width - font_width * 2) / font_width;
+                                        for (i, mat) in
+                                            sink.matches[window.top_index..].iter().enumerate()
+                                        {
+                                            let index = i + window.top_index;
+                                            if i as i32 >= num_mats_to_draw {
+                                                break;
+                                            }
 
-            for (i, mat) in sink.matches[window.top_index..].iter().enumerate() {
-                let index = i + window.top_index;
-                if i as i32 >= num_mats_to_draw {
-                    break;
-                }
+                                            let path = Path::new(&mat.path);
+                                            let relative_file_path = path
+                                                .strip_prefix(directory)
+                                                .unwrap_or(path)
+                                                .to_str()
+                                                .unwrap_or("");
 
-                let path = Path::new(&mat.path);
-                let relative_file_path = path
-                    .strip_prefix(directory)
-                    .unwrap_or(path)
-                    .to_str()
-                    .unwrap_or("");
+                                            let matched_text = String::from_utf8_lossy(&mat.text);
+                                            let text = match mat.line_number {
+                                                Some(line_number) => format!(
+                                                    "{}:{}:{}: {}",
+                                                    relative_file_path,
+                                                    line_number,
+                                                    mat.column,
+                                                    matched_text
+                                                ),
+                                                None => format!(
+                                                    "{}:{}: {}",
+                                                    relative_file_path, mat.column, matched_text
+                                                ),
+                                            };
 
-                let matched_text = String::from_utf8_lossy(&mat.text);
-                let text = match mat.line_number {
-                    Some(line_number) => format!(
-                        "{}:{}:{}: {}",
-                        relative_file_path, line_number, mat.column, matched_text
-                    ),
-                    None => format!("{}:{}: {}", relative_file_path, mat.column, matched_text),
-                };
-                let text = if text.len() > max_mat_length as usize {
-                    text.as_str().split_at(max_mat_length as usize).0
-                } else {
-                    &text
-                };
+                                            if index == window.selected_match {
+                                                // TODO: don't use button here, but apply a style
+                                                // to `label`
+                                                ui_table.button(
+                                                    &CString::new(text).expect("valid text"),
+                                                );
+                                            } else {
+                                                ui_table.label(
+                                                    &CString::new(text).expect("valid text"),
+                                                );
+                                            }
+                                        }
+                                    }
+                                    Some(_) | None => {
+                                        ui_table.spacer(c"top spacer");
+                                        ui_table.push_rect(
+                                            c"centered text container",
+                                            false,
+                                            false,
+                                            UiAxis::Horizontal,
+                                            UiSemanticSize::Fill,
+                                            UiSemanticSize::Fill,
+                                            |ui_table| {
+                                                ui_table.spacer(c"left spacer");
+                                                ui_table.label(c"no results");
+                                                ui_table.spacer(c"right spacer");
+                                            },
+                                        );
+                                        ui_table.spacer(c"bottom spacer");
+                                    }
+                                },
+                            );
 
-                let text = format!("{text}\0");
-
-                if index == window.selected_match {
-                    (plugin.draw_rect)(
-                        x + font_width,
-                        y + font_height + ((index - window.top_index) as i32) * font_height,
-                        (text.chars().count() as i32) * font_width,
-                        font_height,
-                        PaletteColor::Background2,
+                            ui_table.push_rect(
+                                c"grep window",
+                                true,
+                                false,
+                                UiAxis::Vertical,
+                                UiSemanticSize::Fill,
+                                UiSemanticSize::Exact(font_height as isize),
+                                |ui_table| {
+                                    if let Some(buffer) = window.input_buffer {
+                                        ui_table.buffer(buffer, false);
+                                    }
+                                },
+                            );
+                        },
                     );
-                }
-
-                (plugin.draw_text)(
-                    text.as_ptr() as *const i8,
-                    (x + font_width) as f32,
-                    (y + font_height + ((index - window.top_index) as i32) * font_height) as f32,
-                    PaletteColor::Foreground2,
-                );
-            }
-        }
-    }
+                    ui_table.spacer(c"bottom spacer");
+                },
+            );
+            ui_table.spacer(c"right spacer");
+        });
 }
 
 extern "C" fn on_buffer_input(plugin: Plugin, buffer: Buffer) {

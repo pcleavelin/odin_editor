@@ -1,7 +1,5 @@
 package theme
 
-import "vendor:raylib"
-
 PaletteColor :: enum {
     Background,
     Foreground,
@@ -97,7 +95,14 @@ light_palette := []u32 {
     0x928374ff,
 };
 
-get_palette_raylib_color :: proc(palette_color: PaletteColor) -> raylib.Color {
-    return raylib.GetColor(palette[palette_color]);
+get_palette_color :: proc(palette_color: PaletteColor) -> [4]u8 {
+    color: [4]u8;
+
+    c := palette[palette_color];
+    for i in 0..<4 {
+        color[i] = u8((c >> (8*u32(3-i)))&0xff);
+    }
+
+    return color;
 }
 

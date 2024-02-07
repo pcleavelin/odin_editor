@@ -16,12 +16,19 @@
         local-rust = (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain).override {
           extensions = [ "rust-analysis" ];
         };
+        local-nightly-rust = (pkgs.rust-bin.fromRustupToolchainFile ./plugins/grep/rust-toolchain.toml).override {
+          extensions = [ "rust-analysis" ];
+        };
+        nightly-cargo = pkgs.writeShellScriptBin "nightly-cargo" ''
+          export RUSTC="${local-nightly-rust}/bin/rustc";
+          exec "${local-nightly-rust}/bin/cargo" "$@"
+        '';
         fixed-odin = pkgs.odin.overrideAttrs (finalAttrs: prevAttr: rec {
           src = pkgs.fetchFromGitHub {
             owner = "pcleavelin";
             repo = "Odin";
-            rev = "59aa05170d54edff75aed220bb1653fc369573d7";
-            hash = "sha256-ZMcVugE0uRHba8jmQjTyQ9KKDUdIVSELggKDz9iSiwY=";
+            rev = "7b9ea9eca02bf5dd295439a46ed6103a0c4a44ff";
+            hash = "sha256-pxvU5veB1NEYPfer5roiLp/od2Pv4l1jJah0OHwb5yo=";
           };
           LLVM_CONFIG = "${pkgs.llvmPackages_17.llvm.dev}/bin/llvm-config";
           nativeBuildInputs = with pkgs; prevAttr.nativeBuildInputs ++ [ libcxx libcxxabi ];
@@ -58,7 +65,10 @@
           buildInputs = with pkgs; (if pkgs.system == "aarch64-darwin" || pkgs.system == "x86_64-darwin" then [
             fixed-odin
             local-rust
+            nightly-cargo
             rust-analyzer
+            SDL2
+            SDL2_ttf
             darwin.apple_sdk.frameworks.CoreData
             darwin.apple_sdk.frameworks.Kernel
             darwin.apple_sdk.frameworks.CoreVideo

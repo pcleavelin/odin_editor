@@ -4,7 +4,6 @@ package buffer_search;
 import "core:runtime"
 import "core:fmt"
 import "core:path/filepath"
-import "vendor:raylib"
 
 import p "../../src/plugin"
 import "../../src/theme"
@@ -99,6 +98,8 @@ buffer_list_iter :: proc(plugin: Plugin, buffer_index: ^int) -> (int, int, bool)
 
 draw_buffer_window :: proc "c" (plugin: Plugin, win: rawptr) {
     context = runtime.default_context();
+    runtime.free_all(context.temp_allocator);
+
     win := cast(^BufferListWindow)win;
     if win == nil {
         return;
@@ -106,27 +107,82 @@ draw_buffer_window :: proc "c" (plugin: Plugin, win: rawptr) {
 
     screen_width := plugin.get_screen_width();
     screen_height := plugin.get_screen_height();
+    directory := string(plugin.get_current_directory());
+
+    canvas := plugin.ui.floating(plugin.ui.ui_context, "buffer search canvas", {0,0});
+
+    plugin.ui.push_parent(plugin.ui.ui_context, canvas);
+    {
+        defer plugin.ui.pop_parent(plugin.ui.ui_context);
+
+        plugin.ui.spacer(plugin.ui.ui_context, "left spacer");
+        centered_container := plugin.ui.rect(plugin.ui.ui_context, "centered container", false, false, .Vertical, {{4, 75}, {3, 0}});
+        plugin.ui.push_parent(plugin.ui.ui_context, centered_container);
+        {
+            defer plugin.ui.pop_parent(plugin.ui.ui_context);
+
+            plugin.ui.spacer(plugin.ui.ui_context, "top spacer");
+            ui_window := plugin.ui.rect(plugin.ui.ui_context, "buffer search window", true, true, .Horizontal, {{3, 0}, {4, 75}});
+            plugin.ui.push_parent(plugin.ui.ui_context, ui_window);
+            {
+                defer plugin.ui.pop_parent(plugin.ui.ui_context);
+
+                buffer_list_view := plugin.ui.rect(plugin.ui.ui_context, "buffer list view", false, false, .Vertical, {{4, 60}, {3, 0}});
+                plugin.ui.push_parent(plugin.ui.ui_context, buffer_list_view);
+                {
+                    defer plugin.ui.pop_parent(plugin.ui.ui_context);
+
+                    _buffer_index := 0;
+                    for index in buffer_list_iter(plugin, &_buffer_index) {
+                        buffer := plugin.buffer.get_buffer_info_from_index(index);
+                        relative_file_path, _ := filepath.rel(directory, string(buffer.file_path), context.temp_allocator)
+                        text := fmt.ctprintf("%s:%d", relative_file_path, buffer.cursor.line+1);
+
+                        if index == win.selected_index {
+                            plugin.ui.button(plugin.ui.ui_context, text);
+                        } else {
+                            plugin.ui.label(plugin.ui.ui_context, text);
+                        }
+                    }
+                }
+
+                buffer_preview := plugin.ui.rect(plugin.ui.ui_context, "buffer preview", true, false, .Horizontal, {{3, 0}, {3, 0}});
+                plugin.ui.push_parent(plugin.ui.ui_context, buffer_preview);
+                {
+                    defer plugin.ui.pop_parent(plugin.ui.ui_context);
+
+                    plugin.ui.buffer_from_index(plugin.ui.ui_context, win.selected_index, false);
+                }
+            }
+            plugin.ui.spacer(plugin.ui.ui_context, "bottom spacer");
+        }
+        plugin.ui.spacer(plugin.ui.ui_context, "right spacer");
+    }
+
+    /*
+    screen_width := plugin.get_screen_width();
+    screen_height := plugin.get_screen_height();
     source_font_width := plugin.get_font_width();
     source_font_height := plugin.get_font_height();
 
-    win_rec := raylib.Rectangle {
-        x = f32(screen_width/8),
-        y = f32(screen_height/8),
-        width = f32(screen_width - screen_width/4),
-        height = f32(screen_height - screen_height/4),
+    win_rec := [4]f32 {
+        f32(screen_width/8),
+        f32(screen_height/8),
+        f32(screen_width - screen_width/4),
+        f32(screen_height - screen_height/4),
     };
     plugin.draw_rect(
         i32(win_rec.x),
         i32(win_rec.y),
-        i32(win_rec.width),
-        i32(win_rec.height),
+        i32(win_rec.z),
+        i32(win_rec.w),
         .Background4
     );
 
-    win_margin := raylib.Vector2 { f32(source_font_width), f32(source_font_height) };
+    win_margin := [2]f32 { f32(source_font_width), f32(source_font_height) };
 
-    buffer_prev_width := (win_rec.width - win_margin.x*2) / 2;
-    buffer_prev_height := win_rec.height - win_margin.y*2;
+    buffer_prev_width := (win_rec.z - win_margin.x*2) / 2;
+    buffer_prev_height := win_rec.w - win_margin.y*2;
 
     glyph_buffer_width := int(buffer_prev_width) / source_font_width - 1;
     glyph_buffer_height := int(buffer_prev_height) / source_font_height;
@@ -134,7 +190,7 @@ draw_buffer_window :: proc "c" (plugin: Plugin, win: rawptr) {
     directory := string(plugin.get_current_directory());
 
     plugin.draw_rect(
-        i32(win_rec.x + win_rec.width / 2),
+        i32(win_rec.x + win_rec.z / 2),
         i32(win_rec.y + win_margin.y),
         i32(buffer_prev_width),
         i32(buffer_prev_height),
@@ -151,7 +207,7 @@ draw_buffer_window :: proc "c" (plugin: Plugin, win: rawptr) {
         if index == win.selected_index {
             plugin.draw_buffer_from_index(
                 index,
-                int(win_rec.x + win_margin.x + win_rec.width / 2),
+                int(win_rec.x + win_margin.x + win_rec.z / 2),
                 int(win_rec.y + win_margin.y),
                 glyph_buffer_width,
                 glyph_buffer_height,
@@ -174,4 +230,5 @@ draw_buffer_window :: proc "c" (plugin: Plugin, win: rawptr) {
 
         runtime.free_all(context.temp_allocator);
     }
+    */
 }
