@@ -27,8 +27,8 @@
           src = pkgs.fetchFromGitHub {
             owner = "pcleavelin";
             repo = "Odin";
-            rev = "59aa05170d54edff75aed220bb1653fc369573d7";
-            hash = "sha256-ZMcVugE0uRHba8jmQjTyQ9KKDUdIVSELggKDz9iSiwY=";
+            rev = "7b9ea9eca02bf5dd295439a46ed6103a0c4a44ff";
+            hash = "sha256-pxvU5veB1NEYPfer5roiLp/od2Pv4l1jJah0OHwb5yo=";
           };
           LLVM_CONFIG = "${pkgs.llvmPackages_17.llvm.dev}/bin/llvm-config";
           nativeBuildInputs = with pkgs; prevAttr.nativeBuildInputs ++ [ libcxx libcxxabi ];
