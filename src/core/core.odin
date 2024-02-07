@@ -3,6 +3,7 @@ package core
 import "core:runtime"
 import "core:fmt"
 import "vendor:sdl2"
+import lua "vendor:lua/5.4"
 
 import "../plugin"
 
@@ -40,8 +41,10 @@ close_window_and_free :: proc(state: ^State) {
     }
 }
 
+LuaHookRef :: i32;
 State :: struct {
     ctx: runtime.Context,
+    L: ^lua.State,
     sdl_renderer: ^sdl2.Renderer,
     font_atlas: FontAtlas,
 
@@ -71,6 +74,7 @@ State :: struct {
     plugin_vtable: plugin.Plugin,
     highlighters: map[string]plugin.OnColorBufferProc,
     hooks: map[plugin.Hook][dynamic]plugin.OnHookProc,
+    lua_hooks: map[plugin.Hook][dynamic]LuaHookRef,
 }
 
 add_hook :: proc(state: ^State, hook: plugin.Hook, hook_proc: plugin.OnHookProc) {
@@ -81,9 +85,17 @@ add_hook :: proc(state: ^State, hook: plugin.Hook, hook_proc: plugin.OnHookProc)
     runtime.append(&state.hooks[hook], hook_proc);
 }
 
+add_lua_hook :: proc(state: ^State, hook: plugin.Hook, hook_ref: LuaHookRef) {
+    if _, exists := state.lua_hooks[hook]; !exists {
+        state.lua_hooks[hook] = make([dynamic]LuaHookRef);
+    }
+
+    runtime.append(&state.lua_hooks[hook], hook_ref);
+}
+LuaEditorAction :: i32;
 PluginEditorAction :: proc "c" (plugin: plugin.Plugin);
 EditorAction :: proc(state: ^State);
-InputGroup :: union {PluginEditorAction, EditorAction, InputMap}
+InputGroup :: union {LuaEditorAction, PluginEditorAction, EditorAction, InputMap}
 Action :: struct {
     action: InputGroup,
     description: string,

@@ -67,6 +67,7 @@
             local-rust
             nightly-cargo
             rust-analyzer
+            lua54Packages.stdlib
             SDL2
             SDL2_ttf
             darwin.apple_sdk.frameworks.CoreData

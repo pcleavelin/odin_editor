@@ -166,6 +166,7 @@ Plugin :: struct {
 
 Hook :: enum {
     BufferInput = 0,
+    Draw = 1,
 }
 
 Key :: enum {

@@ -10,6 +10,7 @@ import "core:mem"
 import "core:slice"
 import "vendor:sdl2"
 import "vendor:sdl2/ttf"
+import lua "vendor:lua/5.4"
 
 import "core"
 import "theme"
@@ -239,9 +240,6 @@ draw :: proc(state_with_ui: ^StateWithUi) {
     buffer.glyph_buffer_height = math.min(256, int((state_with_ui.state.screen_height - state_with_ui.state.source_font_height*2) / state_with_ui.state.source_font_height)) + 1;
     buffer.glyph_buffer_width = math.min(256, int((state_with_ui.state.screen_width - state_with_ui.state.source_font_width) / state_with_ui.state.source_font_width));
 
-    // raylib.BeginDrawing();
-    // defer raylib.EndDrawing();
-
     render_color := theme.get_palette_color(.Background);
     sdl2.SetRenderDrawColor(state_with_ui.state.sdl_renderer, render_color.r, render_color.g, render_color.b, render_color.a);
     sdl2.RenderClear(state_with_ui.state.sdl_renderer);
@@ -253,7 +251,7 @@ draw :: proc(state_with_ui: ^StateWithUi) {
     ui.compute_layout(state_with_ui.ui_context, { state_with_ui.state.screen_width, state_with_ui.state.screen_height }, state_with_ui.state.source_font_width, state_with_ui.state.source_font_height, state_with_ui.ui_context.root);
     ui.draw(state_with_ui.ui_context, state_with_ui.state, state_with_ui.state.source_font_width, state_with_ui.state.source_font_height, state_with_ui.ui_context.root);
 
-    if state_with_ui.state.current_input_map != &state_with_ui.state.input_map {
+    if true || state_with_ui.state.current_input_map != &state_with_ui.state.input_map {
         longest_description := 0;
         for key, action in state_with_ui.state.current_input_map.key_actions {
             if len(action.description) > longest_description {
@@ -278,13 +276,6 @@ draw :: proc(state_with_ui: ^StateWithUi) {
             helper_height,
             .Background2
         );
-        //raylib.DrawRectangle(
-        //    i32(state_with_ui.state.screen_width - longest_description * state_with_ui.state.source_font_width),
-        //    i32(state_with_ui.state.screen_height - helper_height - offset_from_bottom),
-        //    i32(longest_description*state_with_ui.state.source_font_width),
-        //    i32(helper_height),
-        //    theme.get_palette_raylib_color(.Background2)
-        //);
 
         index := 0;
         for key, action in state_with_ui.state.current_input_map.key_actions {
@@ -295,14 +286,6 @@ draw :: proc(state_with_ui: ^StateWithUi) {
                 state_with_ui.state.screen_height - helper_height + index * state_with_ui.state.source_font_height - offset_from_bottom
             );
 
-            // raylib.DrawTextEx(
-            //     state_with_ui.state.font,
-            //     raylib.TextFormat("%s - %s", key, action.description),
-            //     raylib.Vector2 { f32(state_with_ui.state.screen_width - longest_description * state_with_ui.state.source_font_width), f32(state_with_ui.state.screen_height - helper_height + index * state_with_ui.state.source_font_height - offset_from_bottom) },
-            //     f32(state_with_ui.state.source_font_height),
-            //     0,
-            //     theme.get_palette_raylib_color(.Foreground1)
-            // );
             index += 1;
         }
         for key, action in state_with_ui.state.current_input_map.ctrl_key_actions {
@@ -312,14 +295,7 @@ draw :: proc(state_with_ui: ^StateWithUi) {
                 state_with_ui.state.screen_width - longest_description * state_with_ui.state.source_font_width,
                 state_with_ui.state.screen_height - helper_height + index * state_with_ui.state.source_font_height - offset_from_bottom
             );
-            // raylib.DrawTextEx(
-            //     state_with_ui.state.font,
-            //     raylib.TextFormat("<C>-%s - %s", key, action.description),
-            //     raylib.Vector2 { f32(state_with_ui.state.screen_width - longest_description * state_with_ui.state.source_font_width), f32(state_with_ui.state.screen_height - helper_height + index * state_with_ui.state.source_font_height - offset_from_bottom) },
-            //     f32(state_with_ui.state.source_font_height),
-            //     0,
-            //     theme.get_palette_raylib_color(.Foreground1)
-            // );
+
             index += 1;
         }
     }
@@ -327,7 +303,6 @@ draw :: proc(state_with_ui: ^StateWithUi) {
     sdl2.RenderPresent(state_with_ui.state.sdl_renderer);
 }
 
-// TODO: need to wrap state and ui context into one structure so that it can be used in this function
 expose_event_watcher :: proc "c" (state: rawptr, event: ^sdl2.Event) -> i32 {
     if event.type == .WINDOWEVENT {
         state := transmute(^StateWithUi)state;
@@ -409,6 +384,8 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
 
             if action, exists := to_be_edited_map.key_actions[key]; exists {
                 switch value in action.action {
+                    case core.LuaEditorAction:
+                        fmt.eprintln("Plugin attempted to register input group on existing key action (added from Lua)");
                     case core.PluginEditorAction:
                         fmt.eprintln("Plugin attempted to register input group on existing key action (added from Plugin)");
                     case core.EditorAction:
@@ -436,6 +413,8 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
 
             if action, exists := to_be_edited_map.key_actions[key]; exists {
                 switch value in action.action {
+                    case core.LuaEditorAction:
+                        fmt.eprintln("Plugin attempted to register key action on existing key action (added from Lua)");
                     case core.PluginEditorAction:
                         fmt.eprintln("Plugin attempted to register key action on existing key action (added from Plugin)");
                     case core.EditorAction:
@@ -970,6 +949,7 @@ main :: proc() {
         plugins = make([dynamic]plugin.Interface),
         highlighters = make(map[string]plugin.OnColorBufferProc),
         hooks = make(map[plugin.Hook][dynamic]plugin.OnHookProc),
+        lua_hooks = make(map[plugin.Hook][dynamic]core.LuaHookRef),
     };
 
     state.current_input_map = &state.input_map;
@@ -1041,7 +1021,7 @@ main :: proc() {
         state.screen_width = int(w);
         state.screen_height = int(h);
     }
-    
+
     // Done to clear the buffer
     sdl2.StartTextInput();
     sdl2.StopTextInput();
@@ -1059,6 +1039,333 @@ main :: proc() {
             plugin.on_initialize(state.plugin_vtable);
         }
     }
+
+    // **********************************************************************
+    L := lua.L_newstate();
+    state.L = L;
+    lua.L_openlibs(L);
+
+    bbb: [^]lua.L_Reg;
+    editor_lib := [?]lua.L_Reg {
+        lua.L_Reg {
+            "print",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                a := lua.L_checkinteger(L, 1);
+
+                fmt.printf("LUA: print(%d)\n", a);
+                return i32(lua.OK);
+            }
+        },
+        lua.L_Reg {
+            "register_hook",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                hook := lua.L_checkinteger(L, 1);
+
+                lua.L_checktype(L, 2, i32(lua.TFUNCTION));
+                lua.pushvalue(L, 2);
+                fn_ref := lua.L_ref(L, i32(lua.REGISTRYINDEX));
+
+                fmt.println("LUA: attempting to add hook:", hook, "ref", fn_ref);
+                core.add_lua_hook(&state, plugin.Hook(hook), fn_ref);
+
+                return i32(lua.OK);
+            }
+        },
+        lua.L_Reg {
+            "register_key_action",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                key := lua.L_checkinteger(L, 1);
+
+                lua.L_checktype(L, 2, i32(lua.TFUNCTION));
+                lua.pushvalue(L, 2);
+                fn_ref := lua.L_ref(L, i32(lua.REGISTRYINDEX));
+
+                desc := strings.clone(string(lua.L_checkstring(L, 3)));
+
+                fmt.println("LUA: attempting to register:", key, "ref", fn_ref);
+                core.register_key_action_group(&state.input_map, plugin.Key(key), fn_ref, desc);
+
+                return i32(lua.OK);
+            }
+        },
+        lua.L_Reg {
+            "register_key_group",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                lua.L_checktype(L, 1, i32(lua.TTABLE));
+
+                table_to_action :: proc(L: ^lua.State, index: i32, input_map: ^core.InputMap) {
+                    lua.len(L, index);
+                    key_group_len := lua.tointeger(L, -1);
+                    lua.pop(L, 1);
+
+                    fmt.println("num groups", key_group_len);
+
+                    for i in 1..=key_group_len {
+                        fmt.println("LUA: index", index, "i", i);
+
+                        lua.rawgeti(L, index, i);
+                        defer lua.pop(L, 1);
+
+                        lua.rawgeti(L, -1, 1);
+                        key:= plugin.Key(lua.tointeger(L, -1));
+                        lua.pop(L, 1);
+
+                        lua.rawgeti(L, -1, 2);
+                        desc := strings.clone(string(lua.tostring(L, -1)));
+                        lua.pop(L, 1);
+
+                        fmt.println("LUA: attempting to register:", key, desc);
+
+                        switch lua.rawgeti(L, -1, 3) {
+                            case i32(lua.TTABLE):
+                                if action, exists := input_map.key_actions[key]; exists {
+                                    switch value in action.action {
+                                        case core.LuaEditorAction:
+                                            fmt.eprintln("Plugin attempted to register input group on existing key action (added from Lua)");
+                                        case core.PluginEditorAction:
+                                            fmt.eprintln("Plugin attempted to register input group on existing key action (added from Plugin)");
+                                        case core.EditorAction:
+                                            fmt.eprintln("Plugin attempted to register input group on existing key action");
+                                        case core.InputMap:
+                                            input_map := &(&input_map.key_actions[key]).action.(core.InputMap);
+                                            table_to_action(L, lua.gettop(L), input_map);
+                                    }
+                                } else {
+                                    core.register_key_action(input_map, key, core.new_input_map(), desc);
+                                    table_to_action(L, lua.gettop(L), &((&input_map.key_actions[key]).action.(core.InputMap)));
+                                }
+                                lua.pop(L, 1);
+
+                            case i32(lua.TFUNCTION):
+                                fn_ref := lua.L_ref(L, i32(lua.REGISTRYINDEX));
+                                core.register_key_action_group(input_map, key, fn_ref, desc);
+
+                            case:
+                                lua.pop(L, 1);
+                        }
+
+                        fmt.println("LUA: successfully registered:", key);
+                    }
+                }
+
+                table_to_action(L, 1, state.current_input_map);
+
+
+                // key := plugin.Key(lua.L_checkinteger(L, 1));
+
+                // lua.L_checktype(L, 2, i32(lua.TFUNCTION));
+                // lua.pushvalue(L, 2);
+                // fn_ref := lua.L_ref(L, i32(lua.REGISTRYINDEX));
+
+                // desc := strings.clone(string(lua.L_checkstring(L, 3)));
+
+                // fmt.println("LUA: attempting to register:", key, "ref", fn_ref);
+
+                // if action, exists := state.current_input_map.key_actions[key]; exists {
+                //     switch value in action.action {
+                //         case core.LuaEditorAction:
+                //             fmt.eprintln("Plugin attempted to register input group on existing key action (added from Lua)");
+                //         case core.PluginEditorAction:
+                //             fmt.eprintln("Plugin attempted to register input group on existing key action (added from Plugin)");
+                //         case core.EditorAction:
+                //             fmt.eprintln("Plugin attempted to register input group on existing key action");
+                //         case core.InputMap:
+                //             input_map := &(&state.current_input_map.key_actions[key]).action.(core.InputMap);
+                //             core.register_key_action_group(input_map, key, fn_ref, desc);
+                //     }
+                // } else {
+                //     core.register_key_action(state.current_input_map, key, core.new_input_map(), desc);
+                // }
+
+                return i32(lua.OK);
+            }
+        },
+    };
+    bbb = raw_data(editor_lib[:]);
+
+    ui_lib := [?]lua.L_Reg {
+        lua.L_Reg {
+            "push_parent",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
+                lua.pushvalue(L, 1);
+                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
+                if ui_ctx == nil { return i32(lua.ERRRUN); }
+
+                lua.L_checktype(L, 2, i32(lua.TLIGHTUSERDATA));
+                lua.pushvalue(L, 2);
+                box := transmute(^ui.Box)lua.touserdata(L, -1);
+                if box == nil { return i32(lua.ERRRUN); }
+
+                ui.push_parent(ui_ctx, box);
+                return i32(lua.OK);
+            }
+        },
+        lua.L_Reg {
+            "pop_parent",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
+                lua.pushvalue(L, 1);
+                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
+                if ui_ctx == nil { return i32(lua.ERRRUN); }
+
+                ui.pop_parent(ui_ctx);
+                return i32(lua.OK);
+            }
+        },
+        lua.L_Reg {
+            "push_floating",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
+                lua.pushvalue(L, 1);
+                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
+                if ui_ctx != nil {
+                    label := lua.L_checkstring(L, 2);
+                    x := int(lua.L_checkinteger(L, 3));
+                    y := int(lua.L_checkinteger(L, 4));
+
+                    box := ui.push_floating(ui_ctx, string(label), {x,y});
+                    lua.pushlightuserdata(L, box);
+                    return 1;
+                }
+
+                return i32(lua.ERRRUN);
+            }
+        },
+        lua.L_Reg {
+            "push_rect",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
+                lua.pushvalue(L, 1);
+                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
+                if ui_ctx != nil {
+                    label := lua.L_checkstring(L, 2);
+                    background := bool(lua.toboolean(L, 3));
+                    border := bool(lua.toboolean(L, 4));
+                    axis := ui.Axis(lua.L_checkinteger(L, 5));
+
+                    // TODO: check the other variants for extra data
+                    semantic_width := ui.SemanticSizeKind(lua.L_checkinteger(L, 6));
+                    semantic_height := ui.SemanticSizeKind(lua.L_checkinteger(L, 7));
+
+                    box := ui.push_rect(ui_ctx, string(label), background, border, axis, { {semantic_width, 0}, {semantic_height,0} });
+                    lua.pushlightuserdata(L, box);
+                    return 1;
+                }
+
+                return i32(lua.ERRRUN);
+            }
+        },
+        lua.L_Reg {
+            "button",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
+                lua.pushvalue(L, 1);
+                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
+                if ui_ctx != nil {
+                    label := lua.L_checkstring(L, 2);
+
+                    interaction := ui.button(ui_ctx, string(label));
+
+                    lua.newtable(L);
+                    {
+                        lua.pushboolean(L, b32(interaction.clicked));
+                        lua.setfield(L, -2, "clicked");
+                    }
+
+                    return 1;
+                }
+
+                return i32(lua.ERRRUN);
+            }
+        },
+    };
+
+    lua.newtable(L);
+    {
+        lua.newtable(L);
+        lua.pushinteger(L, lua.Integer(plugin.Key.T));
+        lua.setfield(L, -2, "T");
+
+        lua.pushinteger(L, lua.Integer(plugin.Key.Y));
+        lua.setfield(L, -2, "Y");
+
+        lua.pushinteger(L, lua.Integer(plugin.Key.P));
+        lua.setfield(L, -2, "P");
+
+        lua.pushinteger(L, lua.Integer(plugin.Key.M));
+        lua.setfield(L, -2, "M");
+
+        lua.pushinteger(L, lua.Integer(plugin.Key.SPACE));
+        lua.setfield(L, -2, "Space");
+    }
+    lua.setfield(L, -2, "Key");
+
+    {
+        lua.newtable(L);
+        lua.pushinteger(L, lua.Integer(plugin.Hook.BufferInput));
+        lua.setfield(L, -2, "OnBufferInput");
+        lua.pushinteger(L, lua.Integer(plugin.Hook.Draw));
+        lua.setfield(L, -2, "OnDraw");
+    }
+    lua.setfield(L, -2, "Hook");
+
+    lua.L_setfuncs(L, bbb, 0);
+    lua.setglobal(L, "Editor");
+
+    lua.newtable(L);
+    {
+        lua.pushinteger(L, lua.Integer(ui.Axis.Horizontal));
+        lua.setfield(L, -2, "Horizontal");
+        lua.pushinteger(L, lua.Integer(ui.Axis.Vertical));
+        lua.setfield(L, -2, "Vertical");
+        lua.pushinteger(L, lua.Integer(ui.SemanticSizeKind.Fill));
+        lua.setfield(L, -2, "Fill");
+
+        lua.L_setfuncs(L, raw_data(&ui_lib), 0);
+        lua.setglobal(L, "UI");
+    }
+
+    if lua.L_dofile(L, "plugins/lua/lib.lua") == i32(lua.OK) {
+        lua.pop(L, lua.gettop(L));
+    } else {
+        err := lua.tostring(L, lua.gettop(L));
+        lua.pop(L, lua.gettop(L));
+
+        fmt.eprintln(err);
+    }
+
+    // Initialize Lua Plugins
+    {
+        lua.getglobal(L, "OnInit");
+        if lua.pcall(L, 0, 0, 0) == i32(lua.OK) {
+            lua.pop(L, lua.gettop(L));
+        } else {
+            err := lua.tostring(L, lua.gettop(L));
+            lua.pop(L, lua.gettop(L));
+
+            fmt.eprintln("failed to initialize plugin (OnInit):", err);
+        }
+    }
+    // **********************************************************************
 
     control_key_pressed: bool;
     for !state.should_close {
@@ -1176,6 +1483,19 @@ main :: proc() {
             state.window.draw(state.plugin_vtable, state.window.user_data);
         }
 
+        for hook_ref in state.lua_hooks[plugin.Hook.Draw] {
+            lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(hook_ref));
+            lua.pushlightuserdata(state.L, &ui_context);
+            if lua.pcall(state.L, 1, 0, 0) != i32(lua.OK) {
+                err := lua.tostring(L, lua.gettop(L));
+                lua.pop(L, lua.gettop(L));
+
+                fmt.eprintln(err);
+            } else {
+                lua.pop(L, lua.gettop(L));
+            }
+        }
+
         {
             ui_context.last_mouse_left_down = ui_context.mouse_left_down;
             ui_context.last_mouse_right_down = ui_context.mouse_right_down;
@@ -1216,23 +1536,44 @@ main :: proc() {
                                 if control_key_pressed {
                                     if action, exists := state.current_input_map.ctrl_key_actions[key]; exists {
                                         switch value in action.action {
+                                            case core.LuaEditorAction:
+                                                fmt.println("trying to call lua registered function:", value);
+                                                lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(value));
+                                                if lua.pcall(state.L, 0, 0, 0) != i32(lua.OK) {
+                                                    err := lua.tostring(L, lua.gettop(L));
+                                                    lua.pop(L, lua.gettop(L));
+
+                                                    fmt.eprintln(err);
+                                                } else {
+                                                    lua.pop(L, lua.gettop(L));
+                                                }
                                             case core.PluginEditorAction:
-                                            value(state.plugin_vtable);
+                                                value(state.plugin_vtable);
                                             case core.EditorAction:
-                                            value(&state);
+                                                value(&state);
                                             case core.InputMap:
-                                            state.current_input_map = &(&state.current_input_map.ctrl_key_actions[key]).action.(core.InputMap)
+                                                state.current_input_map = &(&state.current_input_map.ctrl_key_actions[key]).action.(core.InputMap)
                                         }
                                     }
                                 } else {
                                     if action, exists := state.current_input_map.key_actions[key]; exists {
                                         switch value in action.action {
+                                            case core.LuaEditorAction:
+                                                lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(value));
+                                                if lua.pcall(state.L, 0, 0, 0) != i32(lua.OK) {
+                                                    err := lua.tostring(L, lua.gettop(L));
+                                                    lua.pop(L, lua.gettop(L));
+
+                                                    fmt.eprintln(err);
+                                                } else {
+                                                    lua.pop(L, lua.gettop(L));
+                                                }
                                             case core.PluginEditorAction:
-                                            value(state.plugin_vtable);
+                                                value(state.plugin_vtable);
                                             case core.EditorAction:
-                                            value(&state);
+                                                value(&state);
                                             case core.InputMap:
-                                            state.current_input_map = &(&state.current_input_map.key_actions[key]).action.(core.InputMap)
+                                                state.current_input_map = &(&state.current_input_map.key_actions[key]).action.(core.InputMap)
                                         }
                                     }
                                 }
@@ -1272,6 +1613,17 @@ main :: proc() {
                                     for hook_proc in state.hooks[plugin.Hook.BufferInput] {
                                         hook_proc(state.plugin_vtable, buffer);
                                     }
+                                    for hook_ref in state.lua_hooks[plugin.Hook.BufferInput] {
+                                        lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(hook_ref));
+                                        if lua.pcall(state.L, 0, 0, 0) != i32(lua.OK) {
+                                            err := lua.tostring(L, lua.gettop(L));
+                                            lua.pop(L, lua.gettop(L));
+
+                                            fmt.eprintln(err);
+                                        } else {
+                                            lua.pop(L, lua.gettop(L));
+                                        }
+                                    }
                                 }
                                 case .ENTER: {
                                     append(&buffer.input_buffer, '\n');
@@ -1290,6 +1642,17 @@ main :: proc() {
 
                                     for hook_proc in state.hooks[plugin.Hook.BufferInput] {
                                         hook_proc(state.plugin_vtable, buffer);
+                                    }
+                                    for hook_ref in state.lua_hooks[plugin.Hook.BufferInput] {
+                                        lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(hook_ref));
+                                        if lua.pcall(state.L, 0, 0, 0) != i32(lua.OK) {
+                                            err := lua.tostring(L, lua.gettop(L));
+                                            lua.pop(L, lua.gettop(L));
+
+                                            fmt.eprintln(err);
+                                        } else {
+                                            lua.pop(L, lua.gettop(L));
+                                        }
                                     }
                                 }
                             }
@@ -1337,6 +1700,7 @@ main :: proc() {
             plugin.on_exit();
         }
     }
+    lua.close(L);
 
     sdl2.Quit();
 }
