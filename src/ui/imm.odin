@@ -49,6 +49,7 @@ Flag :: enum {
     DrawText,
     DrawBorder,
     DrawBackground,
+    RoundedBorder,
     Floating,
     CustomDrawFunc,
 }
@@ -689,6 +690,30 @@ push_rect :: proc(ctx: ^Context, label: string, background: bool = true, border:
     return push_box(ctx, label, {.DrawBackground if background else nil, .DrawBorder if border else nil}, axis, semantic_size = semantic_size);
 }
 
+push_centered :: proc(ctx: ^Context, label: string, flags: bit_set[Flag], axis: Axis = .Horizontal, semantic_size: [2]SemanticSize = FitText) -> ^Box {
+    box: ^Box;
+
+    push_parent(ctx, push_box(ctx, label, {}, semantic_size = Fill))
+    {
+        defer pop_parent(ctx);
+
+        spacer(ctx, "left spacer");
+        halfway_centered := push_rect(ctx, "halfway centered", false, false, .Vertical, { semantic_size.x, {.Fill,0} });
+
+        push_parent(ctx, halfway_centered);
+        {
+            defer pop_parent(ctx);
+
+            spacer(ctx, "top spacer");
+            box = push_box(ctx, label, flags, axis, { {.Fill,0}, semantic_size.y });
+            spacer(ctx, "bottom spacer");
+        }
+        spacer(ctx, "right spacer");
+    }
+
+    return box;
+}
+
 label :: proc(ctx: ^Context, label: string) -> Interaction {
     box := push_box(ctx, label, {.DrawText});
 
@@ -696,13 +721,17 @@ label :: proc(ctx: ^Context, label: string) -> Interaction {
 }
 
 button :: proc(ctx: ^Context, label: string) -> Interaction {
-    box := push_box(ctx, label, {.Clickable, .Hoverable, .DrawText, .DrawBorder, .DrawBackground});
+    return advanced_button(ctx, label);
+}
+
+advanced_button :: proc(ctx: ^Context, label: string, flags: bit_set[Flag] = {.Clickable, .Hoverable, .DrawText, .DrawBorder, .DrawBackground}, semantic_size: [2]SemanticSize = FitText) -> Interaction {
+    box := push_box(ctx, label, flags, semantic_size = semantic_size);
 
     return test_box(ctx, box);
 }
 
 custom :: proc(ctx: ^Context, label: string, draw_func: CustomDrawFunc, user_data: rawptr) -> Interaction {
-    box := push_box(ctx, label, {.DrawBorder, .CustomDrawFunc}, semantic_size = { make_semantic_size(.Fill), make_semantic_size(.Fill) });
+    box := push_box(ctx, label, {.CustomDrawFunc}, semantic_size = { make_semantic_size(.Fill), make_semantic_size(.Fill) });
     box.custom_draw_func = draw_func;
     box.user_data = user_data;
 

@@ -251,7 +251,7 @@ draw :: proc(state_with_ui: ^StateWithUi) {
     ui.compute_layout(state_with_ui.ui_context, { state_with_ui.state.screen_width, state_with_ui.state.screen_height }, state_with_ui.state.source_font_width, state_with_ui.state.source_font_height, state_with_ui.ui_context.root);
     ui.draw(state_with_ui.ui_context, state_with_ui.state, state_with_ui.state.source_font_width, state_with_ui.state.source_font_height, state_with_ui.ui_context.root);
 
-    if true || state_with_ui.state.current_input_map != &state_with_ui.state.input_map {
+    if state_with_ui.state.current_input_map != &state_with_ui.state.input_map {
         longest_description := 0;
         for key, action in state_with_ui.state.current_input_map.key_actions {
             if len(action.description) > longest_description {
@@ -337,7 +337,7 @@ ui_file_buffer :: proc(ctx: ^ui.Context, buffer: ^FileBuffer) -> ui.Interaction 
     };
 
     relative_file_path, _ := filepath.rel(state.directory, buffer.file_path, context.temp_allocator)
-    ui.push_parent(ctx, ui.push_box(ctx, relative_file_path, {}, .Vertical, semantic_size = {ui.make_semantic_size(.PercentOfParent, 100), ui.make_semantic_size(.Fill, 0)}));
+    ui.push_parent(ctx, ui.push_box(ctx, relative_file_path, {}, .Vertical, semantic_size = {ui.make_semantic_size(.Fill), ui.make_semantic_size(.Fill)}));
     defer ui.pop_parent(ctx);
 
     interaction := ui.custom(ctx, "buffer1", draw_func, transmute(rawptr)buffer);
@@ -936,6 +936,35 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
     };
 }
 
+lua_ui_flags :: proc(L: ^lua.State, index: i32) -> (bit_set[ui.Flag], bool) {
+    lua.L_checktype(L, index, i32(lua.TTABLE));
+    lua.len(L, index);
+    array_len := lua.tointeger(L, -1);
+    lua.pop(L, 1);
+
+    flags: bit_set[ui.Flag]
+
+    for i in 1..=array_len {
+        lua.rawgeti(L, index, i);
+        defer lua.pop(L, 1);
+
+        flag := lua.tostring(L, -1);
+        switch flag {
+            case "Clickable": flags |= {.Clickable}
+            case "Hoverable": flags |= {.Hoverable}
+            case "Scrollable": flags |= {.Scrollable}
+            case "DrawText": flags |= {.DrawText}
+            case "DrawBorder": flags |= {.DrawBorder}
+            case "DrawBackground": flags |= {.DrawBackground}
+            case "RoundedBorder": flags |= {.RoundedBorder}
+            case "Floating": flags |= {.Floating}
+            case "CustomDrawFunc": flags |= {.CustomDrawFunc}
+        }
+    }
+
+    return flags, true
+}
+
 main :: proc() {
     state = State {
         ctx = context,
@@ -1069,7 +1098,6 @@ main :: proc() {
                 lua.pushvalue(L, 2);
                 fn_ref := lua.L_ref(L, i32(lua.REGISTRYINDEX));
 
-                fmt.println("LUA: attempting to add hook:", hook, "ref", fn_ref);
                 core.add_lua_hook(&state, plugin.Hook(hook), fn_ref);
 
                 return i32(lua.OK);
@@ -1088,7 +1116,6 @@ main :: proc() {
 
                 desc := strings.clone(string(lua.L_checkstring(L, 3)));
 
-                fmt.println("LUA: attempting to register:", key, "ref", fn_ref);
                 core.register_key_action_group(&state.input_map, plugin.Key(key), fn_ref, desc);
 
                 return i32(lua.OK);
@@ -1106,11 +1133,7 @@ main :: proc() {
                     key_group_len := lua.tointeger(L, -1);
                     lua.pop(L, 1);
 
-                    fmt.println("num groups", key_group_len);
-
                     for i in 1..=key_group_len {
-                        fmt.println("LUA: index", index, "i", i);
-
                         lua.rawgeti(L, index, i);
                         defer lua.pop(L, 1);
 
@@ -1121,8 +1144,6 @@ main :: proc() {
                         lua.rawgeti(L, -1, 2);
                         desc := strings.clone(string(lua.tostring(L, -1)));
                         lua.pop(L, 1);
-
-                        fmt.println("LUA: attempting to register:", key, desc);
 
                         switch lua.rawgeti(L, -1, 3) {
                             case i32(lua.TTABLE):
@@ -1151,8 +1172,6 @@ main :: proc() {
                             case:
                                 lua.pop(L, 1);
                         }
-
-                        fmt.println("LUA: successfully registered:", key);
                     }
                 }
 
@@ -1188,10 +1207,125 @@ main :: proc() {
                 return i32(lua.OK);
             }
         },
+        lua.L_Reg {
+            "get_current_buffer_index",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                lua.pushinteger(L, lua.Integer(state.current_buffer));
+
+                return 1;
+            }
+        },
+        lua.L_Reg {
+            "set_current_buffer_from_index",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                buffer_index := int(lua.L_checkinteger(L, 1));
+                if buffer_index < 0 || buffer_index >= len(state.buffers) {
+                    return i32(lua.ERRRUN);
+                } else {
+                    state.current_buffer = buffer_index;
+                }
+
+                return i32(lua.OK);
+            }
+        },
+        lua.L_Reg {
+            "buffer_info_from_index",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                buffer_index := int(lua.L_checkinteger(L, 1));
+                if buffer_index < 0 || buffer_index >= len(state.buffers) {
+                    lua.pushnil(L);
+                } else {
+                    push_lua_buffer_info :: proc(L: ^lua.State, buffer: ^FileBuffer) {
+                        lua.newtable(L);
+                        {
+                            lua.pushlightuserdata(L, buffer);
+                            lua.setfield(L, -2, "buffer");
+
+                            lua.newtable(L);
+                            {
+                                lua.pushinteger(L, lua.Integer(buffer.cursor.col));
+                                lua.setfield(L, -2, "col");
+
+                                lua.pushinteger(L, lua.Integer(buffer.cursor.line));
+                                lua.setfield(L, -2, "line");
+                            }
+                            lua.setfield(L, -2, "cursor");
+
+                            lua.pushstring(L, strings.clone_to_cstring(buffer.file_path, context.temp_allocator));
+                            lua.setfield(L, -2, "full_file_path");
+
+                            relative_file_path, _ := filepath.rel(state.directory, buffer.file_path, context.temp_allocator)
+                            lua.pushstring(L, strings.clone_to_cstring(relative_file_path, context.temp_allocator));
+                            lua.setfield(L, -2, "file_path");
+                        }
+                    }
+
+                    push_lua_buffer_info(L, &state.buffers[buffer_index]);
+                }
+
+                return 1;
+            }
+        },
     };
     bbb = raw_data(editor_lib[:]);
 
+    get_lua_semantic_size :: proc(L: ^lua.State, index: i32) -> ui.SemanticSize {
+        if lua.istable(L, index) {
+            lua.rawgeti(L, index, 1);
+            semantic_kind := ui.SemanticSizeKind(lua.tointeger(L, -1));
+            lua.pop(L, 1);
+
+            lua.rawgeti(L, index, 2);
+            semantic_value := int(lua.tointeger(L, -1));
+            lua.pop(L, 1);
+
+            return {semantic_kind, semantic_value};
+        } else {
+            semantic_kind := ui.SemanticSizeKind(lua.L_checkinteger(L, index));
+            return {semantic_kind, 0};
+        }
+    }
+
+    push_lua_semantic_size_table :: proc(L: ^lua.State, size: ui.SemanticSize) {
+        lua.newtable(L);
+        {
+            lua.pushinteger(L, lua.Integer(i32(size.kind)));
+            lua.rawseti(L, -2, 1);
+
+            lua.pushinteger(L, lua.Integer(size.value));
+            lua.rawseti(L, -2, 2);
+        }
+    }
+
     ui_lib := [?]lua.L_Reg {
+        lua.L_Reg {
+            "Exact",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                value := lua.L_checkinteger(L, 1);
+                push_lua_semantic_size_table(L, { ui.SemanticSizeKind.Exact, int(value) });
+
+                return 1;
+            }
+        },
+        lua.L_Reg {
+            "PercentOfParent",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                value := lua.L_checkinteger(L, 1);
+                push_lua_semantic_size_table(L, { ui.SemanticSizeKind.PercentOfParent, int(value) });
+
+                return 1;
+            }
+        },
         lua.L_Reg {
             "push_parent",
             proc "c" (L: ^lua.State) -> i32 {
@@ -1238,7 +1372,7 @@ main :: proc() {
                     x := int(lua.L_checkinteger(L, 3));
                     y := int(lua.L_checkinteger(L, 4));
 
-                    box := ui.push_floating(ui_ctx, string(label), {x,y});
+                    box := ui.push_floating(ui_ctx, strings.clone(string(label)), {x,y});
                     lua.pushlightuserdata(L, box);
                     return 1;
                 }
@@ -1260,12 +1394,62 @@ main :: proc() {
                     border := bool(lua.toboolean(L, 4));
                     axis := ui.Axis(lua.L_checkinteger(L, 5));
 
-                    // TODO: check the other variants for extra data
-                    semantic_width := ui.SemanticSizeKind(lua.L_checkinteger(L, 6));
-                    semantic_height := ui.SemanticSizeKind(lua.L_checkinteger(L, 7));
+                    semantic_width := get_lua_semantic_size(L, 6);
+                    semantic_height := get_lua_semantic_size(L, 7);
 
-                    box := ui.push_rect(ui_ctx, string(label), background, border, axis, { {semantic_width, 0}, {semantic_height,0} });
+                    box := ui.push_rect(ui_ctx, strings.clone(string(label)), background, border, axis, { semantic_width, semantic_height });
                     lua.pushlightuserdata(L, box);
+                    return 1;
+                }
+
+                return i32(lua.ERRRUN);
+            }
+        },
+        lua.L_Reg {
+            "push_centered",
+            proc "c" (L: ^lua.State) -> i32 {
+
+                context = state.ctx;
+
+                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
+                lua.pushvalue(L, 1);
+                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
+                if ui_ctx != nil {
+                    label := lua.L_checkstring(L, 2);
+                    background := bool(lua.toboolean(L, 3));
+                    border := bool(lua.toboolean(L, 4));
+                    axis := ui.Axis(lua.L_checkinteger(L, 5));
+
+                    semantic_width := get_lua_semantic_size(L, 6);
+                    semantic_height := get_lua_semantic_size(L, 7);
+
+                    box := ui.push_centered(ui_ctx, strings.clone(string(label)), {.DrawBackground if background else nil, .DrawBorder if border else nil}, axis, { semantic_width, semantic_height });
+                    lua.pushlightuserdata(L, box);
+                    return 1;
+                }
+
+                return i32(lua.ERRRUN);
+            }
+        },
+        lua.L_Reg {
+            "spacer",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
+                lua.pushvalue(L, 1);
+                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
+                if ui_ctx != nil {
+                    label := lua.L_checkstring(L, 2);
+
+                    interaction := ui.spacer(ui_ctx, strings.clone(string(label)), semantic_size = {{.Exact, 8}, {.Fill, 0}});
+
+                    lua.newtable(L);
+                    {
+                        lua.pushboolean(L, b32(interaction.clicked));
+                        lua.setfield(L, -2, "clicked");
+                    }
+
                     return 1;
                 }
 
@@ -1283,7 +1467,7 @@ main :: proc() {
                 if ui_ctx != nil {
                     label := lua.L_checkstring(L, 2);
 
-                    interaction := ui.button(ui_ctx, string(label));
+                    interaction := ui.button(ui_ctx, strings.clone(string(label)));
 
                     lua.newtable(L);
                     {
@@ -1297,6 +1481,60 @@ main :: proc() {
                 return i32(lua.ERRRUN);
             }
         },
+        lua.L_Reg {
+            "advanced_button",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
+                lua.pushvalue(L, 1);
+                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
+
+                if ui_ctx != nil {
+                    label := lua.L_checkstring(L, 2);
+                    flags, err := lua_ui_flags(L, 3);
+
+                    semantic_width := get_lua_semantic_size(L, 4);
+                    semantic_height := get_lua_semantic_size(L, 5);
+
+                    interaction := ui.advanced_button(ui_ctx, strings.clone(string(label)), flags, { semantic_width, semantic_height });
+
+                    lua.newtable(L);
+                    {
+                        lua.pushboolean(L, b32(interaction.clicked));
+                        lua.setfield(L, -2, "clicked");
+                    }
+
+                    return 1;
+                }
+
+                return i32(lua.ERRRUN);
+            }
+        },
+        lua.L_Reg {
+            "buffer",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
+                lua.pushvalue(L, 1);
+                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
+
+                if ui_ctx != nil {
+                    buffer_index := int(lua.L_checkinteger(L, 2));
+
+                    if buffer_index < 0 || buffer_index >= len(state.buffers) {
+                        return i32(lua.ERRRUN);
+                    }
+
+                    ui_file_buffer(ui_ctx, &state.buffers[buffer_index]);
+
+                    return i32(lua.OK);
+                }
+
+                return i32(lua.ERRRUN);
+            }
+        }
     };
 
     lua.newtable(L);
@@ -1339,6 +1577,10 @@ main :: proc() {
         lua.setfield(L, -2, "Vertical");
         lua.pushinteger(L, lua.Integer(ui.SemanticSizeKind.Fill));
         lua.setfield(L, -2, "Fill");
+        lua.pushinteger(L, lua.Integer(ui.SemanticSizeKind.ChildrenSum));
+        lua.setfield(L, -2, "ChildrenSum");
+        lua.pushinteger(L, lua.Integer(ui.SemanticSizeKind.FitText));
+        lua.setfield(L, -2, "FitText");
 
         lua.L_setfuncs(L, raw_data(&ui_lib), 0);
         lua.setglobal(L, "UI");
@@ -1369,7 +1611,7 @@ main :: proc() {
 
     control_key_pressed: bool;
     for !state.should_close {
-        {
+        if true {
             buffer := &state.buffers[state.current_buffer];
 
             ui.push_parent(&ui_context, ui.push_box(&ui_context, "main", {}, .Vertical, semantic_size = {ui.make_semantic_size(.Fill, 100), ui.make_semantic_size(.Fill, 100)}));
@@ -1479,10 +1721,6 @@ main :: proc() {
             }
         }
 
-        if state.window != nil && state.window.draw != nil {
-            state.window.draw(state.plugin_vtable, state.window.user_data);
-        }
-
         for hook_ref in state.lua_hooks[plugin.Hook.Draw] {
             lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(hook_ref));
             lua.pushlightuserdata(state.L, &ui_context);
@@ -1494,6 +1732,10 @@ main :: proc() {
             } else {
                 lua.pop(L, lua.gettop(L));
             }
+        }
+
+        if state.window != nil && state.window.draw != nil {
+            state.window.draw(state.plugin_vtable, state.window.user_data);
         }
 
         {
