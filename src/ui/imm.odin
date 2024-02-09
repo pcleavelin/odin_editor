@@ -40,6 +40,7 @@ Key :: struct {
 Interaction :: struct {
     hovering: bool,
     clicked: bool,
+    dragging: bool,
 }
 
 Flag :: enum {
@@ -115,11 +116,11 @@ init :: proc(renderer: ^sdl2.Renderer) -> Context {
 gen_key :: proc(ctx: ^Context, label: string, value: int) -> Key {
     key_label := ""
     if ctx != nil && (ctx.current_parent == nil || len(ctx.current_parent.key.label) < 1) {
-        key_label = strings.clone(label);
+        key_label = label;
     } else if ctx != nil {
-        key_label = fmt.aprintf("%s:%s", ctx.current_parent.key.label, label);
+        key_label = fmt.tprintf("%s:%s", ctx.current_parent.key.label, label);
     } else {
-        key_label = fmt.aprintf("%s",label);
+        key_label = fmt.tprintf("%s",label);
     }
 
     return Key {
@@ -233,15 +234,22 @@ test_box :: proc(ctx: ^Context, box: ^Box) -> Interaction {
         hovering = true;
     }
 
-    if hovering {
+    if hovering || box.active > 0 {
         box.hot += 1;
     } else {
         box.hot = 0;
     }
 
+    if hovering && mouse_is_clicked {
+        box.active += 1;
+    } else if !ctx.mouse_left_down {
+        box.active = 0;
+    }
+
     return Interaction {
-        hovering = hovering,
+        hovering = hovering || box.active > 0,
         clicked = hovering && mouse_is_clicked,
+        dragging = box.active > 0
     };
 }
 
@@ -327,7 +335,7 @@ compute_layout :: proc(ctx: ^Context, canvas_size: [2]int, font_width: int, font
     }
 
     if .Floating in box.flags {
-        // box.computed_pos = {0,0};
+        box.computed_pos = {0,0};
     } else if box.prev != nil {
         prev := prev_non_floating_sibling(ctx, box);
 
@@ -343,34 +351,18 @@ compute_layout :: proc(ctx: ^Context, canvas_size: [2]int, font_width: int, font
     } else {
         switch box.semantic_size.x.kind {
             case .FitText: {
-                // TODO: don't use hardcoded font size
                 box.computed_size.x = len(box.label) * font_width;
             }
             case .Exact: {
                 box.computed_size.x = box.semantic_size.x.value;
             }
             case .ChildrenSum: {
-                //compute_children = false;
                 post_compute_size[int(Axis.Horizontal)] = true;
-                // box.computed_size.x = 0;
-
-                // iter := BoxIter { box.first, 0 };
-                // for child in iterate_box(&iter) {
-                //     compute_layout(canvas_size, font_width, font_height, child);
-
-                //     switch box.axis {
-                //         case .Horizontal: {
-                //             box.computed_size.x += child.computed_size.x;
-                //         }
-                //         case .Vertical: {
-                //             if child.computed_size.x > box.computed_size.x {
-                //                 box.computed_size.x = child.computed_size.x;
-                //             }
-                //         }
-                //     }
-                // }
             }
             case .Fill: {
+                if .Floating in box.flags {
+                    box.computed_size.x = ancestor_size(ctx, box, .Horizontal);
+                }
             }
             case .PercentOfParent: {
                 box.computed_size.x = int(f32(ancestor_size(ctx, box, .Horizontal))*(f32(box.semantic_size.x.value)/100.0));
@@ -378,52 +370,18 @@ compute_layout :: proc(ctx: ^Context, canvas_size: [2]int, font_width: int, font
         }
         switch box.semantic_size.y.kind {
             case .FitText: {
-                // TODO: don't use hardcoded font size
                 box.computed_size.y = font_height;
             }
             case .Exact: {
                 box.computed_size.y = box.semantic_size.y.value;
             }
             case .ChildrenSum: {
-                //compute_children = false;
                 post_compute_size[Axis.Vertical] = true;
-
-                // should_post_compute := false;
-                // number_of_fills := 0;
-                // box.computed_size.y = 0;
-                // parent_size := ancestor_size(box, .Vertical);
-
-                // iter := BoxIter { box.first, 0 };
-                // for child in iterate_box(&iter) {
-                //     compute_layout(canvas_size, font_width, font_height, child);
-
-                //     if child.semantic_size.y.kind == .Fill {
-                //         number_of_fills += 1;
-                //         should_post_compute := true;
-                //     }
-
-                //     switch box.axis {
-                //         case .Horizontal: {
-                //             if child.computed_size.y > box.computed_size.y {
-                //                 box.computed_size.y = child.computed_size.y;
-                //             }
-                //         }
-                //         case .Vertical: {
-                //             box.computed_size.y += child.computed_size.y;
-                //         }
-                //     }
-                // }
-
-                // if should_post_compute {
-                //     iter := BoxIter { box.first, 0 };
-                //     for child in iterate_box(&iter) {
-                //         if compute_layout(canvas_size, font_width, font_height, child) {
-                //             child.computed_size.y =  (parent_size - box.computed_size.y) / number_of_fills;
-                //         }
-                //     }
-                // }
             }
             case .Fill: {
+                if .Floating in box.flags {
+                    box.computed_size.y = ancestor_size(ctx, box, .Vertical);
+                }
             }
             case .PercentOfParent: {
                 box.computed_size.y = int(f32(ancestor_size(ctx, box, .Vertical))*(f32(box.semantic_size.y.value)/100.0));
@@ -433,7 +391,6 @@ compute_layout :: proc(ctx: ^Context, canvas_size: [2]int, font_width: int, font
 
     if compute_children {
         iter := BoxIter { box.first, 0 };
-        should_post_compute := false;
         child_size: [2]int = {0,0};
 
         // NOTE: the number of fills for the opposite axis of this box needs to be 1
@@ -451,31 +408,22 @@ compute_layout :: proc(ctx: ^Context, canvas_size: [2]int, font_width: int, font
             compute_layout(ctx, canvas_size, font_width, font_height, child);
             if child.semantic_size[box.axis].kind == .Fill {
                 number_of_fills[box.axis] += 1;
-                should_post_compute = true;
             } else {
                 child_size[box.axis] += child.computed_size[box.axis];
             }
         }
 
-        if true || should_post_compute {
-            iter := BoxIter { box.first, 0 };
-            for child in iterate_box(&iter) {
+        iter = BoxIter { box.first, 0 };
+        for child in iterate_box(&iter) {
+            if !(.Floating in child.flags) {
                 for axis in 0..<2 {
                     if child.semantic_size[axis].kind == .Fill {
-                        if false && child_size[axis] >= our_size[axis] {
-                            child.computed_size[axis] = our_size[axis] / number_of_fills[axis];
-                        } else {
-                            child.computed_size[axis] = (our_size[axis] - child_size[axis]) / number_of_fills[axis];
-                        }
+                        child.computed_size[axis] = (our_size[axis] - child_size[axis]) / number_of_fills[axis];
                     }
                 }
-
-                compute_layout(ctx, canvas_size, font_width, font_height, child);
-
-                if child.label == "2" {
-                    fmt.println(child.label, child.computed_size, box.label, our_size, child_size, number_of_fills);
-                }
             }
+
+            compute_layout(ctx, canvas_size, font_width, font_height, child);
         }
     }
 
@@ -546,19 +494,10 @@ push_clip :: proc(ctx: ^Context, pos: [2]int, size: [2]int) {
         i32(rect.size.y)
     });
 
-    // raylib.BeginScissorMode(
-    //     i32(rect.pos.x),
-    //     i32(rect.pos.y),
-    //     i32(rect.size.x),
-    //     i32(rect.size.y)
-    // );
-
     append(&ctx.clips, rect);
 }
 
 pop_clip :: proc(ctx: ^Context) {
-    //raylib.EndScissorMode();
-
     if len(ctx.clips) > 0 {
         rect := pop(&ctx.clips);
 
@@ -568,12 +507,6 @@ pop_clip :: proc(ctx: ^Context) {
             i32(rect.size.x),
             i32(rect.size.y)
         });
-        // raylib.BeginScissorMode(
-        //     i32(rect.pos.x),
-        //     i32(rect.pos.y),
-        //     i32(rect.size.x),
-        //     i32(rect.size.y)
-        // );
     } else {
         sdl2.RenderSetClipRect(ctx.renderer, nil);
     }
@@ -582,31 +515,46 @@ pop_clip :: proc(ctx: ^Context) {
 draw :: proc(ctx: ^Context, state: ^core.State, font_width: int, font_height: int, box: ^Box) {
     if box == nil { return; }
 
-    // NOTE: for some reason if you place this right before the
-    // for loop, the clipping only works for the first child. Compiler bug?
+    push_clip(ctx, box.computed_pos, box.computed_size);
+    {
+        defer pop_clip(ctx);
+
+        if .Hoverable in box.flags && box.hot > 0 {
+            core.draw_rect(
+                state,
+                box.computed_pos.x,
+                box.computed_pos.y,
+                box.computed_size.x,
+                box.computed_size.y,
+                .Background2
+            );
+        } else if .DrawBackground in box.flags {
+            core.draw_rect(
+                state,
+                box.computed_pos.x,
+                box.computed_pos.y,
+                box.computed_size.x,
+                box.computed_size.y,
+                .Background1
+            );
+        }
+
+        if .DrawText in box.flags {
+            core.draw_text(state, box.label, box.computed_pos.x, box.computed_pos.y);
+        }
+
+        if .CustomDrawFunc in box.flags && box.custom_draw_func != nil {
+            box.custom_draw_func(state, box, box.user_data);
+        }
+
+        iter := BoxIter { box.first, 0 };
+        for child in iterate_box(&iter) {
+            draw(ctx, state, font_width, font_height, child);
+        }
+    }
+
     push_clip(ctx, box.computed_pos, box.computed_size);
     defer pop_clip(ctx);
-
-    if .Hoverable in box.flags && box.hot > 0 {
-        core.draw_rect(
-            state,
-            box.computed_pos.x,
-            box.computed_pos.y,
-            box.computed_size.x,
-            box.computed_size.y,
-            .Background2
-        );
-    }
-    else if .DrawBackground in box.flags {
-        core.draw_rect(
-            state,
-            box.computed_pos.x,
-            box.computed_pos.y,
-            box.computed_size.x,
-            box.computed_size.y,
-            .Background1
-        );
-    }
 
     if .DrawBorder in box.flags {
         core.draw_rect_outline(
@@ -617,18 +565,6 @@ draw :: proc(ctx: ^Context, state: ^core.State, font_width: int, font_height: in
             box.computed_size.y,
             .Background4
         );
-    }
-    if .DrawText in box.flags {
-        core.draw_text(state, box.label, box.computed_pos.x, box.computed_pos.y);
-    }
-
-    if .CustomDrawFunc in box.flags && box.custom_draw_func != nil {
-        box.custom_draw_func(state, box, box.user_data);
-    }
-
-    iter := BoxIter { box.first, 0 };
-    for child in iterate_box(&iter) {
-        draw(ctx, state, font_width, font_height, child);
     }
 }
 
@@ -693,19 +629,19 @@ push_rect :: proc(ctx: ^Context, label: string, background: bool = true, border:
 push_centered :: proc(ctx: ^Context, label: string, flags: bit_set[Flag], axis: Axis = .Horizontal, semantic_size: [2]SemanticSize = FitText) -> ^Box {
     box: ^Box;
 
-    push_parent(ctx, push_box(ctx, label, {}, semantic_size = Fill))
+    push_parent(ctx, push_box(ctx, label, {}, semantic_size = { {.Fill,0}, semantic_size.y }))
     {
         defer pop_parent(ctx);
 
         spacer(ctx, "left spacer");
-        halfway_centered := push_rect(ctx, "halfway centered", false, false, .Vertical, { semantic_size.x, {.Fill,0} });
+        halfway_centered := push_rect(ctx, "halfway centered", false, false, .Vertical, { {.Fill, 0}, {.Fill,0} });
 
         push_parent(ctx, halfway_centered);
         {
             defer pop_parent(ctx);
 
             spacer(ctx, "top spacer");
-            box = push_box(ctx, label, flags, axis, { {.Fill,0}, semantic_size.y });
+            box = push_box(ctx, label, flags, axis, FitText);
             spacer(ctx, "bottom spacer");
         }
         spacer(ctx, "right spacer");

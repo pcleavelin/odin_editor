@@ -64,7 +64,7 @@ do_normal_mode :: proc(state: ^State, buffer: ^FileBuffer) {
 
 // TODO: use buffer list in state
 do_insert_mode :: proc(state: ^State, buffer: ^FileBuffer) {
-    key := 0; // raylib.GetCharPressed();
+    key := 0;
 
     for key > 0 {
         if key >= 32 && key <= 125 && len(buffer.input_buffer) < 1024-1 {
@@ -75,38 +75,9 @@ do_insert_mode :: proc(state: ^State, buffer: ^FileBuffer) {
             }
         }
 
-        key = 0; // raylib.GetCharPressed();
+        key = 0;
     }
-
-    // if raylib.IsKeyPressed(.ENTER) {
-    //     append(&buffer.input_buffer, '\n');
-    // }
-
-    // if raylib.IsKeyPressed(.ESCAPE) {
-    //     state.mode = .Normal;
-
-    //     core.insert_content(buffer, buffer.input_buffer[:]);
-    //     runtime.clear(&buffer.input_buffer);
-    //     return;
-    // }
-
-    // if raylib.IsKeyPressed(.BACKSPACE) {
-    //     core.delete_content(buffer, 1);
-
-    //     for hook_proc in state.hooks[plugin.Hook.BufferInput] {
-    //         hook_proc(state.plugin_vtable, buffer);
-    //     }
-    // }
 }
-
-// switch_to_buffer :: proc(state: ^State, item: ^ui.MenuBarItem) {
-//     for buffer, index in state.buffers {
-//         if strings.compare(buffer.file_path, item.text) == 0 {
-//             state.current_buffer = index;
-//             break;
-//         }
-//     }
-// }
 
 register_default_leader_actions :: proc(input_map: ^core.InputMap) {
     core.register_key_action(input_map, .Q, proc(state: ^State) {
@@ -163,26 +134,19 @@ register_default_input_actions :: proc(input_map: ^core.InputMap) {
     // Scale font size
     {
         core.register_ctrl_key_action(input_map, .MINUS, proc(state: ^State) {
-            fmt.print("You pressed <C>-MINUS", state.source_font_height, " ");
             if state.source_font_height > 16 {
                 state.source_font_height -= 2;
                 state.source_font_width = state.source_font_height / 2;
 
                 state.font_atlas = core.gen_font_atlas(state, "/System/Library/Fonts/Supplemental/Andale Mono.ttf");
-                //state.font = raylib.LoadFontEx("/System/Library/Fonts/Supplemental/Andale Mono.ttf", i32(state.source_font_height*2), nil, 0);
-                //raylib.SetTextureFilter(state.font.texture, .BILINEAR);
             }
             fmt.println(state.source_font_height);
         }, "increase font size");
         core.register_ctrl_key_action(input_map, .EQUAL, proc(state: ^State) {
-            fmt.println("You pressed <C>-EQUAL");
-
             state.source_font_height += 2;
             state.source_font_width = state.source_font_height / 2;
 
             state.font_atlas = core.gen_font_atlas(state, "/System/Library/Fonts/Supplemental/Andale Mono.ttf");
-            //state.font = raylib.LoadFontEx("/System/Library/Fonts/Supplemental/Andale Mono.ttf", i32(state.source_font_height*2), nil, 0);
-            //raylib.SetTextureFilter(state.font.texture, .BILINEAR);
         }, "decrease font size");
     }
 
@@ -482,21 +446,11 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
             context = state.ctx;
 
             core.draw_rect(&state, int(x), int(y), int(width), int(height), color);
-            //raylib.DrawRectangle(x, y, width, height, theme.get_palette_raylib_color(color));
         },
         draw_text = proc "c" (text: cstring, x: f32, y: f32, color: theme.PaletteColor) {
             context = state.ctx;
 
             core.draw_text(&state, string(text), int(x), int(y), color);
-            // for codepoint, index in text {
-            //     raylib.DrawTextCodepoint(
-            //         state.font,
-            //         rune(codepoint),
-            //         raylib.Vector2 { x + f32(index * state.source_font_width), y },
-            //         f32(state.source_font_height),
-            //         theme.get_palette_raylib_color(color)
-            //     );
-            // }
         },
         draw_buffer_from_index = proc "c" (buffer_index: int, x: int, y: int, glyph_buffer_width: int, glyph_buffer_height: int, show_line_numbers: bool) {
             context = state.ctx;
@@ -1104,24 +1058,6 @@ main :: proc() {
             }
         },
         lua.L_Reg {
-            "register_key_action",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                key := lua.L_checkinteger(L, 1);
-
-                lua.L_checktype(L, 2, i32(lua.TFUNCTION));
-                lua.pushvalue(L, 2);
-                fn_ref := lua.L_ref(L, i32(lua.REGISTRYINDEX));
-
-                desc := strings.clone(string(lua.L_checkstring(L, 3)));
-
-                core.register_key_action_group(&state.input_map, plugin.Key(key), fn_ref, desc);
-
-                return i32(lua.OK);
-            }
-        },
-        lua.L_Reg {
             "register_key_group",
             proc "c" (L: ^lua.State) -> i32 {
                 context = state.ctx;
@@ -1167,7 +1103,15 @@ main :: proc() {
 
                             case i32(lua.TFUNCTION):
                                 fn_ref := lua.L_ref(L, i32(lua.REGISTRYINDEX));
-                                core.register_key_action_group(input_map, key, fn_ref, desc);
+
+                                if lua.rawgeti(L, -1, 4) == i32(lua.TTABLE) {
+                                    maybe_input_map := core.new_input_map();
+                                    table_to_action(L, lua.gettop(L), &maybe_input_map);
+
+                                    core.register_key_action_group(input_map, key, core.LuaEditorAction { fn_ref, maybe_input_map }, desc);
+                                } else {
+                                    core.register_key_action_group(input_map, key, core.LuaEditorAction { fn_ref, core.InputMap {} }, desc);
+                                }
 
                             case:
                                 lua.pop(L, 1);
@@ -1177,32 +1121,15 @@ main :: proc() {
 
                 table_to_action(L, 1, state.current_input_map);
 
+                return i32(lua.OK);
+            }
+        },
+        lua.L_Reg {
+            "request_window_close",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
 
-                // key := plugin.Key(lua.L_checkinteger(L, 1));
-
-                // lua.L_checktype(L, 2, i32(lua.TFUNCTION));
-                // lua.pushvalue(L, 2);
-                // fn_ref := lua.L_ref(L, i32(lua.REGISTRYINDEX));
-
-                // desc := strings.clone(string(lua.L_checkstring(L, 3)));
-
-                // fmt.println("LUA: attempting to register:", key, "ref", fn_ref);
-
-                // if action, exists := state.current_input_map.key_actions[key]; exists {
-                //     switch value in action.action {
-                //         case core.LuaEditorAction:
-                //             fmt.eprintln("Plugin attempted to register input group on existing key action (added from Lua)");
-                //         case core.PluginEditorAction:
-                //             fmt.eprintln("Plugin attempted to register input group on existing key action (added from Plugin)");
-                //         case core.EditorAction:
-                //             fmt.eprintln("Plugin attempted to register input group on existing key action");
-                //         case core.InputMap:
-                //             input_map := &(&state.current_input_map.key_actions[key]).action.(core.InputMap);
-                //             core.register_key_action_group(input_map, key, fn_ref, desc);
-                //     }
-                // } else {
-                //     core.register_key_action(state.current_input_map, key, core.new_input_map(), desc);
-                // }
+                core.request_window_close(&state);
 
                 return i32(lua.OK);
             }
@@ -1303,13 +1230,43 @@ main :: proc() {
         }
     }
 
+    push_lua_box_interaction :: proc(L: ^lua.State, interaction: ui.Interaction) {
+        lua.newtable(L);
+        {
+            lua.pushboolean(L, b32(interaction.clicked));
+            lua.setfield(L, -2, "clicked");
+
+            lua.pushboolean(L, b32(interaction.hovering));
+            lua.setfield(L, -2, "hovering");
+
+            lua.pushboolean(L, b32(interaction.dragging));
+            lua.setfield(L, -2, "dragging");
+        }
+    }
+
     ui_lib := [?]lua.L_Reg {
+        lua.L_Reg {
+            "get_mouse_pos",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
+                lua.pushvalue(L, 1);
+                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
+                if ui_ctx == nil { return i32(lua.ERRRUN); }
+
+                lua.pushinteger(L, lua.Integer(ui_ctx.mouse_x));
+                lua.pushinteger(L, lua.Integer(ui_ctx.mouse_y));
+
+                return 2;
+            }
+        },
         lua.L_Reg {
             "Exact",
             proc "c" (L: ^lua.State) -> i32 {
                 context = state.ctx;
 
-                value := lua.L_checkinteger(L, 1);
+                value := lua.L_checknumber(L, 1);
                 push_lua_semantic_size_table(L, { ui.SemanticSizeKind.Exact, int(value) });
 
                 return 1;
@@ -1320,7 +1277,7 @@ main :: proc() {
             proc "c" (L: ^lua.State) -> i32 {
                 context = state.ctx;
 
-                value := lua.L_checkinteger(L, 1);
+                value := lua.L_checknumber(L, 1);
                 push_lua_semantic_size_table(L, { ui.SemanticSizeKind.PercentOfParent, int(value) });
 
                 return 1;
@@ -1372,7 +1329,7 @@ main :: proc() {
                     x := int(lua.L_checkinteger(L, 3));
                     y := int(lua.L_checkinteger(L, 4));
 
-                    box := ui.push_floating(ui_ctx, strings.clone(string(label)), {x,y});
+                    box := ui.push_floating(ui_ctx, strings.clone(string(label), context.temp_allocator), {x,y});
                     lua.pushlightuserdata(L, box);
                     return 1;
                 }
@@ -1397,7 +1354,7 @@ main :: proc() {
                     semantic_width := get_lua_semantic_size(L, 6);
                     semantic_height := get_lua_semantic_size(L, 7);
 
-                    box := ui.push_rect(ui_ctx, strings.clone(string(label)), background, border, axis, { semantic_width, semantic_height });
+                    box := ui.push_rect(ui_ctx, strings.clone(string(label), context.temp_allocator), background, border, axis, { semantic_width, semantic_height });
                     lua.pushlightuserdata(L, box);
                     return 1;
                 }
@@ -1423,7 +1380,7 @@ main :: proc() {
                     semantic_width := get_lua_semantic_size(L, 6);
                     semantic_height := get_lua_semantic_size(L, 7);
 
-                    box := ui.push_centered(ui_ctx, strings.clone(string(label)), {.DrawBackground if background else nil, .DrawBorder if border else nil}, axis, { semantic_width, semantic_height });
+                    box := ui.push_centered(ui_ctx, strings.clone(string(label), context.temp_allocator), {.DrawBackground if background else nil, .DrawBorder if border else nil}, axis, { semantic_width, semantic_height });
                     lua.pushlightuserdata(L, box);
                     return 1;
                 }
@@ -1442,13 +1399,29 @@ main :: proc() {
                 if ui_ctx != nil {
                     label := lua.L_checkstring(L, 2);
 
-                    interaction := ui.spacer(ui_ctx, strings.clone(string(label)), semantic_size = {{.Exact, 8}, {.Fill, 0}});
+                    interaction := ui.spacer(ui_ctx, strings.clone(string(label), context.temp_allocator), semantic_size = {{.Fill, 0}, {.Fill, 0}});
 
-                    lua.newtable(L);
-                    {
-                        lua.pushboolean(L, b32(interaction.clicked));
-                        lua.setfield(L, -2, "clicked");
-                    }
+                    push_lua_box_interaction(L, interaction)
+
+                    return 1;
+                }
+
+                return i32(lua.ERRRUN);
+            }
+        },
+        lua.L_Reg {
+            "label",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
+                lua.pushvalue(L, 1);
+                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
+                if ui_ctx != nil {
+                    label := lua.L_checkstring(L, 2);
+
+                    interaction := ui.label(ui_ctx, strings.clone(string(label), context.temp_allocator));
+                    push_lua_box_interaction(L, interaction)
 
                     return 1;
                 }
@@ -1467,13 +1440,8 @@ main :: proc() {
                 if ui_ctx != nil {
                     label := lua.L_checkstring(L, 2);
 
-                    interaction := ui.button(ui_ctx, strings.clone(string(label)));
-
-                    lua.newtable(L);
-                    {
-                        lua.pushboolean(L, b32(interaction.clicked));
-                        lua.setfield(L, -2, "clicked");
-                    }
+                    interaction := ui.button(ui_ctx, strings.clone(string(label), context.temp_allocator));
+                    push_lua_box_interaction(L, interaction)
 
                     return 1;
                 }
@@ -1497,13 +1465,8 @@ main :: proc() {
                     semantic_width := get_lua_semantic_size(L, 4);
                     semantic_height := get_lua_semantic_size(L, 5);
 
-                    interaction := ui.advanced_button(ui_ctx, strings.clone(string(label)), flags, { semantic_width, semantic_height });
-
-                    lua.newtable(L);
-                    {
-                        lua.pushboolean(L, b32(interaction.clicked));
-                        lua.setfield(L, -2, "clicked");
-                    }
+                    interaction := ui.advanced_button(ui_ctx, strings.clone(string(label), context.temp_allocator), flags, { semantic_width, semantic_height });
+                    push_lua_box_interaction(L, interaction)
 
                     return 1;
                 }
@@ -1540,6 +1503,9 @@ main :: proc() {
     lua.newtable(L);
     {
         lua.newtable(L);
+        lua.pushinteger(L, lua.Integer(plugin.Key.B));
+        lua.setfield(L, -2, "B");
+
         lua.pushinteger(L, lua.Integer(plugin.Key.T));
         lua.setfield(L, -2, "T");
 
@@ -1551,6 +1517,21 @@ main :: proc() {
 
         lua.pushinteger(L, lua.Integer(plugin.Key.M));
         lua.setfield(L, -2, "M");
+
+        lua.pushinteger(L, lua.Integer(plugin.Key.K));
+        lua.setfield(L, -2, "K");
+
+        lua.pushinteger(L, lua.Integer(plugin.Key.J));
+        lua.setfield(L, -2, "J");
+
+        lua.pushinteger(L, lua.Integer(plugin.Key.Q));
+        lua.setfield(L, -2, "Q");
+
+        lua.pushinteger(L, lua.Integer(plugin.Key.ESCAPE));
+        lua.setfield(L, -2, "Escape");
+
+        lua.pushinteger(L, lua.Integer(plugin.Key.ENTER));
+        lua.setfield(L, -2, "Enter");
 
         lua.pushinteger(L, lua.Integer(plugin.Key.SPACE));
         lua.setfield(L, -2, "Space");
@@ -1586,7 +1567,7 @@ main :: proc() {
         lua.setglobal(L, "UI");
     }
 
-    if lua.L_dofile(L, "plugins/lua/lib.lua") == i32(lua.OK) {
+    if lua.L_dofile(L, "plugins/lua/view.lua") == i32(lua.OK) {
         lua.pop(L, lua.gettop(L));
     } else {
         err := lua.tostring(L, lua.gettop(L));
@@ -1611,115 +1592,110 @@ main :: proc() {
 
     control_key_pressed: bool;
     for !state.should_close {
-        if true {
-            buffer := &state.buffers[state.current_buffer];
+        // if false {
+        //     buffer := &state.buffers[state.current_buffer];
 
-            ui.push_parent(&ui_context, ui.push_box(&ui_context, "main", {}, .Vertical, semantic_size = {ui.make_semantic_size(.Fill, 100), ui.make_semantic_size(.Fill, 100)}));
-            defer ui.pop_parent(&ui_context);
+        //     ui.push_parent(&ui_context, ui.push_box(&ui_context, "main", {}, .Vertical, semantic_size = {ui.make_semantic_size(.Fill, 100), ui.make_semantic_size(.Fill, 100)}));
+        //     defer ui.pop_parent(&ui_context);
 
-            {
-                ui.push_parent(&ui_context, ui.push_box(&ui_context, "top_nav", {.DrawBackground}, semantic_size = {ui.make_semantic_size(.PercentOfParent, 100), ui.make_semantic_size(.Exact, state.source_font_height)}));
-                defer ui.pop_parent(&ui_context);
+        //     {
+        //         ui.push_parent(&ui_context, ui.push_box(&ui_context, "top_nav", {.DrawBackground}, semantic_size = {ui.make_semantic_size(.PercentOfParent, 100), ui.make_semantic_size(.Exact, state.source_font_height)}));
+        //         defer ui.pop_parent(&ui_context);
 
-                if ui.label(&ui_context, "Editor").clicked {
-                    fmt.println("you clicked the button");
-                }
+        //         if ui.label(&ui_context, "Editor").clicked {
+        //             fmt.println("you clicked the button");
+        //         }
 
-                ui.push_box(
-                    &ui_context,
-                    "nav spacer",
-                    {.DrawBackground},
-                    semantic_size = {
-                        ui.make_semantic_size(.Exact, 16),
-                        ui.make_semantic_size(.Exact, state.source_font_height)
-                    }
-                );
+        //         ui.push_box(
+        //             &ui_context,
+        //             "nav spacer",
+        //             {.DrawBackground},
+        //             semantic_size = {
+        //                 ui.make_semantic_size(.Exact, 16),
+        //                 ui.make_semantic_size(.Exact, state.source_font_height)
+        //             }
+        //         );
 
-                if ui.label(&ui_context, "Buffers").clicked {
-                    fmt.println("you clicked the button");
-                }
-            }
-            {
-                ui.push_parent(&ui_context, ui.push_box(&ui_context, "deezbuffer", {}, .Horizontal, semantic_size = {ui.make_semantic_size(.PercentOfParent, 100), ui.make_semantic_size(.Fill, 0)}));
-                defer ui.pop_parent(&ui_context);
+        //         if ui.label(&ui_context, "Buffers").clicked {
+        //             fmt.println("you clicked the button");
+        //         }
+        //     }
+        //     {
+        //         ui.push_parent(&ui_context, ui.push_box(&ui_context, "deezbuffer", {}, .Horizontal, semantic_size = {ui.make_semantic_size(.PercentOfParent, 100), ui.make_semantic_size(.Fill, 0)}));
+        //         defer ui.pop_parent(&ui_context);
 
-                {
-                    ui.push_parent(&ui_context, ui.push_box(&ui_context, "left side", {}, .Vertical, semantic_size = {ui.make_semantic_size(.Fill), ui.make_semantic_size(.Fill, 0)}));
-                    defer ui.pop_parent(&ui_context);
+        //         {
+        //             ui.push_parent(&ui_context, ui.push_box(&ui_context, "left side", {}, .Vertical, semantic_size = {ui.make_semantic_size(.Fill), ui.make_semantic_size(.Fill, 0)}));
+        //             defer ui.pop_parent(&ui_context);
 
-                    {
-                        if ui_file_buffer(&ui_context, &state.buffers[0]).clicked {
-                            state.current_buffer = 0;
-                        }
-                    }
-                    {
-                        if ui_file_buffer(&ui_context, &state.buffers[0+1]).clicked {
-                            state.current_buffer = 1;
-                        }
-                    }
-                    {
-                        if ui_file_buffer(&ui_context, &state.buffers[0+2]).clicked {
-                            state.current_buffer = 2;
-                        }
-                    }
-                }
-                {
-                    ui.push_parent(&ui_context, ui.push_box(&ui_context, "right side", {}, .Vertical, semantic_size = {ui.make_semantic_size(.Fill), ui.make_semantic_size(.Fill, 0)}));
-                    defer ui.pop_parent(&ui_context);
+        //             {
+        //                 if ui_file_buffer(&ui_context, &state.buffers[0]).clicked {
+        //                     state.current_buffer = 0;
+        //                 }
+        //             }
+        //             {
+        //                 if ui_file_buffer(&ui_context, &state.buffers[0+1]).clicked {
+        //                     state.current_buffer = 1;
+        //                 }
+        //             }
+        //             {
+        //                 if ui_file_buffer(&ui_context, &state.buffers[0+2]).clicked {
+        //                     state.current_buffer = 2;
+        //                 }
+        //             }
+        //         }
+        //         {
+        //             ui.push_parent(&ui_context, ui.push_box(&ui_context, "right side", {}, .Vertical, semantic_size = {ui.make_semantic_size(.Fill), ui.make_semantic_size(.Fill, 0)}));
+        //             defer ui.pop_parent(&ui_context);
 
-                    {
-                        if ui_file_buffer(&ui_context, &state.buffers[state.current_buffer]).clicked {
-                            state.current_buffer = 3;
-                        }
-                    }
-                }
-            }
-            {
-                ui.push_parent(&ui_context, ui.push_box(&ui_context, "bottom stats", {.DrawBackground}, semantic_size = {ui.make_semantic_size(.PercentOfParent, 100), ui.make_semantic_size(.Exact, state.source_font_height)}));
-                defer ui.pop_parent(&ui_context);
+        //             {
+        //                 if ui_file_buffer(&ui_context, &state.buffers[state.current_buffer]).clicked {
+        //                     state.current_buffer = 3;
+        //                 }
+        //             }
+        //         }
+        //     }
+        //     {
+        //         ui.push_parent(&ui_context, ui.push_box(&ui_context, "bottom stats", {.DrawBackground}, semantic_size = {ui.make_semantic_size(.PercentOfParent, 100), ui.make_semantic_size(.Exact, state.source_font_height)}));
+        //         defer ui.pop_parent(&ui_context);
 
-                label := "";
-                if state.mode == .Insert {
-                    label = "INSERT";
-                } else if state.mode == .Normal {
-                    label = "NORMAL";
-                }
+        //         label := "";
+        //         if state.mode == .Insert {
+        //             label = "INSERT";
+        //         } else if state.mode == .Normal {
+        //             label = "NORMAL";
+        //         }
 
-                if ui.label(&ui_context, label).clicked {
-                    fmt.println("you clicked the button");
-                }
-                ui.spacer(&ui_context, "mode spacer", semantic_size = {ui.make_semantic_size(.Exact, 16), ui.make_semantic_size(.Fill)});
+        //         if ui.label(&ui_context, label).clicked {
+        //             fmt.println("you clicked the button");
+        //         }
+        //         ui.spacer(&ui_context, "mode spacer", semantic_size = {ui.make_semantic_size(.Exact, 16), ui.make_semantic_size(.Fill)});
 
-                relative_file_path, _ := filepath.rel(state.directory, buffer.file_path, context.temp_allocator)
-                ui.label(&ui_context, relative_file_path);
+        //         relative_file_path, _ := filepath.rel(state.directory, buffer.file_path, context.temp_allocator)
+        //         ui.label(&ui_context, relative_file_path);
 
-                ui.spacer(&ui_context, "stats inbetween");
+        //         ui.spacer(&ui_context, "stats inbetween");
 
-                {
-                    ui.push_parent(&ui_context, ui.push_box(&ui_context, "center info", {}, semantic_size = ui.ChildrenSum));
-                    defer ui.pop_parent(&ui_context);
+        //         {
+        //             ui.push_parent(&ui_context, ui.push_box(&ui_context, "center info", {}, semantic_size = ui.ChildrenSum));
+        //             defer ui.pop_parent(&ui_context);
 
-                    line_info_text := fmt.tprintf(
-                        //"Line: %d, Col: %d, Len: %d --- Slice Index: %d, Content Index: %d",
-                        "Line: %d, Col: %d",
-                        buffer.cursor.line + 1,
-                        buffer.cursor.col + 1,
-                        //core.file_buffer_line_length(buffer, buffer.cursor.index),
-                        // buffer.cursor.index.slice_index,
-                        // buffer.cursor.index.content_index,
-                    );
-                    ui.label(&ui_context, line_info_text);
+        //             line_info_text := fmt.tprintf(
+        //                 //"Line: %d, Col: %d, Len: %d --- Slice Index: %d, Content Index: %d",
+        //                 "Line: %d, Col: %d",
+        //                 buffer.cursor.line + 1,
+        //                 buffer.cursor.col + 1,
+        //                 //core.file_buffer_line_length(buffer, buffer.cursor.index),
+        //                 // buffer.cursor.index.slice_index,
+        //                 // buffer.cursor.index.content_index,
+        //             );
+        //             ui.label(&ui_context, line_info_text);
 
-                    mouse_pos_str := fmt.tprintf("x,y: [%d,%d]", ui_context.mouse_x, ui_context.mouse_y);
-                    ui.label(&ui_context, mouse_pos_str);
-                }
-
-                //ui.spacer(&ui_context, "frame time spacer");
-                //frame_time := (60.0/f32(raylib.GetFPS())) * 10;
-                //frame_time_text := raylib.TextFormat("frame time: %fms", frame_time);
-                //ui.label(&ui_context, "lol have to figure out how to get the frame time");
-            }
-        }
+        //             mouse_pos_str := fmt.tprintf("x,y: [%d,%d]", ui_context.mouse_x, ui_context.mouse_y);
+        //             ui.label(&ui_context, mouse_pos_str);
+        //         }
+        //     }
+        // }
 
         for hook_ref in state.lua_hooks[plugin.Hook.Draw] {
             lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(hook_ref));
@@ -1779,8 +1755,7 @@ main :: proc() {
                                     if action, exists := state.current_input_map.ctrl_key_actions[key]; exists {
                                         switch value in action.action {
                                             case core.LuaEditorAction:
-                                                fmt.println("trying to call lua registered function:", value);
-                                                lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(value));
+                                                lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(value.fn_ref));
                                                 if lua.pcall(state.L, 0, 0, 0) != i32(lua.OK) {
                                                     err := lua.tostring(L, lua.gettop(L));
                                                     lua.pop(L, lua.gettop(L));
@@ -1788,6 +1763,10 @@ main :: proc() {
                                                     fmt.eprintln(err);
                                                 } else {
                                                     lua.pop(L, lua.gettop(L));
+                                                }
+
+                                                if value.maybe_input_map.ctrl_key_actions != nil {
+
                                                 }
                                             case core.PluginEditorAction:
                                                 value(state.plugin_vtable);
@@ -1801,7 +1780,7 @@ main :: proc() {
                                     if action, exists := state.current_input_map.key_actions[key]; exists {
                                         switch value in action.action {
                                             case core.LuaEditorAction:
-                                                lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(value));
+                                                lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(value.fn_ref));
                                                 if lua.pcall(state.L, 0, 0, 0) != i32(lua.OK) {
                                                     err := lua.tostring(L, lua.gettop(L));
                                                     lua.pop(L, lua.gettop(L));
@@ -1809,6 +1788,11 @@ main :: proc() {
                                                     fmt.eprintln(err);
                                                 } else {
                                                     lua.pop(L, lua.gettop(L));
+                                                }
+
+                                                if value.maybe_input_map.key_actions != nil {
+                                                    ptr_action := &(&state.current_input_map.key_actions[key]).action.(core.LuaEditorAction)
+                                                    state.current_input_map = (&ptr_action.maybe_input_map)
                                                 }
                                             case core.PluginEditorAction:
                                                 value(state.plugin_vtable);

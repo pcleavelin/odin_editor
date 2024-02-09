@@ -37,8 +37,9 @@ close_window_and_free :: proc(state: ^State) {
         free(state.window);
 
         state.window = nil;
-        state.current_input_map = &state.input_map;
     }
+
+    state.current_input_map = &state.input_map;
 }
 
 LuaHookRef :: i32;
@@ -92,7 +93,11 @@ add_lua_hook :: proc(state: ^State, hook: plugin.Hook, hook_ref: LuaHookRef) {
 
     runtime.append(&state.lua_hooks[hook], hook_ref);
 }
-LuaEditorAction :: i32;
+
+LuaEditorAction :: struct {
+    fn_ref: i32,
+    maybe_input_map: InputMap,
+};
 PluginEditorAction :: proc "c" (plugin: plugin.Plugin);
 EditorAction :: proc(state: ^State);
 InputGroup :: union {LuaEditorAction, PluginEditorAction, EditorAction, InputMap}

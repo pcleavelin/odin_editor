@@ -771,10 +771,8 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, sho
     // draw cursor
     if state.mode == .Normal {
         draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Background4);
-        //raylib.DrawRectangle(i32(cursor_x), i32(cursor_y), i32(state.source_font_width), i32(state.source_font_height), theme.get_palette_raylib_color(.Background4));
     } else if state.mode == .Insert {
         draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Green);
-        // raylib.DrawRectangle(i32(cursor_x), i32(cursor_y), i32(state.source_font_width), i32(state.source_font_height), theme.get_palette_raylib_color(.Green));
 
         num_line_break := 0;
         line_length := 0;
@@ -795,7 +793,6 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, sho
         }
 
         draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Blue);
-        //raylib.DrawRectangle(i32(cursor_x), i32(cursor_y), i32(state.source_font_width), i32(state.source_font_height), theme.get_palette_raylib_color(.Blue));
     }
 
     for j in 0..<buffer.glyph_buffer_height {
@@ -803,7 +800,6 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, sho
 
         if show_line_numbers {
             draw_text(state, fmt.tprintf("%d", begin + j + 1), x, text_y);
-            //raylib.DrawTextEx(font, raylib.TextFormat("%d", begin + j + 1), raylib.Vector2 { f32(x), f32(text_y) }, f32(state.source_font_height), 0, theme.get_palette_raylib_color(.Background4));
         }
 
         for i in 0..<buffer.glyph_buffer_width {
@@ -813,7 +809,6 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, sho
             if glyph.codepoint == 0 { break; }
 
             draw_codepoint(state, rune(glyph.codepoint), text_x, text_y, glyph.color);
-            //raylib.DrawTextCodepoint(font, rune(glyph.codepoint), raylib.Vector2 { f32(text_x), f32(text_y) }, f32(state.source_font_height), theme.get_palette_raylib_color(glyph.color));
         }
     }
 }

@@ -98,7 +98,7 @@ light_palette := []u32 {
 get_palette_color :: proc(palette_color: PaletteColor) -> [4]u8 {
     color: [4]u8;
 
-    c := palette[palette_color];
+    c := light_palette[palette_color];
     for i in 0..<4 {
         color[i] = u8((c >> (8*u32(3-i)))&0xff);
     }
