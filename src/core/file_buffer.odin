@@ -902,14 +902,21 @@ delete_content :: proc(buffer: ^FileBuffer, amount: int) {
             if len(content_slice_ptr^) == 1 {
                 // move cursor to previous content_slice so we can delete the current one
                 iterate_file_buffer_reverse(&it);
-                runtime.ordered_remove(&buffer.content_slices, it.cursor.index.slice_index+1);
-            } else {
+
+                if it.hit_end {
+                    runtime.ordered_remove(&buffer.content_slices, it.cursor.index.slice_index);
+                } else {
+                    runtime.ordered_remove(&buffer.content_slices, it.cursor.index.slice_index+1);
+                }
+            } else if !it.hit_end {
                 iterate_file_buffer_reverse(&it);
                 content_slice_ptr^ = content_slice_ptr^[:len(content_slice_ptr^)-1];
             }
         }
 
-        iterate_file_buffer(&it);
+        if !it.hit_end {
+            iterate_file_buffer(&it);
+        }
         buffer.cursor = it.cursor;
     }
 }
