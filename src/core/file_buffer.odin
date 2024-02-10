@@ -107,6 +107,10 @@ iterate_file_buffer :: proc(it: ^FileBufferIter) -> (character: u8, idx: FileBuf
     return character, it.cursor.index, true;
 }
 iterate_file_buffer_reverse_mangle_cursor :: proc(it: ^FileBufferIter) -> (character: u8, idx: FileBufferIndex, cond: bool) {
+    if len(it.buffer.content_slices[it.cursor.index.slice_index]) < 0 {
+        return character, idx, false;
+    } 
+
     character = it.buffer.content_slices[it.cursor.index.slice_index][it.cursor.index.content_index];
     if it.cursor.index.content_index == 0 {
         if it.cursor.index.slice_index > 0 {
@@ -889,6 +893,10 @@ delete_content :: proc(buffer: ^FileBuffer, amount: int) {
         amount := amount - len(buffer.input_buffer);
         runtime.clear(&buffer.input_buffer);
 
+        if len(buffer.content_slices) < 1 {
+            return;
+        }
+
         split_content_slice(buffer);
 
         it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
@@ -898,8 +906,9 @@ delete_content :: proc(buffer: ^FileBuffer, amount: int) {
 
         for i in 0..<amount {
             content_slice_ptr := &buffer.content_slices[it.cursor.index.slice_index];
+            content_slice_len := len(content_slice_ptr^);
 
-            if len(content_slice_ptr^) == 1 {
+            if content_slice_len == 1 {
                 // move cursor to previous content_slice so we can delete the current one
                 iterate_file_buffer_reverse(&it);
 

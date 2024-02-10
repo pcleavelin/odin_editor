@@ -4,7 +4,9 @@ local BufferSearchOpenElapsed = 0
 local CurrentPreviewBufferIndex = Editor.get_current_buffer_index()
 local BufferSearchIndex = 0
 
+local SideBarSmoothedWidth = 128
 local SideBarWidth = 128
+local SideBarClosed = false
 
 function buffer_list_iter()
     local idx = 0
@@ -30,13 +32,14 @@ function centered(ctx, label, axis, width, height, body)
     UI.pop_parent(ctx)
 end
 
-function render_ui_window(ctx)
-    current_buffer_index = Editor.get_current_buffer_index()
+function lerp(from, to, rate)
+    return (1 - rate) * from + rate*to
+end
 
-    numFrames = 7
-    CurrentPreviewBufferIndex = current_buffer_index
+function ui_sidebar(ctx)
+    SideBarSmoothedWidth = slerp(SideBarSmoothedWidth, SideBarWidth, 0.3)
 
-    tabs = UI.push_rect(ctx, "tabs", false, false, UI.Vertical, UI.Exact(SideBarWidth), UI.Fill)
+    tabs = UI.push_rect(ctx, "sidebar", false, false, UI.Vertical, UI.Exact(SideBarSmoothedWidth), UI.Fill)
     UI.push_parent(ctx, tabs)
         UI.push_rect(ctx, "padded top open files", false, false, UI.Horizontal, UI.Fill, UI.Exact(8))
         UI.push_parent(ctx, UI.push_rect(ctx, "padded open files", false, false, UI.Horizontal, UI.Fill, UI.ChildrenSum))
@@ -69,17 +72,39 @@ function render_ui_window(ctx)
         UI.spacer(ctx, "below tabs spacer")
 
     UI.pop_parent(ctx)
+end
+
+function ui_tabs(ctx)
+    UI.buffer(ctx, CurrentPreviewBufferIndex)
+end
+
+function render_ui_window(ctx)
+    current_buffer_index = Editor.get_current_buffer_index()
+
+    numFrames = 7
+    CurrentPreviewBufferIndex = current_buffer_index
+
+    if not SidebarClosed or SideBarSmoothedWidth > 2 then
+        ui_sidebar(ctx)
+    end
     if UI.advanced_button(ctx, "side bar grab handle", {"DrawBorder", "Hoverable"}, UI.Exact(16), UI.Fill).dragging  then
         x,y = UI.get_mouse_pos(ctx)
         SideBarWidth = x-8
 
+        if SideBarWidth < 32 then
+            SidebarClosed = true
+            SideBarWidth = 0
+        elseif SideBarWidth > 128 then
+            SidebarClosed = false
+        end
+
         -- TODO: use some math.max function
-        if SideBarWidth < 128 then
+        if not SidebarClosed and SideBarWidth < 128 then
             SideBarWidth = 128
         end
     end
-    UI.buffer(ctx, CurrentPreviewBufferIndex)
 
+    ui_tabs(ctx)
     render_buffer_search(ctx)
 end
 
