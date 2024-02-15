@@ -1,8 +1,8 @@
 all: editor
 
 editor: src/*.odin grep odin_highlighter
-	odin build src/ -out:bin/editor.o -build-mode:obj -debug
-	dsymutil bin/editor.o -o bin/editor.dw
+	odin build src/ -out:bin/editor.o -build-mode:obj -debug -lld
+	dsymutil bin/editor.o -o bin/editor.dSYM
 	odin build src/ -out:bin/editor -lld
 
 odin_highlighter:

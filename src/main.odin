@@ -1031,6 +1031,16 @@ main :: proc() {
     bbb: [^]lua.L_Reg;
     editor_lib := [?]lua.L_Reg {
         lua.L_Reg {
+            "quit",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+
+                state.should_close = true;
+                return i32(lua.OK);
+            }
+        },
+        lua.L_Reg {
             "print",
             proc "c" (L: ^lua.State) -> i32 {
                 context = state.ctx;
@@ -1335,6 +1345,50 @@ main :: proc() {
                 }
 
                 return i32(lua.ERRRUN);
+            }
+        },
+        lua.L_Reg {
+            "push_box",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
+                lua.pushvalue(L, 1);
+                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
+                if ui_ctx != nil {
+                    label := lua.L_checkstring(L, 2);
+                    flags, err := lua_ui_flags(L, 3);
+                    axis := ui.Axis(lua.L_checkinteger(L, 4));
+
+                    semantic_width := get_lua_semantic_size(L, 5);
+                    semantic_height := get_lua_semantic_size(L, 6);
+
+                    box := ui.push_box(ui_ctx, strings.clone(string(label), context.temp_allocator), flags, axis, { semantic_width, semantic_height });
+                    lua.pushlightuserdata(L, box);
+                    return 1;
+                }
+
+                return i32(lua.ERRRUN);
+            }
+        },
+        lua.L_Reg {
+            "box_interaction",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
+                lua.pushvalue(L, 1);
+                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
+                if ui_ctx == nil { return i32(lua.ERRRUN); }
+
+                lua.L_checktype(L, 2, i32(lua.TLIGHTUSERDATA));
+                lua.pushvalue(L, 2);
+                box := transmute(^ui.Box)lua.touserdata(L, -1);
+                if box == nil { return i32(lua.ERRRUN); }
+
+                interaction := ui.test_box(ui_ctx, box);
+                push_lua_box_interaction(L, interaction)
+                return 1;
             }
         },
         lua.L_Reg {
@@ -1887,8 +1941,6 @@ main :: proc() {
                 }
             }
         }
-
-        // ui.debug_print();
 
         draw(&StateWithUi { &state, &ui_context });
 

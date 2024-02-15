@@ -11,7 +11,7 @@ import "../theme"
 Context :: struct {
     root: ^Box,
     current_parent: ^Box,
-    persistent: map[Key]^Box,
+    persistent: map[string]^Box,
     current_interaction_index: int,
 
     clips: [dynamic]Rect,
@@ -103,24 +103,26 @@ Box :: struct {
 init :: proc(renderer: ^sdl2.Renderer) -> Context {
     root := new(Box);
     root.key = gen_key(nil, "root", 69);
+    root.label = strings.clone("root")
 
     return Context {
         root = root,
         current_parent = root,
-        persistent = make(map[Key]^Box),
+        persistent = make(map[string]^Box),
         clips = make([dynamic]Rect),
         renderer = renderer,
     };
 }
 
 gen_key :: proc(ctx: ^Context, label: string, value: int) -> Key {
-    key_label := ""
+    key_label: string;
+
     if ctx != nil && (ctx.current_parent == nil || len(ctx.current_parent.key.label) < 1) {
-        key_label = label;
+        key_label = strings.clone(label);
     } else if ctx != nil {
-        key_label = fmt.tprintf("%s:%s", ctx.current_parent.key.label, label);
+        key_label = fmt.aprintf("%s:%s", ctx.current_parent.key.label, label);
     } else {
-        key_label = fmt.tprintf("%s",label);
+        key_label = strings.clone(label);
     }
 
     return Key {
@@ -133,23 +135,30 @@ gen_key :: proc(ctx: ^Context, label: string, value: int) -> Key {
 make_box :: proc(ctx: ^Context, key: Key, label: string, flags: bit_set[Flag], axis: Axis, semantic_size: [2]SemanticSize) -> ^Box {
     box: ^Box = nil;
 
-    if cached_box, exists := ctx.persistent[key]; exists {
-        if cached_box.last_interacted_index < ctx.current_interaction_index {
-            old_cached_box := ctx.persistent[key];
-            free(old_cached_box);
-            box = new(Box);
+    if cached_box, exists := ctx.persistent[key.label]; exists {
+        // NOTE(pcleavelin): its important to note that the _cached_ key _is not_ free'd
+        // as that would invalid the maps reference to the key causing memory leaks because
+        // the map would think that an entry doesn't exist (in some cases)
+        delete(key.label)
 
-            ctx.persistent[key] = box;
+        if cached_box.last_interacted_index < ctx.current_interaction_index-1 {
+            box = cached_box;
+
+            box.last_interacted_index = ctx.current_interaction_index;
+            box.hot = 0;
+            box.active = 0;
         } else {
             box = cached_box;
         }
     } else {
         box = new(Box);
-        ctx.persistent[key] = box;
+        ctx.persistent[key.label] = box;
+
+        box.key = key;
+        box.last_interacted_index = ctx.current_interaction_index;
     }
 
-    box.key = key;
-    box.label = label;
+    box.label = strings.clone(label, context.temp_allocator);
 
     box.first = nil;
     box.last = nil;
@@ -206,8 +215,8 @@ Fill :[2]SemanticSize: {
     }
 };
 
-push_box :: proc(ctx: ^Context, label: string, flags: bit_set[Flag], axis: Axis = .Horizontal, semantic_size: [2]SemanticSize = FitText, value: int = 0) -> ^Box {
-    key := gen_key(ctx, label, value);
+push_box :: proc(ctx: ^Context, label: string, flags: bit_set[Flag], axis: Axis = .Horizontal, semantic_size: [2]SemanticSize = FitText) -> ^Box {
+    key := gen_key(ctx, label, 0);
     box := make_box(ctx, key, label, flags, axis, semantic_size);
 
     return box;
@@ -246,6 +255,9 @@ test_box :: proc(ctx: ^Context, box: ^Box) -> Interaction {
         box.active = 0;
     }
 
+    if box.hot > 0 || box.active > 0 {
+        box.last_interacted_index = ctx.current_interaction_index;
+    }
     return Interaction {
         hovering = hovering || box.active > 0,
         clicked = hovering && mouse_is_clicked,
@@ -264,7 +276,11 @@ delete_box_children :: proc(ctx: ^Context, box: ^Box, keep_persistent: bool = tr
 delete_box :: proc(ctx: ^Context, box: ^Box, keep_persistent: bool = true) {
     delete_box_children(ctx, box, keep_persistent);
 
-    if !(box.key in ctx.persistent) || !keep_persistent {
+    if box.last_interacted_index < ctx.current_interaction_index-1 {
+        delete_key(&ctx.persistent, box.key.label)
+    }
+
+    if !(box.key.label in ctx.persistent) || !keep_persistent {
         delete(box.key.label);
         free(box);
     }
@@ -276,14 +292,10 @@ prune :: proc(ctx: ^Context) {
     for box in iterate_box(&iter) {
         delete_box_children(ctx, box);
 
-        if !(box.key in ctx.persistent) {
+        if !(box.key.label in ctx.persistent) && box != ctx.root {
             free(box);
         }
     }
-
-    computed_pos := ctx.root.computed_pos;
-    computed_size := ctx.root.computed_size;
-    root_key := ctx.root.key;
 
     ctx.root.first = nil;
     ctx.root.last = nil;
@@ -291,6 +303,8 @@ prune :: proc(ctx: ^Context) {
     ctx.root.prev = nil;
     ctx.root.parent = nil;
     ctx.current_parent = ctx.root;
+
+    ctx.current_interaction_index += 1;
 }
 
 // TODO: consider not using `ctx` here
@@ -335,7 +349,7 @@ compute_layout :: proc(ctx: ^Context, canvas_size: [2]int, font_width: int, font
     }
 
     if .Floating in box.flags {
-        box.computed_pos = {0,0};
+        // box.computed_pos = {0,0};
     } else if box.prev != nil {
         prev := prev_non_floating_sibling(ctx, box);
 
@@ -432,6 +446,8 @@ compute_layout :: proc(ctx: ^Context, canvas_size: [2]int, font_width: int, font
 
         iter := BoxIter { box.first, 0 };
         for child in iterate_box(&iter) {
+            if .Floating in child.flags { continue; }
+
             switch box.axis {
                 case .Horizontal: {
                     box.computed_size[Axis.Horizontal] += child.computed_size[Axis.Horizontal];
@@ -449,6 +465,8 @@ compute_layout :: proc(ctx: ^Context, canvas_size: [2]int, font_width: int, font
 
         iter := BoxIter { box.first, 0 };
         for child in iterate_box(&iter) {
+            if .Floating in child.flags { continue; }
+
             switch box.axis {
                 case .Horizontal: {
                     if child.computed_size[Axis.Vertical] > box.computed_size[Axis.Vertical] {
@@ -463,10 +481,10 @@ compute_layout :: proc(ctx: ^Context, canvas_size: [2]int, font_width: int, font
     }
 }
 
-push_clip :: proc(ctx: ^Context, pos: [2]int, size: [2]int) {
+push_clip :: proc(ctx: ^Context, pos: [2]int, size: [2]int, inside_parent: bool = true) {
     rect := Rect { pos, size };
 
-    if len(ctx.clips) > 0 {
+    if len(ctx.clips) > 0 && inside_parent {
         parent_rect := ctx.clips[len(ctx.clips)-1];
 
         if rect.pos.x >= parent_rect.pos.x &&
@@ -515,7 +533,7 @@ pop_clip :: proc(ctx: ^Context) {
 draw :: proc(ctx: ^Context, state: ^core.State, font_width: int, font_height: int, box: ^Box) {
     if box == nil { return; }
 
-    push_clip(ctx, box.computed_pos, box.computed_size);
+    push_clip(ctx, box.computed_pos, box.computed_size, !(.Floating in box.flags));
     {
         defer pop_clip(ctx);
 
@@ -597,7 +615,7 @@ debug_print :: proc(ctx: ^Context, box: ^Box, depth: int = 0) {
         if depth > 0 {
             fmt.print(">");
         }
-        fmt.println(idx, "Box", box.label, "#", box.key.label, "first", transmute(rawptr)box.first, "parent", transmute(rawptr)box.parent, box.computed_size);
+        fmt.println(idx, "Box _", box.label, "#", box.key.label, "ptr", transmute(rawptr)box); //, "_ first", transmute(rawptr)box.first, "parent", transmute(rawptr)box.parent, box.computed_size);
         debug_print(ctx, box, depth+1);
     }
 

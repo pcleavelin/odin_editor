@@ -271,7 +271,6 @@ pub extern "C" fn OnExit(_plugin: Plugin) {
 extern "C" fn draw_window(plugin: Plugin, window: *const std::ffi::c_void) {
     let window = Box::leak(unsafe { Box::<GrepWindow>::from_raw(window as *mut GrepWindow) });
 
-    let screen_width = (plugin.get_screen_width)() as i32;
     let screen_height = (plugin.get_screen_height)() as i32;
 
     let font_height = (plugin.get_font_height)() as i32;
