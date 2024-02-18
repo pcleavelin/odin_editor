@@ -301,13 +301,16 @@ ui_file_buffer :: proc(ctx: ^ui.Context, buffer: ^FileBuffer) -> ui.Interaction 
     };
 
     relative_file_path, _ := filepath.rel(state.directory, buffer.file_path, context.temp_allocator)
-    ui.push_parent(ctx, ui.push_box(ctx, relative_file_path, {}, .Vertical, semantic_size = {ui.make_semantic_size(.Fill), ui.make_semantic_size(.Fill)}));
+
+    buffer_container, _ := ui.push_box(ctx, relative_file_path, {}, .Vertical, semantic_size = {ui.make_semantic_size(.Fill), ui.make_semantic_size(.Fill)});
+    ui.push_parent(ctx, buffer_container);
     defer ui.pop_parent(ctx);
 
     interaction := ui.custom(ctx, "buffer1", draw_func, transmute(rawptr)buffer);
 
     {
-        ui.push_parent(ctx, ui.push_box(ctx, "buffer info", {}, semantic_size = {ui.make_semantic_size(.Fill), ui.make_semantic_size(.Exact, state.source_font_height)}));
+        info_box, _ := ui.push_box(ctx, "buffer info", {}, semantic_size = {ui.make_semantic_size(.Fill), ui.make_semantic_size(.Exact, state.source_font_height)});
+        ui.push_parent(ctx, info_box);
         defer ui.pop_parent(ctx);
 
         ui.label(ctx, relative_file_path);
@@ -825,7 +828,8 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
                 ui_context := transmute(^ui.Context)ui_context;
                 label := strings.clone(string(label), context.temp_allocator);
 
-                return ui.push_floating(ui_context, label, pos);
+                floating, _ := ui.push_floating(ui_context, label, pos);
+                return floating;
             },
             rect = proc "c" (ui_context: rawptr, label: cstring, background: bool, border: bool, axis: plugin.UiAxis, size: [2]plugin.UiSemanticSize) -> plugin.UiBox {
                 context = state.ctx;
@@ -843,7 +847,8 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
                     },
                 };
 
-                return ui.push_rect(ui_context, label, background, border, ui.Axis(axis), size);
+                rect, _ := ui.push_rect(ui_context, label, background, border, ui.Axis(axis), size); 
+                return rect;
             },
 
             label = proc "c" (ui_context: rawptr, label: cstring) -> plugin.UiInteraction {
@@ -1251,6 +1256,16 @@ main :: proc() {
 
             lua.pushboolean(L, b32(interaction.dragging));
             lua.setfield(L, -2, "dragging");
+
+            lua.newtable(L);
+            {
+                lua.pushinteger(L, lua.Integer(interaction.box_pos.x));
+                lua.setfield(L, -2, "x");
+
+                lua.pushinteger(L, lua.Integer(interaction.box_pos.y));
+                lua.setfield(L, -2, "y");
+            }
+            lua.setfield(L, -2, "box_pos");
         }
     }
 
@@ -1339,9 +1354,10 @@ main :: proc() {
                     x := int(lua.L_checkinteger(L, 3));
                     y := int(lua.L_checkinteger(L, 4));
 
-                    box := ui.push_floating(ui_ctx, strings.clone(string(label), context.temp_allocator), {x,y});
+                    box, interaction := ui.push_floating(ui_ctx, strings.clone(string(label), context.temp_allocator), {x,y});
                     lua.pushlightuserdata(L, box);
-                    return 1;
+                    push_lua_box_interaction(L, interaction);
+                    return 2;
                 }
 
                 return i32(lua.ERRRUN);
@@ -1363,16 +1379,18 @@ main :: proc() {
                     semantic_width := get_lua_semantic_size(L, 5);
                     semantic_height := get_lua_semantic_size(L, 6);
 
-                    box := ui.push_box(ui_ctx, strings.clone(string(label), context.temp_allocator), flags, axis, { semantic_width, semantic_height });
+                    box, interaction := ui.push_box(ui_ctx, strings.clone(string(label), context.temp_allocator), flags, axis, { semantic_width, semantic_height });
+
                     lua.pushlightuserdata(L, box);
-                    return 1;
+                    push_lua_box_interaction(L, interaction)
+                    return 2;
                 }
 
                 return i32(lua.ERRRUN);
             }
         },
         lua.L_Reg {
-            "box_interaction",
+            "_box_interaction",
             proc "c" (L: ^lua.State) -> i32 {
                 context = state.ctx;
 
@@ -1408,35 +1426,10 @@ main :: proc() {
                     semantic_width := get_lua_semantic_size(L, 6);
                     semantic_height := get_lua_semantic_size(L, 7);
 
-                    box := ui.push_rect(ui_ctx, strings.clone(string(label), context.temp_allocator), background, border, axis, { semantic_width, semantic_height });
+                    box, interaction := ui.push_rect(ui_ctx, strings.clone(string(label), context.temp_allocator), background, border, axis, { semantic_width, semantic_height });
                     lua.pushlightuserdata(L, box);
-                    return 1;
-                }
-
-                return i32(lua.ERRRUN);
-            }
-        },
-        lua.L_Reg {
-            "push_centered",
-            proc "c" (L: ^lua.State) -> i32 {
-
-                context = state.ctx;
-
-                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
-                lua.pushvalue(L, 1);
-                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
-                if ui_ctx != nil {
-                    label := lua.L_checkstring(L, 2);
-                    background := bool(lua.toboolean(L, 3));
-                    border := bool(lua.toboolean(L, 4));
-                    axis := ui.Axis(lua.L_checkinteger(L, 5));
-
-                    semantic_width := get_lua_semantic_size(L, 6);
-                    semantic_height := get_lua_semantic_size(L, 7);
-
-                    box := ui.push_centered(ui_ctx, strings.clone(string(label), context.temp_allocator), {.DrawBackground if background else nil, .DrawBorder if border else nil}, axis, { semantic_width, semantic_height });
-                    lua.pushlightuserdata(L, box);
-                    return 1;
+                    push_lua_box_interaction(L, interaction)
+                    return 2;
                 }
 
                 return i32(lua.ERRRUN);
@@ -1771,6 +1764,9 @@ main :: proc() {
         {
             ui_context.last_mouse_left_down = ui_context.mouse_left_down;
             ui_context.last_mouse_right_down = ui_context.mouse_right_down;
+
+            ui_context.last_mouse_x = ui_context.mouse_x;
+            ui_context.last_mouse_y = ui_context.mouse_y;
 
             sdl_event: sdl2.Event;
             for(sdl2.PollEvent(&sdl_event)) {

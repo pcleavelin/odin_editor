@@ -120,6 +120,21 @@ draw_rect :: proc(state: ^State, x,y,w,h: int, color: theme.PaletteColor) {
     sdl2.RenderFillRect(state.sdl_renderer, &sdl2.Rect { i32(x), i32(y), i32(w), i32(h) });
 }
 
+draw_rect_blend :: proc(state: ^State, x,y,w,h: int, color_from: theme.PaletteColor, color_to: theme.PaletteColor, t: f32) {
+    color_from := theme.get_palette_color(color_from);
+    color_to := theme.get_palette_color(color_to);
+
+    color_from_f32: [4]f32 = { f32(color_from.r), f32(color_from.g), f32(color_from.b), f32(color_from.a) };
+    color_to_f32: [4]f32 = { f32(color_to.r), f32(color_to.g), f32(color_to.b), f32(color_to.a) };
+
+    color_f32 := (1 - t) * color_from_f32 + t * color_to_f32;
+
+    color: [4]u8 = { u8(color_f32.r), u8(color_f32.g), u8(color_f32.b), u8(color_f32.a) };
+
+    sdl2.SetRenderDrawColor(state.sdl_renderer, color.r, color.g, color.b, color.a);
+    sdl2.RenderFillRect(state.sdl_renderer, &sdl2.Rect { i32(x), i32(y), i32(w), i32(h) });
+}
+
 draw_codepoint :: proc(state: ^State, codepoint: rune, x,y: int, color: theme.PaletteColor) {
     color := theme.get_palette_color(color);
 

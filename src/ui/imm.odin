@@ -17,6 +17,9 @@ Context :: struct {
     clips: [dynamic]Rect,
     renderer: ^sdl2.Renderer,
 
+    last_mouse_x: int,
+    last_mouse_y: int,
+
     mouse_x: int,
     mouse_y: int,
 
@@ -41,6 +44,9 @@ Interaction :: struct {
     hovering: bool,
     clicked: bool,
     dragging: bool,
+
+    box_pos: [2]int,
+    box_size: [2]int,
 }
 
 Flag :: enum {
@@ -92,6 +98,8 @@ Box :: struct {
     semantic_size: [2]SemanticSize,
     computed_size: [2]int,
     computed_pos: [2]int,
+
+    scroll_offset: int,
 
     hot: int,
     active: int,
@@ -215,11 +223,12 @@ Fill :[2]SemanticSize: {
     }
 };
 
-push_box :: proc(ctx: ^Context, label: string, flags: bit_set[Flag], axis: Axis = .Horizontal, semantic_size: [2]SemanticSize = FitText) -> ^Box {
+push_box :: proc(ctx: ^Context, label: string, flags: bit_set[Flag], axis: Axis = .Horizontal, semantic_size: [2]SemanticSize = FitText) -> (^Box, Interaction) {
     key := gen_key(ctx, label, 0);
     box := make_box(ctx, key, label, flags, axis, semantic_size);
+    interaction := test_box(ctx, box);
 
-    return box;
+    return box, interaction;
 }
 
 push_parent :: proc(ctx: ^Context, box: ^Box) {
@@ -236,11 +245,19 @@ test_box :: proc(ctx: ^Context, box: ^Box) -> Interaction {
     hovering: bool;
 
     mouse_is_clicked := !ctx.last_mouse_left_down && ctx.mouse_left_down;
+    mouse_is_released := ctx.last_mouse_left_down && !ctx.mouse_left_down;
+    mouse_is_dragging := !mouse_is_clicked && ctx.mouse_left_down && (ctx.last_mouse_x != ctx.mouse_x || ctx.last_mouse_y != ctx.mouse_y);
 
     if ctx.mouse_x >= box.computed_pos.x && ctx.mouse_x <= box.computed_pos.x + box.computed_size.x &&
         ctx.mouse_y >= box.computed_pos.y && ctx.mouse_y <= box.computed_pos.y + box.computed_size.y
     {
-        hovering = true;
+        if box.parent != nil && ctx.mouse_x >= box.parent.computed_pos.x && ctx.mouse_x <= box.parent.computed_pos.x + box.parent.computed_size.x &&
+            ctx.mouse_y >= box.parent.computed_pos.y && ctx.mouse_y <= box.parent.computed_pos.y + box.parent.computed_size.y
+        {
+            hovering = true;
+        } else if box.parent == nil {
+            hovering = true;
+        }
     }
 
     if hovering || box.active > 0 {
@@ -249,9 +266,11 @@ test_box :: proc(ctx: ^Context, box: ^Box) -> Interaction {
         box.hot = 0;
     }
 
-    if hovering && mouse_is_clicked {
+    if hovering && mouse_is_clicked && !mouse_is_dragging {
+        box.active = 1;
+    } else if hovering && mouse_is_dragging && box.active > 0 {
         box.active += 1;
-    } else if !ctx.mouse_left_down {
+    } else if !ctx.mouse_left_down && !mouse_is_released {
         box.active = 0;
     }
 
@@ -260,8 +279,11 @@ test_box :: proc(ctx: ^Context, box: ^Box) -> Interaction {
     }
     return Interaction {
         hovering = hovering || box.active > 0,
-        clicked = hovering && mouse_is_clicked,
-        dragging = box.active > 0
+        clicked = hovering && mouse_is_released && box.active > 0,
+        dragging = box.active > 1,
+
+        box_pos = box.computed_pos,
+        box_size = box.computed_size,
     };
 }
 
@@ -345,7 +367,7 @@ compute_layout :: proc(ctx: ^Context, canvas_size: [2]int, font_width: int, font
     axis := Axis.Horizontal;
     if box.parent != nil && !(.Floating in box.flags) {
         axis = box.parent.axis;
-        box.computed_pos = box.parent.computed_pos;
+        box.computed_pos = box.parent.computed_pos - { 0, box.parent.scroll_offset };
     }
 
     if .Floating in box.flags {
@@ -538,13 +560,15 @@ draw :: proc(ctx: ^Context, state: ^core.State, font_width: int, font_height: in
         defer pop_clip(ctx);
 
         if .Hoverable in box.flags && box.hot > 0 {
-            core.draw_rect(
+            core.draw_rect_blend(
                 state,
                 box.computed_pos.x,
                 box.computed_pos.y,
                 box.computed_size.x,
                 box.computed_size.y,
-                .Background2
+                .Background1,
+                .Background2,
+                f32(math.min(box.hot, 20))/20.0
             );
         } else if .DrawBackground in box.flags {
             core.draw_rect(
@@ -628,50 +652,26 @@ debug_print :: proc(ctx: ^Context, box: ^Box, depth: int = 0) {
 }
 
 spacer :: proc(ctx: ^Context, label: string, flags: bit_set[Flag] = {}, semantic_size: [2]SemanticSize = {{.Fill, 0}, {.Fill,0}}) -> Interaction {
-    box := push_box(ctx, label, flags, semantic_size = semantic_size);
+    box, interaction := push_box(ctx, label, flags, semantic_size = semantic_size);
 
-    return test_box(ctx, box);
+    return interaction;
 }
 
-push_floating :: proc(ctx: ^Context, label: string, pos: [2]int, flags: bit_set[Flag] = {.Floating}, axis: Axis = .Horizontal, semantic_size: [2]SemanticSize = Fill) -> ^Box {
-    box := push_box(ctx, label, flags, semantic_size = semantic_size);
+push_floating :: proc(ctx: ^Context, label: string, pos: [2]int, flags: bit_set[Flag] = {.Floating}, axis: Axis = .Horizontal, semantic_size: [2]SemanticSize = Fill) -> (^Box, Interaction) {
+    box, interaction := push_box(ctx, label, flags, semantic_size = semantic_size);
     box.computed_pos = pos;
 
-    return box;
+    return box, interaction;
 }
 
-push_rect :: proc(ctx: ^Context, label: string, background: bool = true, border: bool = true, axis: Axis = .Vertical, semantic_size: [2]SemanticSize = Fill) -> ^Box {
+push_rect :: proc(ctx: ^Context, label: string, background: bool = true, border: bool = true, axis: Axis = .Vertical, semantic_size: [2]SemanticSize = Fill) -> (^Box, Interaction) {
     return push_box(ctx, label, {.DrawBackground if background else nil, .DrawBorder if border else nil}, axis, semantic_size = semantic_size);
 }
 
-push_centered :: proc(ctx: ^Context, label: string, flags: bit_set[Flag], axis: Axis = .Horizontal, semantic_size: [2]SemanticSize = FitText) -> ^Box {
-    box: ^Box;
-
-    push_parent(ctx, push_box(ctx, label, {}, semantic_size = { {.Fill,0}, semantic_size.y }))
-    {
-        defer pop_parent(ctx);
-
-        spacer(ctx, "left spacer");
-        halfway_centered := push_rect(ctx, "halfway centered", false, false, .Vertical, { {.Fill, 0}, {.Fill,0} });
-
-        push_parent(ctx, halfway_centered);
-        {
-            defer pop_parent(ctx);
-
-            spacer(ctx, "top spacer");
-            box = push_box(ctx, label, flags, axis, FitText);
-            spacer(ctx, "bottom spacer");
-        }
-        spacer(ctx, "right spacer");
-    }
-
-    return box;
-}
-
 label :: proc(ctx: ^Context, label: string) -> Interaction {
-    box := push_box(ctx, label, {.DrawText});
+    box, interaction := push_box(ctx, label, {.DrawText});
 
-    return test_box(ctx, box);
+    return interaction;
 }
 
 button :: proc(ctx: ^Context, label: string) -> Interaction {
@@ -679,47 +679,15 @@ button :: proc(ctx: ^Context, label: string) -> Interaction {
 }
 
 advanced_button :: proc(ctx: ^Context, label: string, flags: bit_set[Flag] = {.Clickable, .Hoverable, .DrawText, .DrawBorder, .DrawBackground}, semantic_size: [2]SemanticSize = FitText) -> Interaction {
-    box := push_box(ctx, label, flags, semantic_size = semantic_size);
+    box, interaction := push_box(ctx, label, flags, semantic_size = semantic_size);
 
-    return test_box(ctx, box);
+    return interaction;
 }
 
 custom :: proc(ctx: ^Context, label: string, draw_func: CustomDrawFunc, user_data: rawptr) -> Interaction {
-    box := push_box(ctx, label, {.CustomDrawFunc}, semantic_size = { make_semantic_size(.Fill), make_semantic_size(.Fill) });
+    box, interaction := push_box(ctx, label, {.CustomDrawFunc}, semantic_size = { make_semantic_size(.Fill), make_semantic_size(.Fill) });
     box.custom_draw_func = draw_func;
     box.user_data = user_data;
 
-    return test_box(ctx, box);
-}
-
-two_buttons_test :: proc(ctx: ^Context, label1: string, label2: string) {
-    push_parent(ctx, push_box(ctx, "TWO BUTTONS TEST", {.DrawBorder}, .Vertical, semantic_size = {make_semantic_size(.PercentOfParent, 100), { .Fill, 256}}));
-
-    button(ctx, "Row 1");
-    button(ctx, "Row 2");
-    button(ctx, label1);
-    button(ctx, label2);
-    button(ctx, "Row 5");
-    button(ctx, "Row 6");
-
-    {
-        push_parent(ctx, push_box(ctx, "two_button_container_inner", {.DrawBorder}, semantic_size = {make_semantic_size(.Fill, 0), { .Fill, 64}}));
-        defer pop_parent(ctx);
-
-        push_box(ctx, "1", {.DrawText, .DrawBackground, .DrawBorder}, semantic_size = {make_semantic_size(.Fill, 100), { .FitText, 256}})
-        push_box(ctx, "2", {.DrawText, .DrawBackground, .DrawBorder}, semantic_size = {make_semantic_size(.Fill, 100), { .FitText, 256}})
-
-        {
-            push_parent(ctx, push_box(ctx, "two_button_container_inner_inner", {.DrawBorder}, .Vertical, semantic_size = {make_semantic_size(.Fill, 50), { .ChildrenSum, 256}}));
-            defer pop_parent(ctx);
-
-            button(ctx, "this is a test button");
-            button(ctx, "me in the middle");
-            button(ctx, "look at me, I'm a test button too");
-        }
-
-        push_box(ctx, "End", {.DrawBorder, .DrawBackground, .DrawText}, .Horizontal, semantic_size = {make_semantic_size(.Fill, 0), { .FitText, 0}})
-    }
-    button(ctx, "Help me I'm falling");
-    pop_parent(ctx);
+    return interaction;
 }

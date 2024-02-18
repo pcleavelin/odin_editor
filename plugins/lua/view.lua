@@ -14,6 +14,9 @@ local CodeViews = {}
 local MovingTab = nil
 local MovingTabDest = nil
 
+local LastMouseX = 0
+local LastMouseY = 0
+
 function buffer_list_iter()
     local idx = 0
     return function ()
@@ -42,15 +45,25 @@ function lerp(from, to, rate)
     return (1 - rate) * from + rate*to
 end
 
+function remove_buffer_from_code_view(code_view_index, file_path)
+    if code_view_index ~= nil and CodeViews[code_view_index] ~= nil then
+        CodeViews[code_view_index].tabs[file_path] = nil
+        k,v = pairs(CodeViews[code_view_index].tabs)(CodeViews[code_view_index].tabs)
+        CodeViews[code_view_index].current_tab = k
+    end
+end
+
 function add_buffer_to_code_view(code_view_index, file_path, buffer_index)
     if code_view_index == nil then
         code_view_index = 1
         ActiveCodeView = 1
     end
 
+    -- A new code view is being created
     if CodeViews[code_view_index] == nil then
         CodeViews[code_view_index] = {}
         CodeViews[code_view_index].tabs = {}
+        CodeViews[code_view_index].width = UI.Fill
     end
 
     ActiveCodeView = code_view_index
@@ -63,7 +76,7 @@ end
 function ui_sidebar(ctx)
     SideBarSmoothedWidth = lerp(SideBarSmoothedWidth, SideBarWidth, 0.3)
 
-    tabs = UI.push_rect(ctx, "for some reason it chooses this as the parent", false, false, UI.Vertical, UI.Exact(SideBarSmoothedWidth), UI.Fill)
+    tabs, _ = UI.push_rect(ctx, "for some reason it chooses this as the parent", false, false, UI.Vertical, UI.Exact(SideBarSmoothedWidth), UI.Fill)
     UI.push_parent(ctx, tabs)
         UI.push_rect(ctx, "padded top open files", false, false, UI.Horizontal, UI.Fill, UI.Exact(8))
         UI.push_parent(ctx, UI.push_rect(ctx, "padded open files", false, false, UI.Horizontal, UI.Fill, UI.ChildrenSum))
@@ -82,6 +95,7 @@ function ui_sidebar(ctx)
 
                 if UI.advanced_button(ctx, " x ", flags, UI.FitText, UI.FitText).clicked then
                     print("hahah, you can't close buffers yet silly")
+                    Editor.set_current_buffer_from_index(i)
                     add_buffer_to_code_view(ActiveCodeView+1, buffer_info.file_path, i)
                 end
 
@@ -104,71 +118,81 @@ function ui_code_view(ctx, code_view_index)
     local code_view = CodeViews[code_view_index]
     local is_tab_dest = MovingTab ~= nil and ActiveCodeView ~= code_view_index
 
-    UI.push_parent(ctx, UI.push_rect(ctx, code_view_index.." code view", ActiveCodeView ~= code_view_index, true, UI.Vertical, UI.Fill, UI.Fill))
-        if is_tab_dest then
-            tab_dest_region = UI.push_box(ctx, "code view tab dest", {"Hoverable"}, UI.Vertical, UI.Fill, UI.Fill)
-            tab_dest_interaction = UI.box_interaction(ctx, tab_dest_region)
-            UI.push_parent(ctx, tab_dest_region)
+    code_view_rect, code_view_interaction = UI.push_rect(ctx, code_view_index.." code view", ActiveCodeView ~= code_view_index, true, UI.Vertical, code_view.width, UI.Fill)
 
-            -- if tab_dest_interaction
-        end
+    UI.push_parent(ctx, code_view_rect)
+        tab_dest_flags = {}
+        if is_tab_dest then tab_dest_flags = {"Hoverable"} end
 
-        UI.push_parent(ctx, UI.push_rect(ctx, "tabs", false, true, UI.Horizontal, UI.Fill, UI.ChildrenSum))
-            for k,v in pairs(code_view.tabs) do
-                show_border = v["buffer_index"] ~= code_view.current_buffer_index
-                background = not show_border
-                flags = {"Clickable", "Hoverable", "DrawText"}
-
-                UI.push_parent(ctx, UI.push_rect(ctx, k.." tab container", background, show_border, UI.Horizontal, UI.ChildrenSum, UI.ChildrenSum))
-                    tab_button = UI.advanced_button(ctx, " "..k.." ", flags, UI.FitText, UI.Exact(32))
-                    if tab_button.clicked then
-                        ActiveCodeView = code_view_index
-                        code_view.current_tab = k
-                    end
-
-                    local bb = "false"
-                    if is_tab_dest then bb = "true" end
-                    -- print("our code view "..code_view_index.." - "..k.." - is tab dest "..bb)
-
-                    if tab_button.dragging then
-                        if MovingTab == nil then
-                            MovingTab = {}
-                            MovingTab["code_view_index"] = code_view_index
-                            MovingTab["tab"] = k
-                        end
-
-                        UI.push_parent(ctx, UI.push_floating(ctx, "dragging tab", x-(96/2), y-(32/2)))
-                            UI.advanced_button(ctx, " "..k.." ", flags, UI.FitText, UI.Exact(32))
-                        UI.pop_parent(ctx)
-                    elseif MovingTab ~= nil and MovingTab["code_view_index"] == code_view_index and MovingTab["tab"] == k then
-                        -- Editor.quit()
-                        --print("attempting to move tab "..MovingTab["code_view_index"].." - "..MovingTab["tab"])
-                        if MovingTabDest ~= nil then
-                            print("attempting to place tab at code view "..MovingTabDest.code_view_index)
-
-                            MovingTabDest = nil
-                        end
-
-                        MovingTab = nil
-                    end
-                UI.pop_parent(ctx)
+        tab_dest_region, tab_dest_interaction = UI.push_box(ctx, "code view tab dest", tab_dest_flags, UI.Vertical, UI.Fill, UI.Fill)
+        UI.push_parent(ctx, tab_dest_region)
+            if is_tab_dest then
+                if tab_dest_interaction.hovering then
+                    MovingTabDest = code_view_index
+                end
             end
-        UI.pop_parent(ctx)
 
-        current_tab = code_view.current_tab
-        buffer_index = code_view.tabs[current_tab].buffer_index
+            UI.push_parent(ctx, UI.push_rect(ctx, "tabs", false, false, UI.Horizontal, UI.Fill, UI.ChildrenSum))
+                for k,v in pairs(code_view.tabs) do
+                    show_border = k ~= code_view.current_tab
+                    background = show_border
+                    flags = {"Clickable", "DrawText"}
+                    if show_border then
+                        table.insert(flags, 1, "DrawBorder")
+                        table.insert(flags, 1, "Hoverable")
+                    end
 
-        UI.buffer(ctx, buffer_index)
+                    UI.push_parent(ctx, UI.push_rect(ctx, k.." tab container", background, false, UI.Horizontal, UI.ChildrenSum, UI.ChildrenSum))
+                        tab_button = UI.advanced_button(ctx, " "..k.." ", flags, UI.FitText, UI.Exact(32))
+                        if tab_button.clicked or tab_button.dragging then
+                            ActiveCodeView = code_view_index
+                            code_view.current_tab = k
 
-        if is_tab_dest then
+                            Editor.set_current_buffer_from_index(v["buffer_index"])
+                        end
+
+                        if tab_button.dragging then
+                            if MovingTab == nil then
+                                MovingTab = {}
+                                MovingTab["code_view_index"] = code_view_index
+                                MovingTab["tab"] = k
+                            end
+
+                            UI.push_parent(ctx, UI.push_floating(ctx, "dragging tab", x-(96/2), y-(32/2)))
+                                UI.advanced_button(ctx, " "..k.." ", {"DrawText", "DrawBorder", "DrawBackground"}, UI.FitText, UI.Exact(32))
+                            UI.pop_parent(ctx)
+                        elseif MovingTab ~= nil and MovingTab["code_view_index"] == code_view_index and MovingTab["tab"] == k then
+                            if MovingTabDest ~= nil then
+                                add_buffer_to_code_view(MovingTabDest, k, v["buffer_index"])
+                                remove_buffer_from_code_view(code_view_index, k)
+
+                                MovingTabDest = nil
+                            end
+
+                            MovingTab = nil
+                        end
+                    UI.pop_parent(ctx)
+                end
             UI.pop_parent(ctx)
-        end
+
+            current_tab = code_view.current_tab
+            if code_view.tabs[current_tab] ~= nil then
+                buffer_index = code_view.tabs[current_tab].buffer_index
+
+                UI.buffer(ctx, buffer_index)
+            end
+
+        UI.pop_parent(ctx)
     UI.pop_parent(ctx)
+
+    return code_view_interaction
 end
 
 function render_ui_window(ctx)
     current_buffer_index = Editor.get_current_buffer_index()
     x,y = UI.get_mouse_pos(ctx)
+    delta_x = LastMouseX - x
+    delta_y = LastMouseY - y
 
     numFrames = 7
     CurrentPreviewBufferIndex = current_buffer_index
@@ -176,7 +200,7 @@ function render_ui_window(ctx)
     if not SidebarClosed or SideBarSmoothedWidth > 2 then
         ui_sidebar(ctx)
     end
-    if UI.advanced_button(ctx, "side bar grab handle", {"DrawBorder", "Hoverable"}, UI.Exact(16), UI.Fill).dragging  then
+    if UI.advanced_button(ctx, "side bar grab handle", {"DrawBorder", "Hoverable"}, UI.Exact(16), UI.Fill).dragging then
         SideBarWidth = x-8
 
         if SideBarWidth < 32 then
@@ -192,11 +216,36 @@ function render_ui_window(ctx)
         end
     end
 
-    for k in ipairs(CodeViews) do
-        ui_code_view(ctx, k)
+    for k,v in ipairs(CodeViews) do
+        code_view_interaction = ui_code_view(ctx, k)
+
+        if next(CodeViews, k) ~= nil then
+            interaction = UI.advanced_button(ctx, k.."code view grab handle", {"DrawBorder", "Hoverable"}, UI.Exact(16), UI.Fill)
+            if interaction.dragging then
+                local width = math.max(32, x - code_view_interaction.box_pos.x)
+                v.width = UI.Exact(width)
+            elseif interaction.clicked then
+                v.width = UI.Fill
+            end
+        else
+            v.width = UI.Fill
+        end
+    end
+
+    for k,v in ipairs(CodeViews) do
+        if next(v.tabs) == nil then
+            table.remove(CodeViews, k)
+
+            if ActiveCodeView > k then
+                ActiveCodeView = ActiveCodeView - 1
+            end
+        end
     end
 
     render_buffer_search(ctx)
+
+    LastMouseX = x
+    LastMouseY = y
 end
 
 function render_buffer_search(ctx)
@@ -259,6 +308,9 @@ function OnInit()
                 )},
                 {Editor.Key.Enter, "Switch to Buffer", (
                     function ()
+                        buffer_info = Editor.buffer_info_from_index(BufferSearchIndex)
+                        add_buffer_to_code_view(ActiveCodeView, buffer_info.file_path, BufferSearchIndex)
+
                         Editor.set_current_buffer_from_index(BufferSearchIndex)
                         Editor.request_window_close()
                         BufferSearchOpen = false
