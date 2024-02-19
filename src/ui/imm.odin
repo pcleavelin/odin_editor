@@ -233,12 +233,16 @@ push_box :: proc(ctx: ^Context, label: string, flags: bit_set[Flag], axis: Axis 
 
 push_parent :: proc(ctx: ^Context, box: ^Box) {
     ctx.current_parent = box;
+
+    push_clip(ctx, box.computed_pos, box.computed_size, !(.Floating in box.flags));
 }
 
 pop_parent :: proc(ctx: ^Context) {
     if ctx.current_parent.parent != nil {
         ctx.current_parent = ctx.current_parent.parent;
     }
+
+    pop_clip(ctx);
 }
 
 test_box :: proc(ctx: ^Context, box: ^Box) -> Interaction {
@@ -251,11 +255,17 @@ test_box :: proc(ctx: ^Context, box: ^Box) -> Interaction {
     if ctx.mouse_x >= box.computed_pos.x && ctx.mouse_x <= box.computed_pos.x + box.computed_size.x &&
         ctx.mouse_y >= box.computed_pos.y && ctx.mouse_y <= box.computed_pos.y + box.computed_size.y
     {
-        if box.parent != nil && ctx.mouse_x >= box.parent.computed_pos.x && ctx.mouse_x <= box.parent.computed_pos.x + box.parent.computed_size.x &&
-            ctx.mouse_y >= box.parent.computed_pos.y && ctx.mouse_y <= box.parent.computed_pos.y + box.parent.computed_size.y
-        {
-            hovering = true;
-        } else if box.parent == nil {
+        if len(ctx.clips) > 0 {
+            clip := ctx.clips[len(ctx.clips)-1];
+
+            if ctx.mouse_x >= clip.pos.x && ctx.mouse_x <= clip.pos.x + clip.size.x &&
+                ctx.mouse_y >= clip.pos.y && ctx.mouse_y <= clip.pos.y + clip.size.y
+            {
+                hovering = true;
+            } else  {
+                hovering = false;
+            }
+        } else {
             hovering = true;
         }
     }
@@ -274,12 +284,19 @@ test_box :: proc(ctx: ^Context, box: ^Box) -> Interaction {
         box.active = 0;
     }
 
+    // TODO: change this to use the scroll wheel input
+    if .Scrollable in box.flags && box.active > 1 && ctx.mouse_left_down {
+        box.scroll_offset -= ctx.mouse_y - ctx.last_mouse_y;
+
+        box.scroll_offset = math.min(0, box.scroll_offset);
+    }
+
     if box.hot > 0 || box.active > 0 {
         box.last_interacted_index = ctx.current_interaction_index;
     }
     return Interaction {
-        hovering = hovering || box.active > 0,
-        clicked = hovering && mouse_is_released && box.active > 0,
+        hovering = .Hoverable in box.flags && (hovering || box.active > 0),
+        clicked = .Clickable in box.flags && (hovering && mouse_is_released && box.active > 0),
         dragging = box.active > 1,
 
         box_pos = box.computed_pos,
@@ -367,7 +384,8 @@ compute_layout :: proc(ctx: ^Context, canvas_size: [2]int, font_width: int, font
     axis := Axis.Horizontal;
     if box.parent != nil && !(.Floating in box.flags) {
         axis = box.parent.axis;
-        box.computed_pos = box.parent.computed_pos - { 0, box.parent.scroll_offset };
+        box.computed_pos = box.parent.computed_pos;
+        box.computed_pos[axis] += box.parent.scroll_offset;
     }
 
     if .Floating in box.flags {

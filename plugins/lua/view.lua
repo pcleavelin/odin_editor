@@ -13,6 +13,7 @@ local CodeViews = {}
 
 local MovingTab = nil
 local MovingTabDest = nil
+local MovingTabInBetween = false
 
 local LastMouseX = 0
 local LastMouseY = 0
@@ -73,11 +74,15 @@ function add_buffer_to_code_view(code_view_index, file_path, buffer_index)
     CodeViews[code_view_index].current_tab = file_path
 end
 
-function ui_sidebar(ctx)
-    SideBarSmoothedWidth = lerp(SideBarSmoothedWidth, SideBarWidth, 0.3)
+function ui_sidemenu(ctx)
+    if SideBarClosed then
+        SideBarSmoothedWidth = lerp(SideBarSmoothedWidth, 0, 0.3)
+    else
+        SideBarSmoothedWidth = lerp(SideBarSmoothedWidth, SideBarWidth, 0.3)
+    end
 
-    tabs, _ = UI.push_rect(ctx, "for some reason it chooses this as the parent", false, false, UI.Vertical, UI.Exact(SideBarSmoothedWidth), UI.Fill)
-    UI.push_parent(ctx, tabs)
+    side_menu, _ = UI.push_box(ctx, "side menu", {"Scrollable"}, UI.Vertical, UI.Exact(SideBarSmoothedWidth), UI.Fill)
+    UI.push_parent(ctx, side_menu)
         UI.push_rect(ctx, "padded top open files", false, false, UI.Horizontal, UI.Fill, UI.Exact(8))
         UI.push_parent(ctx, UI.push_rect(ctx, "padded open files", false, false, UI.Horizontal, UI.Fill, UI.ChildrenSum))
             UI.push_rect(ctx, "padded top open files", false, false, UI.Horizontal, UI.Exact(8), UI.Fill)
@@ -109,7 +114,7 @@ function ui_sidebar(ctx)
                 end
             UI.pop_parent(ctx)
         end
-        UI.spacer(ctx, "below tabs spacer")
+        UI.spacer(ctx, "below buffers spacer")
 
     UI.pop_parent(ctx)
 end
@@ -129,10 +134,12 @@ function ui_code_view(ctx, code_view_index)
             if is_tab_dest then
                 if tab_dest_interaction.hovering then
                     MovingTabDest = code_view_index
+                elseif MovingTabDest == code_view_index then
+                    MovingTabDest = nil
                 end
             end
 
-            UI.push_parent(ctx, UI.push_rect(ctx, "tabs", false, false, UI.Horizontal, UI.Fill, UI.ChildrenSum))
+            UI.push_parent(ctx, UI.push_box(ctx, "tabs", {}, UI.Horizontal, UI.Fill, UI.ChildrenSum))
                 for k,v in pairs(code_view.tabs) do
                     show_border = k ~= code_view.current_tab
                     background = show_border
@@ -163,10 +170,17 @@ function ui_code_view(ctx, code_view_index)
                             UI.pop_parent(ctx)
                         elseif MovingTab ~= nil and MovingTab["code_view_index"] == code_view_index and MovingTab["tab"] == k then
                             if MovingTabDest ~= nil then
-                                add_buffer_to_code_view(MovingTabDest, k, v["buffer_index"])
-                                remove_buffer_from_code_view(code_view_index, k)
+                                if MovingTabInBetween then
+                                    remove_buffer_from_code_view(code_view_index, k)
 
-                                MovingTabDest = nil
+                                    table.insert(CodeViews, MovingTabDest+1, nil)
+                                    add_buffer_to_code_view(MovingTabDest+1, k, v["buffer_index"])
+                                else
+                                    add_buffer_to_code_view(MovingTabDest, k, v["buffer_index"])
+                                    remove_buffer_from_code_view(code_view_index, k)
+
+                                    MovingTabDest = nil
+                                end
                             end
 
                             MovingTab = nil
@@ -197,22 +211,34 @@ function render_ui_window(ctx)
     numFrames = 7
     CurrentPreviewBufferIndex = current_buffer_index
 
-    if not SidebarClosed or SideBarSmoothedWidth > 2 then
-        ui_sidebar(ctx)
+    if not SideBarClosed or SideBarSmoothedWidth > 2 then
+        ui_sidemenu(ctx)
     end
-    if UI.advanced_button(ctx, "side bar grab handle", {"DrawBorder", "Hoverable"}, UI.Exact(16), UI.Fill).dragging then
+
+    side_bar_interaction = UI.advanced_button(ctx, "side menu grab handle", {"DrawBorder", "Hoverable", "Clickable"}, UI.Exact(16), UI.Fill)
+    if side_bar_interaction.clicked then
+        if SideBarClosed then
+            SideBarClosed = false
+
+            if SideBarWidth < 32 then
+                SideBarWidth = 128
+            end
+        else
+            SideBarClosed = true
+        end
+    end
+    if side_bar_interaction.dragging then
         SideBarWidth = x-8
 
         if SideBarWidth < 32 then
-            SidebarClosed = true
+            SideBarClosed = true
             SideBarWidth = 0
         elseif SideBarWidth > 128 then
-            SidebarClosed = false
+            SideBarClosed = false
         end
 
-        -- TODO: use some math.max function
-        if not SidebarClosed and SideBarWidth < 128 then
-            SideBarWidth = 128
+        if not SideBarClosed then
+            SideBarWidth = math.max(SideBarWidth, 128)
         end
     end
 
@@ -220,12 +246,18 @@ function render_ui_window(ctx)
         code_view_interaction = ui_code_view(ctx, k)
 
         if next(CodeViews, k) ~= nil then
-            interaction = UI.advanced_button(ctx, k.."code view grab handle", {"DrawBorder", "Hoverable"}, UI.Exact(16), UI.Fill)
+            interaction = UI.advanced_button(ctx, k.."code view grab handle", {"DrawBorder", "Hoverable", "Clickable"}, UI.Exact(16), UI.Fill)
             if interaction.dragging then
                 local width = math.max(32, x - code_view_interaction.box_pos.x)
                 v.width = UI.Exact(width)
             elseif interaction.clicked then
                 v.width = UI.Fill
+            elseif MovingTab ~= nil and interaction.hovering then
+                MovingTabInBetween = true
+                MovingTabDest = k
+            elseif MovingTabDest == k and MovingTabInBetween then
+                MovingTabInBetween = false
+                MovingTabDest = nil
             end
         else
             v.width = UI.Fill

@@ -1266,6 +1266,16 @@ main :: proc() {
                 lua.setfield(L, -2, "y");
             }
             lua.setfield(L, -2, "box_pos");
+
+            lua.newtable(L);
+            {
+                lua.pushinteger(L, lua.Integer(interaction.box_size.x));
+                lua.setfield(L, -2, "x");
+
+                lua.pushinteger(L, lua.Integer(interaction.box_size.y));
+                lua.setfield(L, -2, "y");
+            }
+            lua.setfield(L, -2, "box_size");
         }
     }
 
@@ -1407,6 +1417,31 @@ main :: proc() {
                 interaction := ui.test_box(ui_ctx, box);
                 push_lua_box_interaction(L, interaction)
                 return 1;
+            }
+        },
+        lua.L_Reg {
+            "push_box",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
+                lua.pushvalue(L, 1);
+                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
+                if ui_ctx != nil {
+                    label := lua.L_checkstring(L, 2);
+                    flags, err := lua_ui_flags(L, 3);
+                    axis := ui.Axis(lua.L_checkinteger(L, 4));
+
+                    semantic_width := get_lua_semantic_size(L, 5);
+                    semantic_height := get_lua_semantic_size(L, 6);
+
+                    box, interaction := ui.push_box(ui_ctx, strings.clone(string(label), context.temp_allocator), flags, axis, { semantic_width, semantic_height });
+                    lua.pushlightuserdata(L, box);
+                    push_lua_box_interaction(L, interaction)
+                    return 2;
+                }
+
+                return i32(lua.ERRRUN);
             }
         },
         lua.L_Reg {
@@ -1603,11 +1638,11 @@ main :: proc() {
         lua.setfield(L, -2, "Horizontal");
         lua.pushinteger(L, lua.Integer(ui.Axis.Vertical));
         lua.setfield(L, -2, "Vertical");
-        lua.pushinteger(L, lua.Integer(ui.SemanticSizeKind.Fill));
+        push_lua_semantic_size_table(L, { ui.SemanticSizeKind.Fill, 0 });
         lua.setfield(L, -2, "Fill");
-        lua.pushinteger(L, lua.Integer(ui.SemanticSizeKind.ChildrenSum));
+        push_lua_semantic_size_table(L, { ui.SemanticSizeKind.ChildrenSum, 0 });
         lua.setfield(L, -2, "ChildrenSum");
-        lua.pushinteger(L, lua.Integer(ui.SemanticSizeKind.FitText));
+        push_lua_semantic_size_table(L, { ui.SemanticSizeKind.FitText, 0 });
         lua.setfield(L, -2, "FitText");
 
         lua.L_setfuncs(L, raw_data(&ui_lib), 0);
