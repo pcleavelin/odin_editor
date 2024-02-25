@@ -1,4 +1,10 @@
+mod editor_core;
+
+use core_graphics::{color_space::CGColorSpace, context::CGContext};
+use editor_core::ui;
 use futures::executor::block_on;
+use piet_common::{kurbo::Rect, RenderContext};
+use piet_coregraphics::CoreGraphicsContext;
 use wgpu::util::DeviceExt;
 use winit::{
     dpi::LogicalSize,
@@ -64,6 +70,116 @@ const FULL_QUAD_VERTS: &[Vertex] = &[
     },
 ];
 
+struct Texture<'a> {
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    sampler: &'a wgpu::Sampler,
+    layout: &'a wgpu::BindGroupLayout,
+    bind_group: wgpu::BindGroup,
+
+    width: u32,
+    height: u32,
+}
+
+impl<'a> Texture<'a> {
+    const fn desc() -> wgpu::BindGroupLayoutDescriptor<'static> {
+        wgpu::BindGroupLayoutDescriptor {
+            label: None,
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        }
+    }
+
+    fn create_wgpu_texture(
+        device: &wgpu::Device,
+        layout: &wgpu::BindGroupLayout,
+        sampler: &'a wgpu::Sampler,
+        width: u32,
+        height: u32,
+    ) -> (wgpu::Texture, wgpu::TextureView, wgpu::BindGroup) {
+        let texture_size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: texture_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+            ],
+        });
+
+        (texture, texture_view, texture_bind_group)
+    }
+    fn new(
+        device: &wgpu::Device,
+        layout: &'a wgpu::BindGroupLayout,
+        sampler: &'a wgpu::Sampler,
+        width: u32,
+        height: u32,
+    ) -> Self {
+        let (texture, view, bind_group) =
+            Self::create_wgpu_texture(device, layout, sampler, width, height);
+
+        Self {
+            texture,
+            view,
+            layout,
+            bind_group,
+            sampler,
+
+            width,
+            height,
+        }
+    }
+
+    fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
+        self.texture.destroy();
+
+        (self.texture, self.view, self.bind_group) =
+            Self::create_wgpu_texture(device, self.layout, self.sampler, width, height);
+
+        self.width = width;
+        self.height = height;
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = EventLoop::new()?;
     let logical_size = LogicalSize::new(800.0, 600.0);
@@ -112,62 +228,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         usage: wgpu::BufferUsages::VERTEX,
     });
-    let texture_size = wgpu::Extent3d {
-        width: 2,
-        height: 2,
-        depth_or_array_layers: 1,
-    };
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: None,
-        size: texture_size,
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8UnormSrgb,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
-    let texture_bind_group_layout =
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: None,
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-    let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
-    let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: None,
-        layout: &texture_bind_group_layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&texture_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::Sampler(&texture_sampler),
-            },
-        ],
-    });
+
+    let sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
+    let texture_layout = device.create_bind_group_layout(&Texture::desc());
+    let mut texture = Texture::new(
+        &device,
+        &texture_layout,
+        &sampler,
+        window_size.width,
+        window_size.height,
+    );
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
-        bind_group_layouts: &[&texture_bind_group_layout],
+        bind_group_layouts: &[&texture_layout],
         push_constant_ranges: &[],
     });
     let swapchain_capabilities = surface.get_capabilities(&adapter);
@@ -199,6 +272,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let window = &window;
     event_loop.set_control_flow(ControlFlow::Wait);
 
+    let mut cg_context = CGContext::create_bitmap_context(
+        None,
+        texture.width as usize,
+        texture.height as usize,
+        8,
+        4 * texture.width as usize,
+        &CGColorSpace::create_device_rgb(),
+        core_graphics::base::kCGImageAlphaPremultipliedLast,
+    );
+
+    /*************************/
+
+    let mut cx = ui::Context::new();
+    cx.make_node("first child");
+    cx.make_node("second child");
+    let key = cx.make_node("third child with children");
+    cx.push_parent(key);
+    {
+        cx.make_node("first nested child");
+        cx.make_node("second nested child");
+        cx.make_node("third nested child");
+    }
+    cx.pop_parent();
+    cx.make_node("fourth child");
+
+    cx.debug_print();
+
+    /*************************/
+
     #[allow(clippy::single_match)]
     event_loop.run(move |event, elwt| match event {
         Event::WindowEvent { event, .. } => match event {
@@ -211,7 +313,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 config.height = size.height;
 
                 surface.configure(&device, &config);
-
+                texture.resize(&device, config.width, config.height);
+                cg_context = CGContext::create_bitmap_context(
+                    None,
+                    texture.width as usize,
+                    texture.height as usize,
+                    8,
+                    4 * texture.width as usize,
+                    &CGColorSpace::create_device_rgb(),
+                    core_graphics::base::kCGImageAlphaPremultipliedLast,
+                );
                 window.request_redraw();
             }
             WindowEvent::MouseInput { .. } => window.request_redraw(),
@@ -243,33 +354,58 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         occlusion_query_set: None,
                     });
                     rpass.set_pipeline(&render_pipeline);
-                    rpass.set_bind_group(0, &texture_bind_group, &[]);
+                    rpass.set_bind_group(0, &texture.bind_group, &[]);
                     rpass.set_vertex_buffer(0, vertex_buffer.slice(..));
                     rpass.draw(0..FULL_QUAD_VERTS.len() as u32, 0..1);
                 }
 
-                queue.write_texture(
-                    wgpu::ImageCopyTexture {
-                        texture: &texture,
-                        mip_level: 0,
-                        origin: wgpu::Origin3d::ZERO,
-                        aspect: wgpu::TextureAspect::All,
-                    },
-                    &[
-                        255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 0, 255, 255,
-                    ],
-                    wgpu::ImageDataLayout {
-                        offset: 0,
-                        bytes_per_row: Some(4 * texture_size.width),
-                        rows_per_image: Some(texture_size.height),
-                    },
-                    texture_size,
-                );
+                let piet_render = || -> Result<(), Box<dyn std::error::Error>> {
+                    {
+                        let mut piet_context = CoreGraphicsContext::new_y_up(
+                            &mut cg_context,
+                            texture.height as f64,
+                            None,
+                        );
+
+                        piet_context.clear(None, piet_common::Color::BLACK);
+                        piet_context.fill(
+                            Rect::new(16.0, 16.0, 256.0, 256.0),
+                            &piet_common::Color::WHITE,
+                        );
+
+                        piet_context.finish()?;
+                    }
+
+                    queue.write_texture(
+                        wgpu::ImageCopyTexture {
+                            texture: &texture.texture,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        cg_context.data(),
+                        wgpu::ImageDataLayout {
+                            offset: 0,
+                            bytes_per_row: Some(4 * texture.width),
+                            rows_per_image: Some(texture.height),
+                        },
+                        wgpu::Extent3d {
+                            width: texture.width,
+                            height: texture.height,
+                            depth_or_array_layers: 1,
+                        },
+                    );
+
+                    Ok(())
+                }();
+
+                if let Err(err) = piet_render {
+                    eprintln!("failed to render with piet: {err}");
+                    elwt.exit();
+                }
 
                 queue.submit(Some(encoder.finish()));
                 frame.present();
-
-                eprintln!("redraw");
             }
             _ => (),
         },
