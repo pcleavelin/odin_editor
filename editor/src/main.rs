@@ -298,6 +298,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     cx.make_node("fourth child");
 
     cx.debug_print();
+    cx.update_layout();
+    cx.debug_print();
 
     /*************************/
 

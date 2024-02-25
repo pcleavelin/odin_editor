@@ -1,6 +1,10 @@
+// TODO: remove when things are actully used
+#![allow(dead_code)]
 use std::collections::HashMap;
 
 const ROOT_NODE: &str = "root";
+
+type NodeIndex = usize;
 
 #[derive(Clone, Hash, Eq, PartialEq)]
 pub struct NodeKey(String);
@@ -22,172 +26,222 @@ impl NodeKey {
     }
 
     pub fn new(cx: &Context, label: &str) -> Self {
-        NodeKey(format!("{}:{label}", cx.current_parent))
+        NodeKey(format!("{}:{label}", cx.node_ref(cx.current_parent).label))
     }
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+enum SemanticSize {
+    #[default]
+    FitText,
+    ChildrenSum,
+    Fill,
+    Exact(i32),
+    PercentOfParent(i32),
+}
+
+#[derive(Debug, Default)]
+enum Axis {
+    #[default]
+    Horizontal,
+    Vertical,
+}
+
+#[derive(Debug, Default)]
+struct PersistentNodeData {
+    axis: Axis,
+    semantic_size: [SemanticSize; 2],
+    computed_size: [i32; 2],
+    computed_pos: [i32; 2],
+}
+
 #[derive(Debug)]
-struct Node {
-    first: Option<NodeKey>,
-    last: Option<NodeKey>,
-    next: Option<NodeKey>,
-    prev: Option<NodeKey>,
-
-    parent: Option<NodeKey>,
-
+struct FrameNode {
+    key: NodeKey,
     label: String,
+
+    first: Option<NodeIndex>,
+    last: Option<NodeIndex>,
+    next: Option<NodeIndex>,
+    prev: Option<NodeIndex>,
+    parent: Option<NodeIndex>,
+}
+
+impl FrameNode {
+    fn root() -> Self {
+        Self {
+            key: NodeKey::root(),
+            label: "root".to_string(),
+            first: None,
+            last: None,
+            next: None,
+            prev: None,
+            parent: None,
+        }
+    }
 }
 
 pub struct Context {
-    persistent_nodes: HashMap<NodeKey, Node>,
+    persistent: HashMap<NodeKey, PersistentNodeData>,
+    frame_nodes: Vec<FrameNode>,
 
-    current_parent: NodeKey,
-    root_node: NodeKey,
+    current_parent: NodeIndex,
+    root_node: NodeIndex,
 }
 
 impl Context {
     pub fn new() -> Self {
         let mut nodes = HashMap::new();
-        nodes.insert(
-            NodeKey::root(),
-            Node {
-                first: None,
-                last: None,
-                next: None,
-                prev: None,
-                parent: None,
-                label: "root".to_string(),
-            },
-        );
+        nodes.insert(NodeKey::root(), PersistentNodeData::default());
 
         Self {
-            persistent_nodes: nodes,
-            current_parent: NodeKey::root(),
-            root_node: NodeKey::root(),
+            persistent: nodes,
+            frame_nodes: vec![FrameNode::root()],
+            current_parent: 0,
+            root_node: 0,
         }
     }
 
-    fn parent_key(&self, key: &NodeKey) -> Option<NodeKey> {
-        self.persistent_nodes
-            .get(key)
-            .and_then(|n| n.parent.clone())
-    }
-    fn first_key(&self, key: &NodeKey) -> Option<NodeKey> {
-        self.first_key_ref(key).cloned()
-    }
-    fn last_key(&self, key: &NodeKey) -> Option<NodeKey> {
-        self.persistent_nodes.get(key).and_then(|n| n.last.clone())
-    }
-    fn next_key(&self, key: &NodeKey) -> Option<NodeKey> {
-        self.next_key_ref(key).cloned()
-    }
-    fn prev_key(&self, key: &NodeKey) -> Option<NodeKey> {
-        self.persistent_nodes.get(key).and_then(|n| n.prev.clone())
+    // TODO: refactor to not panic, return option
+    /// Panics on out-of-bounds index
+    fn node_ref(&self, index: NodeIndex) -> &FrameNode {
+        self.frame_nodes
+            .get(index)
+            .expect("this is a bug, index should be valid")
     }
 
-    fn first_key_ref(&self, key: &NodeKey) -> Option<&NodeKey> {
-        self.persistent_nodes
-            .get(key)
-            .and_then(|n| n.first.as_ref())
-    }
-    fn next_key_ref(&self, key: &NodeKey) -> Option<&NodeKey> {
-        self.persistent_nodes.get(key).and_then(|n| n.next.as_ref())
+    // TODO: refactor to not panic, return option
+    /// Panics on out-of-bounds index
+    fn node_ref_mut(&mut self, index: NodeIndex) -> &mut FrameNode {
+        self.frame_nodes
+            .get_mut(index)
+            .expect("this is a bug, index should be valid")
     }
 
-    pub fn make_node(&mut self, label: impl ToString) -> NodeKey {
+    fn node_first_ref_mut(&mut self, index: NodeIndex) -> Option<&mut FrameNode> {
+        self.node_ref_mut(index)
+            .first
+            .map(|index| self.node_ref_mut(index))
+    }
+
+    fn node_last_ref_mut(&mut self, index: NodeIndex) -> Option<&mut FrameNode> {
+        self.node_ref_mut(index)
+            .last
+            .map(|index| self.node_ref_mut(index))
+    }
+
+    fn node_next_ref_mut(&mut self, index: NodeIndex) -> Option<&mut FrameNode> {
+        self.node_ref_mut(index)
+            .next
+            .map(|index| self.node_ref_mut(index))
+    }
+
+    fn node_prev_ref_mut(&mut self, index: NodeIndex) -> Option<&mut FrameNode> {
+        self.node_ref_mut(index)
+            .prev
+            .map(|index| self.node_ref_mut(index))
+    }
+
+    pub fn make_node(&mut self, label: impl ToString) -> NodeIndex {
         let label = label.to_string();
         let key = NodeKey::new(self, &label);
 
-        if let Some(_node) = self.persistent_nodes.get(&key) {
-            // TODO: check for last_interacted_index
+        if let Some(_node) = self.persistent.get(&key) {
+            // TODO: check for last_interacted_index and invalidate persistent data
         } else {
-            let node = Node {
-                first: None,
-                last: None,
-                next: None,
-                prev: self.last_key(&self.current_parent),
-                parent: Some(self.current_parent.clone()),
-
-                label,
-            };
-            self.persistent_nodes.insert(key.clone(), node);
+            self.persistent
+                .insert(key.clone(), PersistentNodeData::default());
         }
 
-        // Update tree references
-        if let Some(parent_node) = self.persistent_nodes.get_mut(&self.current_parent) {
-            if parent_node.first.is_none() {
-                parent_node.first = Some(key.clone());
-            }
+        let frame_node = FrameNode {
+            key,
+            label,
+            first: None,
+            last: None,
+            next: None,
+            prev: self.node_ref(self.current_parent).last,
+            parent: Some(self.current_parent),
+        };
+        self.frame_nodes.push(frame_node);
+        let this_index = self.frame_nodes.len() - 1;
 
-            // NOTE(pcleavelin): `parent_node.last` must be updated before the below mutable
-            // borrow so the mutable reference above is un-borrowed by then
-            let last_before_update = parent_node.last.clone();
-            parent_node.last = Some(key.clone());
-
-            if let Some(parent_node_last) = last_before_update {
-                if let Some(last_node) = self.persistent_nodes.get_mut(&parent_node_last) {
-                    last_node.next = Some(key.clone());
-                }
-            }
+        if let Some(parent_last) = self.node_last_ref_mut(self.current_parent) {
+            parent_last.next = Some(this_index);
         }
 
-        key
+        let parent_node = self.node_ref_mut(self.current_parent);
+        if parent_node.first.is_none() {
+            parent_node.first = Some(this_index);
+        }
+        parent_node.last = Some(this_index);
+
+        this_index
     }
 
-    pub fn push_parent(&mut self, key: NodeKey) {
+    pub fn push_parent(&mut self, key: NodeIndex) {
         self.current_parent = key;
     }
     pub fn pop_parent(&mut self) {
-        self.current_parent = self
-            .parent_key(&self.current_parent)
-            .unwrap_or(NodeKey::root());
+        self.current_parent = self.node_ref(self.current_parent).parent.unwrap_or(0);
     }
 
     pub fn debug_print(&self) {
-        let root_node = NodeKey::root();
-        let iter = NodeIter::from_key(self, self.first_key_ref(&root_node).unwrap());
+        let iter = NodeIter::from_index(&self.frame_nodes, 0);
 
         for node in iter {
             eprintln!("{node:?}");
         }
     }
+
+    pub fn update_layout(&mut self) {
+        let iter = NodeIter::from_index(&self.frame_nodes, 0);
+        for node in iter {
+            let Some(persistent) = self.persistent.get_mut(&node.key) else {
+                continue;
+            };
+
+            if let Some(parent_index) = node.parent {
+                let parent_node = self.node_ref(parent_index);
+            }
+        }
+    }
 }
 
 struct NodeIter<'a> {
-    cx: &'a Context,
-    current_key: &'a NodeKey,
+    frame_nodes: &'a [FrameNode],
+    index: NodeIndex,
     reached_end: bool,
 }
 
 impl<'a> NodeIter<'a> {
-    fn from_key(cx: &'a Context, key: &'a NodeKey) -> Self {
+    fn from_index(frame_nodes: &'a [FrameNode], index: NodeIndex) -> Self {
         Self {
-            cx,
-            current_key: key,
+            frame_nodes,
+            index,
             reached_end: false,
         }
     }
 }
 
 impl<'a> Iterator for NodeIter<'a> {
-    type Item = &'a Node;
+    type Item = &'a FrameNode;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.reached_end {
             return None;
         }
 
-        if let Some(node) = self.cx.persistent_nodes.get(self.current_key) {
-            if let Some(first) = node.first.as_ref() {
-                self.current_key = first;
-            } else if let Some(next) = node.next.as_ref() {
-                self.current_key = next;
-            } else if let Some(parent) = node.parent.as_ref() {
-                if let Some(parent_next) = self.cx.next_key_ref(parent) {
-                    self.current_key = parent_next;
-                } else {
-                    self.reached_end = true;
-                }
+        if let Some(node) = self.frame_nodes.get(self.index) {
+            if let Some(first) = node.first {
+                self.index = first;
+            } else if let Some(next) = node.next {
+                self.index = next;
+            } else if let Some(parent_next) = node
+                .parent
+                .and_then(|index| self.frame_nodes.get(index))
+                .and_then(|node| node.next)
+            {
+                self.index = parent_next;
             } else {
                 self.reached_end = true;
             }
