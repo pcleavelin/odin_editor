@@ -3,6 +3,8 @@
 use std::collections::HashMap;
 
 const ROOT_NODE: &str = "root";
+const FONT_WIDTH: usize = 8;
+const FONT_HEIGHT: usize = 16;
 
 type NodeIndex = usize;
 
@@ -26,12 +28,12 @@ impl NodeKey {
     }
 
     pub fn new(cx: &Context, label: &str) -> Self {
-        NodeKey(format!("{}:{label}", cx.node_ref(cx.current_parent).label))
+        NodeKey(format!("{}:{label}", cx.node_ref(cx.current_parent).key))
     }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
-enum SemanticSize {
+pub enum SemanticSize {
     #[default]
     FitText,
     ChildrenSum,
@@ -40,25 +42,35 @@ enum SemanticSize {
     PercentOfParent(i32),
 }
 
-#[derive(Debug, Default)]
-enum Axis {
+#[derive(Debug, Default, Clone, Copy)]
+#[repr(usize)]
+pub enum Axis {
     #[default]
     Horizontal,
     Vertical,
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Size {
+    pub axis: Axis,
+    pub semantic_size: [SemanticSize; 2],
+    pub computed_size: [i32; 2],
+    pub computed_pos: [i32; 2],
+}
+
 #[derive(Debug, Default)]
-struct PersistentNodeData {
-    axis: Axis,
-    semantic_size: [SemanticSize; 2],
-    computed_size: [i32; 2],
-    computed_pos: [i32; 2],
+pub struct PersistentNodeData {
+    pub label: String,
+    pub size: Size,
 }
 
 #[derive(Debug)]
 struct FrameNode {
+    index: NodeIndex,
     key: NodeKey,
     label: String,
+
+    size: Size,
 
     first: Option<NodeIndex>,
     last: Option<NodeIndex>,
@@ -70,8 +82,10 @@ struct FrameNode {
 impl FrameNode {
     fn root() -> Self {
         Self {
+            index: 0,
             key: NodeKey::root(),
             label: "root".to_string(),
+            size: Size::default(),
             first: None,
             last: None,
             next: None,
@@ -100,6 +114,10 @@ impl Context {
             current_parent: 0,
             root_node: 0,
         }
+    }
+
+    pub fn node_iter(&self) -> impl Iterator<Item = &'_ PersistentNodeData> {
+        PersistentIter::from_context(self)
     }
 
     // TODO: refactor to not panic, return option
@@ -148,12 +166,22 @@ impl Context {
 
         if let Some(_node) = self.persistent.get(&key) {
             // TODO: check for last_interacted_index and invalidate persistent data
+            unimplemented!("no persistent nodes for you");
         } else {
-            self.persistent
-                .insert(key.clone(), PersistentNodeData::default());
+            self.persistent.insert(
+                key.clone(),
+                PersistentNodeData {
+                    label: label.clone(),
+                    ..Default::default()
+                },
+            );
         }
 
+        let this_index = self.frame_nodes.len();
         let frame_node = FrameNode {
+            size: self.persistent.get(&key).expect("guaranteed to exist").size,
+
+            index: this_index,
             key,
             label,
             first: None,
@@ -178,32 +206,284 @@ impl Context {
         this_index
     }
 
+    pub fn _make_node_with_semantic_size(
+        &mut self,
+        label: impl ToString,
+        semantic_size: [SemanticSize; 2],
+    ) -> NodeIndex {
+        let index = self.make_node(label);
+
+        let node = self.node_ref_mut(index);
+        node.size.semantic_size = semantic_size;
+
+        index
+    }
+
     pub fn push_parent(&mut self, key: NodeIndex) {
         self.current_parent = key;
     }
     pub fn pop_parent(&mut self) {
-        self.current_parent = self.node_ref(self.current_parent).parent.unwrap_or(0);
+        let Some(parent) = self.frame_nodes.last().and_then(|node| node.parent) else {
+            return;
+        };
+
+        self.current_parent = self.node_ref(parent).parent.unwrap_or(0);
     }
 
     pub fn debug_print(&self) {
-        let iter = NodeIter::from_index(&self.frame_nodes, 0);
+        let iter = NodeIter::from_index(&self.frame_nodes, 0, true);
 
         for node in iter {
-            eprintln!("{node:?}");
+            let Some(_persistent) = self.persistent.get(&node.key) else {
+                continue;
+            };
+            eprintln!("{node:#?}");
         }
     }
 
-    pub fn update_layout(&mut self) {
-        let iter = NodeIter::from_index(&self.frame_nodes, 0);
+    pub fn prune(&mut self) {
+        self.frame_nodes.clear();
+    }
+
+    fn ancestor_size(&self, index: NodeIndex, axis: Axis) -> i32 {
+        if let Some(parent) = self.node_ref(index).parent {
+            let parent_node = self.node_ref(parent);
+            match parent_node.size.semantic_size[axis as usize] {
+                SemanticSize::FitText
+                | SemanticSize::Fill
+                | SemanticSize::Exact(_)
+                | SemanticSize::PercentOfParent(_) => {
+                    return parent_node.size.computed_size[axis as usize];
+                }
+
+                SemanticSize::ChildrenSum => return self.ancestor_size(parent, axis),
+            }
+        }
+
+        // TODO: change this panic to something else less catastrophic
+        // should never get here if everything else is working properly
+        panic!("no ancestor size");
+        0
+    }
+
+    pub fn update_layout(&mut self, canvas_size: [i32; 2], index: NodeIndex) {
+        let mut post_compute_horizontal = false;
+        let mut post_compute_vertical = false;
+
+        {
+            let mut parent_axis = Axis::default();
+            if let Some(parent_index) = self.frame_nodes[index].parent {
+                let parent_node = self.node_ref(parent_index);
+
+                parent_axis = parent_node.size.axis;
+                self.frame_nodes[index].size.computed_pos = parent_node.size.computed_pos;
+            }
+
+            if let Some(prev_node) = self.frame_nodes[index]
+                .prev
+                .map(|index| self.node_ref(index))
+            {
+                let prev_pos = prev_node.size.computed_pos;
+                let prev_size = prev_node.size.computed_size;
+
+                self.frame_nodes[index].size.computed_pos[parent_axis as usize] =
+                    prev_pos[parent_axis as usize] + prev_size[parent_axis as usize];
+            }
+
+            if self.frame_nodes[index].key.0.as_str() == "root" {
+                self.frame_nodes[index].size.computed_size = canvas_size;
+            } else {
+                match self.frame_nodes[index].size.semantic_size[0] {
+                    SemanticSize::FitText => {
+                        self.frame_nodes[index].size.computed_size[0] =
+                            (self.frame_nodes[index].label.len() * FONT_WIDTH) as i32;
+                    }
+                    SemanticSize::ChildrenSum => {
+                        post_compute_horizontal = true;
+                    }
+                    SemanticSize::Fill => (),
+                    SemanticSize::Exact(size) => {
+                        self.frame_nodes[index].size.computed_size[0] = size
+                    }
+                    SemanticSize::PercentOfParent(percent) => {
+                        let size = ((self
+                            .ancestor_size(self.frame_nodes[index].index, Axis::Horizontal)
+                            as f32)
+                            * (percent as f32)
+                            / 100.0) as i32;
+
+                        self.frame_nodes[index].size.computed_size[0] = size;
+                    }
+                }
+                match self.frame_nodes[index].size.semantic_size[1] {
+                    SemanticSize::FitText => {
+                        self.frame_nodes[index].size.computed_size[1] = FONT_HEIGHT as i32;
+                    }
+                    SemanticSize::ChildrenSum => {
+                        post_compute_vertical = true;
+                    }
+                    SemanticSize::Fill => (),
+                    SemanticSize::Exact(size) => {
+                        self.frame_nodes[index].size.computed_size[1] = size
+                    }
+                    SemanticSize::PercentOfParent(percent) => {
+                        let size = ((self
+                            .ancestor_size(self.frame_nodes[index].index, Axis::Vertical)
+                            as f32)
+                            * (percent as f32)
+                            / 100.0) as i32;
+
+                        self.frame_nodes[index].size.computed_size[Axis::Vertical as usize] = size;
+                    }
+                }
+            }
+        }
+
+        // let there be the braces of lifetimes
+        {
+            if let Some(first_child_index) = self.frame_nodes.get(index).and_then(|node| node.first)
+            {
+                let mut child_size: [i32; 2] = [0; 2];
+                let mut number_of_fills = [1; 2];
+                number_of_fills[self.frame_nodes[index].size.axis as usize] = 0;
+
+                let mut i = first_child_index;
+                loop {
+                    self.update_layout(canvas_size, i);
+
+                    let child_node = self.node_ref(i);
+                    if matches!(
+                        child_node.size.semantic_size[self.frame_nodes[index].size.axis as usize],
+                        SemanticSize::Fill
+                    ) {
+                        number_of_fills[self.frame_nodes[index].size.axis as usize] += 1;
+                    } else {
+                        child_size[self.frame_nodes[index].size.axis as usize] += child_node
+                            .size
+                            .computed_size[self.frame_nodes[index].size.axis as usize];
+                    }
+
+                    let Some(next) = self.node_ref(i).next else {
+                        break;
+                    };
+
+                    i = next;
+                }
+
+                // update nodes with `Fill` with their new computed size
+                let mut i = first_child_index;
+                loop {
+                    let node_size = self.frame_nodes[index].size.computed_size;
+                    let child_node = self.node_ref_mut(i);
+                    for axis in 0..2 {
+                        if matches!(child_node.size.semantic_size[axis], SemanticSize::Fill) {
+                            child_node.size.computed_size[axis] =
+                                (node_size[axis] - child_size[axis]) / number_of_fills[axis];
+                        }
+                    }
+
+                    self.update_layout(canvas_size, i);
+
+                    let Some(next) = self.node_ref(i).next else {
+                        break;
+                    };
+
+                    i = next;
+                }
+            }
+        }
+
+        if post_compute_horizontal {
+            self.frame_nodes[index].size.computed_size[Axis::Horizontal as usize] = 0;
+
+            if let Some(first_child_index) = self.node_ref(index).first {
+                let mut node_size = self.frame_nodes[index].size.computed_size;
+                for child_node in NodeIter::from_index(&self.frame_nodes, first_child_index, false)
+                {
+                    let child_size = child_node.size.computed_size;
+
+                    match self.frame_nodes[index].size.axis {
+                        Axis::Horizontal => {
+                            node_size[Axis::Horizontal as usize] +=
+                                child_size[Axis::Horizontal as usize];
+                        }
+                        Axis::Vertical => {
+                            if child_size[Axis::Horizontal as usize]
+                                > node_size[Axis::Horizontal as usize]
+                            {
+                                node_size[Axis::Horizontal as usize] =
+                                    child_size[Axis::Horizontal as usize];
+                            }
+                        }
+                    }
+                }
+
+                self.frame_nodes[index].size.computed_size = node_size;
+            }
+        }
+
+        if post_compute_vertical {
+            self.frame_nodes[index].size.computed_size[Axis::Vertical as usize] = 0;
+
+            if let Some(first_child_index) = self.node_ref(index).first {
+                let mut node_size = self.frame_nodes[index].size.computed_size;
+                for child_node in NodeIter::from_index(&self.frame_nodes, first_child_index, false)
+                {
+                    let child_size = child_node.size.computed_size;
+
+                    match self.frame_nodes[index].size.axis {
+                        Axis::Horizontal => {
+                            if child_size[Axis::Vertical as usize]
+                                > node_size[Axis::Vertical as usize]
+                            {
+                                node_size[Axis::Vertical as usize] =
+                                    child_size[Axis::Vertical as usize];
+                            }
+                        }
+                        Axis::Vertical => {
+                            node_size[Axis::Vertical as usize] +=
+                                child_size[Axis::Vertical as usize];
+                        }
+                    }
+                }
+
+                self.frame_nodes[index].size.computed_size = node_size;
+            }
+        }
+
+        let iter = NodeIter::from_index(&self.frame_nodes, 0, true);
+
         for node in iter {
             let Some(persistent) = self.persistent.get_mut(&node.key) else {
                 continue;
             };
 
-            if let Some(parent_index) = node.parent {
-                let parent_node = self.node_ref(parent_index);
-            }
+            persistent.size = node.size;
         }
+    }
+}
+
+struct PersistentIter<'a> {
+    cx: &'a Context,
+    node_iter: NodeIter<'a>,
+}
+
+impl<'a> PersistentIter<'a> {
+    fn from_context(cx: &'a Context) -> Self {
+        Self {
+            cx,
+            node_iter: NodeIter::from_index(&cx.frame_nodes, 0, true),
+        }
+    }
+}
+
+impl<'a> Iterator for PersistentIter<'a> {
+    type Item = &'a PersistentNodeData;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.node_iter
+            .next()
+            .and_then(|node| self.cx.persistent.get(&node.key))
     }
 }
 
@@ -211,14 +491,16 @@ struct NodeIter<'a> {
     frame_nodes: &'a [FrameNode],
     index: NodeIndex,
     reached_end: bool,
+    deep: bool,
 }
 
 impl<'a> NodeIter<'a> {
-    fn from_index(frame_nodes: &'a [FrameNode], index: NodeIndex) -> Self {
+    fn from_index(frame_nodes: &'a [FrameNode], index: NodeIndex, deep: bool) -> Self {
         Self {
             frame_nodes,
             index,
             reached_end: false,
+            deep,
         }
     }
 }
@@ -232,16 +514,22 @@ impl<'a> Iterator for NodeIter<'a> {
         }
 
         if let Some(node) = self.frame_nodes.get(self.index) {
-            if let Some(first) = node.first {
-                self.index = first;
+            if self.deep {
+                if let Some(first) = node.first {
+                    self.index = first;
+                } else if let Some(next) = node.next {
+                    self.index = next;
+                } else if let Some(parent_next) = node
+                    .parent
+                    .and_then(|index| self.frame_nodes.get(index))
+                    .and_then(|node| node.next)
+                {
+                    self.index = parent_next;
+                } else {
+                    self.reached_end = true;
+                }
             } else if let Some(next) = node.next {
                 self.index = next;
-            } else if let Some(parent_next) = node
-                .parent
-                .and_then(|index| self.frame_nodes.get(index))
-                .and_then(|node| node.next)
-            {
-                self.index = parent_next;
             } else {
                 self.reached_end = true;
             }

@@ -1,9 +1,9 @@
 mod editor_core;
 
 use core_graphics::{color_space::CGColorSpace, context::CGContext};
-use editor_core::ui;
+use editor_core::ui::{self, SemanticSize};
 use futures::executor::block_on;
-use piet_common::{kurbo::Rect, RenderContext};
+use piet_common::{kurbo::Rect, RenderContext, Text, TextLayoutBuilder};
 use piet_coregraphics::CoreGraphicsContext;
 use wgpu::util::DeviceExt;
 use winit::{
@@ -286,20 +286,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut cx = ui::Context::new();
     cx.make_node("first child");
-    cx.make_node("second child");
-    let key = cx.make_node("third child with children");
+    cx._make_node_with_semantic_size(
+        "second child",
+        [SemanticSize::Fill, SemanticSize::PercentOfParent(50)],
+    );
+    let key = cx._make_node_with_semantic_size(
+        "third child with children",
+        [SemanticSize::ChildrenSum, SemanticSize::ChildrenSum],
+    );
     cx.push_parent(key);
     {
         cx.make_node("first nested child");
-        cx.make_node("second nested child");
+        cx._make_node_with_semantic_size(
+            "second nested child",
+            [SemanticSize::FitText, SemanticSize::Exact(256)],
+        );
         cx.make_node("third nested child");
     }
     cx.pop_parent();
-    cx.make_node("fourth child");
+    cx._make_node_with_semantic_size(
+        "SEVEN third child",
+        [SemanticSize::Fill, SemanticSize::FitText],
+    );
+    cx.make_node("EIGHT fifth child");
 
     cx.debug_print();
-    cx.update_layout();
-    cx.debug_print();
+    cx.update_layout([window_size.width as i32, window_size.height as i32], 0);
 
     /*************************/
 
@@ -332,6 +344,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
+                cx.update_layout([texture.width as i32, texture.height as i32], 0);
+
                 let frame = surface
                     .get_current_texture()
                     .expect("failed to acquire next swap chain texture");
@@ -370,10 +384,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         );
 
                         piet_context.clear(None, piet_common::Color::BLACK);
-                        piet_context.fill(
-                            Rect::new(16.0, 16.0, 256.0, 256.0),
-                            &piet_common::Color::WHITE,
-                        );
+
+                        for node in cx.node_iter() {
+                            piet_context.stroke(
+                                Rect::new(
+                                    node.size.computed_pos[0] as f64,
+                                    (node.size.computed_pos[1]) as f64,
+                                    (node.size.computed_pos[0] + node.size.computed_size[0]) as f64,
+                                    (node.size.computed_pos[1] + node.size.computed_size[1]) as f64,
+                                ),
+                                &piet_common::Color::WHITE,
+                                2.0,
+                            );
+
+                            let layout = piet_context
+                                .text()
+                                .new_text_layout(node.label.clone())
+                                .text_color(piet_common::Color::WHITE)
+                                .build()
+                                .unwrap();
+                            piet_context.draw_text(
+                                &layout,
+                                (
+                                    node.size.computed_pos[0] as f64,
+                                    node.size.computed_pos[1] as f64,
+                                ),
+                            );
+                        }
 
                         piet_context.finish()?;
                     }
