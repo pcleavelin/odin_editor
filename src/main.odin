@@ -161,6 +161,17 @@ register_default_input_actions :: proc(input_map: ^core.InputMap) {
             state.mode = .Insert;
             sdl2.StartTextInput();
         }, "enter insert mode after character (append)");
+
+        // TODO: add shift+o to insert newline above current one
+
+        core.register_key_action(input_map, .O, proc(state: ^State) {
+            core.move_cursor_end_of_line(&state.buffers[state.current_buffer], false);
+            core.insert_content(&state.buffers[state.current_buffer], []u8{'\n'});
+            core.move_cursor_down(&state.buffers[state.current_buffer]);
+            state.mode = .Insert;
+
+            sdl2.StartTextInput();
+        }, "insert mode on newline");
     }
 
     core.register_key_action(input_map, .SPACE, core.new_input_map(), "leader commands");

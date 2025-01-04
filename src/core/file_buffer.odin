@@ -428,13 +428,16 @@ move_cursor_start_of_line :: proc(buffer: ^FileBuffer) {
     }
 }
 
-move_cursor_end_of_line :: proc(buffer: ^FileBuffer) {
+move_cursor_end_of_line :: proc(buffer: ^FileBuffer, stop_at_end: bool = true) {
     it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
     line_length := file_buffer_line_length(buffer, it.cursor.index);
+    if stop_at_end {
+        line_length -= 1;
+    }
 
-    if buffer.cursor.col < line_length-1 {
+    if buffer.cursor.col < line_length {
         for _ in iterate_file_buffer(&it) {
-            if it.cursor.col >= line_length-1 {
+            if it.cursor.col >= line_length {
                 break;
             }
         }
@@ -497,17 +500,19 @@ move_cursor_down :: proc(buffer: ^FileBuffer, amount: int = 1) {
 
 move_cursor_left :: proc(buffer: ^FileBuffer) {
     if buffer.cursor.col > 0 {
-        buffer.cursor.col -= 1;
-        update_file_buffer_index_from_cursor(buffer);
+        it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+        iterate_file_buffer_reverse(&it);
+        buffer.cursor = it.cursor;
     }
 }
 
 move_cursor_right :: proc(buffer: ^FileBuffer, stop_at_end: bool = true) {
-    line_length := file_buffer_line_length(buffer, buffer.cursor.index);
+    it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+    line_length := file_buffer_line_length(buffer, it.cursor.index);
 
-    if !stop_at_end || (line_length > 0 && buffer.cursor.col < line_length-1) {
-        buffer.cursor.col += 1;
-        update_file_buffer_index_from_cursor(buffer);
+    if !stop_at_end || buffer.cursor.col < line_length-1 {
+        iterate_file_buffer(&it);
+        buffer.cursor = it.cursor;
     }
 }
 
