@@ -778,7 +778,7 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, sho
     cursor_y -= begin * state.source_font_height;
 
     // draw cursor
-    if state.mode == .Normal {
+    if state.mode == .Normal || state.mode == .Visual {
         draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Background4);
     } else if state.mode == .Insert {
         draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Green);

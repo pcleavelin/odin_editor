@@ -84,18 +84,18 @@ do_visual_mode :: proc(state: ^State, buffer: ^FileBuffer) {
 
 register_default_leader_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .Q, proc(state: ^State) {
-        state.current_input_map = &state.input_map.mode[.Normal];
+        state.current_input_map = &state.input_map.mode[state.mode];
     }, "close this help");
 }
 
 register_default_go_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .H, proc(state: ^State) {
         core.move_cursor_start_of_line(&state.buffers[state.current_buffer]);
-        state.current_input_map = &state.input_map.mode[.Normal];
+        state.current_input_map = &state.input_map.mode[state.mode];
     }, "move to beginning of line");
     core.register_key_action(input_map, .L, proc(state: ^State) {
         core.move_cursor_end_of_line(&state.buffers[state.current_buffer]);
-        state.current_input_map = &state.input_map.mode[.Normal];
+        state.current_input_map = &state.input_map.mode[state.mode];
     }, "move to end of line");
 }
 
@@ -153,35 +153,34 @@ register_default_input_actions :: proc(input_map: ^core.InputActions) {
         }, "decrease font size");
     }
 
-    // Inserting Text
-    {
-        core.register_key_action(input_map, .I, proc(state: ^State) {
-            state.mode = .Insert;
-            sdl2.StartTextInput();
-        }, "enter insert mode");
-        core.register_key_action(input_map, .A, proc(state: ^State) {
-            core.move_cursor_right(&state.buffers[state.current_buffer], false);
-            state.mode = .Insert;
-            sdl2.StartTextInput();
-        }, "enter insert mode after character (append)");
-
-        // TODO: add shift+o to insert newline above current one
-
-        core.register_key_action(input_map, .O, proc(state: ^State) {
-            core.move_cursor_end_of_line(&state.buffers[state.current_buffer], false);
-            core.insert_content(&state.buffers[state.current_buffer], []u8{'\n'});
-            core.move_cursor_down(&state.buffers[state.current_buffer]);
-            state.mode = .Insert;
-
-            sdl2.StartTextInput();
-        }, "insert mode on newline");
-    }
-
     core.register_key_action(input_map, .SPACE, core.new_input_actions(), "leader commands");
     register_default_leader_actions(&(&input_map.key_actions[.SPACE]).action.(core.InputActions));
 
     core.register_key_action(input_map, .G, core.new_input_actions(), "Go commands");
     register_default_go_actions(&(&input_map.key_actions[.G]).action.(core.InputActions));
+}
+
+register_default_text_input_actions :: proc(input_map: ^core.InputActions) {
+    core.register_key_action(input_map, .I, proc(state: ^State) {
+        state.mode = .Insert;
+        sdl2.StartTextInput();
+    }, "enter insert mode");
+    core.register_key_action(input_map, .A, proc(state: ^State) {
+        core.move_cursor_right(&state.buffers[state.current_buffer], false);
+        state.mode = .Insert;
+        sdl2.StartTextInput();
+    }, "enter insert mode after character (append)");
+
+    // TODO: add shift+o to insert newline above current one
+
+    core.register_key_action(input_map, .O, proc(state: ^State) {
+        core.move_cursor_end_of_line(&state.buffers[state.current_buffer], false);
+        core.insert_content(&state.buffers[state.current_buffer], []u8{'\n'});
+        core.move_cursor_down(&state.buffers[state.current_buffer]);
+        state.mode = .Insert;
+
+        sdl2.StartTextInput();
+    }, "insert mode on newline");
 }
 
 load_plugin :: proc(info: os.File_Info, in_err: os.Errno, state: rawptr) -> (err: os.Errno, skip_dir: bool) {
@@ -229,7 +228,7 @@ draw :: proc(state_with_ui: ^StateWithUi) {
     ui.compute_layout(state_with_ui.ui_context, { state_with_ui.state.screen_width, state_with_ui.state.screen_height }, state_with_ui.state.source_font_width, state_with_ui.state.source_font_height, state_with_ui.ui_context.root);
     ui.draw(state_with_ui.ui_context, state_with_ui.state, state_with_ui.state.source_font_width, state_with_ui.state.source_font_height, state_with_ui.ui_context.root);
 
-    if state_with_ui.state.current_input_map != &state_with_ui.state.input_map.mode[.Normal] {
+    if state_with_ui.state.mode != .Insert && state_with_ui.state.current_input_map != &state_with_ui.state.input_map.mode[state_with_ui.state.mode] {
         longest_description := 0;
         for key, action in state_with_ui.state.current_input_map.key_actions {
             if len(action.description) > longest_description {
@@ -365,6 +364,7 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
                 to_be_edited_map = state.current_input_map;
             }
 
+            // TODO: change this to use the given mode
             if action, exists := to_be_edited_map.key_actions[key]; exists {
                 switch value in action.action {
                     case core.LuaEditorAction:
@@ -863,7 +863,7 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
                     },
                 };
 
-                rect, _ := ui.push_rect(ui_context, label, background, border, ui.Axis(axis), size); 
+                rect, _ := ui.push_rect(ui_context, label, background, border, ui.Axis(axis), size);
                 return rect;
             },
 
@@ -958,6 +958,13 @@ main :: proc() {
 
     state.current_input_map = &state.input_map.mode[.Normal];
     register_default_input_actions(&state.input_map.mode[.Normal]);
+    register_default_input_actions(&state.input_map.mode[.Visual]);
+    core.register_key_action(&state.input_map.mode[.Normal], .V, proc(state: ^State) {
+        state.mode = .Visual;
+        state.current_input_map = &state.input_map.mode[.Visual];
+    }, "enter visual mode");
+
+    register_default_text_input_actions(&state.input_map.mode[.Normal]);
 
     for arg in os.args[1:] {
         buffer, err := core.new_file_buffer(context.allocator, arg, state.directory);
@@ -1842,11 +1849,14 @@ main :: proc() {
                 }
 
                 switch state.mode {
+                    case .Visual: fallthrough
                     case .Normal: {
                         if sdl_event.type == .KEYDOWN {
                             key := plugin.Key(sdl_event.key.keysym.sym);
                             if key == .ESCAPE {
                                 core.request_window_close(&state);
+                                state.mode = .Normal;
+                                state.current_input_map = &state.input_map.mode[.Normal];
                             }
 
                             if key == .LCTRL {
@@ -1981,26 +1991,6 @@ main :: proc() {
                                             lua.pop(L, lua.gettop(L));
                                         }
                                     }
-                                }
-                            }
-                        }
-                    }
-                    case .Visual: {
-                        buffer: ^FileBuffer;
-
-                        if state.window != nil && state.window.get_buffer != nil {
-                            buffer = transmute(^core.FileBuffer)(state.window.get_buffer(state.plugin_vtable, state.window.user_data));
-                        } else {
-                            buffer = &state.buffers[state.current_buffer];
-                        }
-
-                        if sdl_event.type == .KEYDOWN {
-                            key := plugin.Key(sdl_event.key.keysym.sym);
-
-                            #partial switch key {
-                                case .ESCAPE: {
-                                    state.mode = .Normal;
-                                    // TODO: visual mode
                                 }
                             }
                         }

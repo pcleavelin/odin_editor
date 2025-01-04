@@ -1,6 +1,7 @@
 package core
 
 import "core:runtime"
+import "core:reflect"
 import "core:fmt"
 import "vendor:sdl2"
 import lua "vendor:lua/5.4"
@@ -118,7 +119,13 @@ new_input_map :: proc() -> InputMap {
     input_map := InputMap {
         mode = make(map[Mode]InputActions),
     }
-    input_map.mode[.Normal] = new_input_actions();
+
+    ti := runtime.type_info_base(type_info_of(Mode));
+    if v, ok := ti.variant.(runtime.Type_Info_Enum); ok {
+        for i in &v.values {
+            input_map.mode[(cast(^Mode)(&i))^] = new_input_actions();
+        }
+    }
 
     return input_map;
 }
