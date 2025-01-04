@@ -10,10 +10,11 @@ import "../plugin"
 Mode :: enum {
     Normal,
     Insert,
+    Visual,
 }
 
 Window :: struct {
-    input_map: InputMap,
+    input_map: InputActions,
     draw: plugin.WindowDrawProc,
     free_user_data: plugin.WindowFreeProc,
 
@@ -33,13 +34,13 @@ close_window_and_free :: proc(state: ^State) {
             state.window.free_user_data(state.plugin_vtable, state.window.user_data);
         }
 
-        delete_input_map(&state.window.input_map);
+        delete_input_actions(&state.window.input_map);
         free(state.window);
 
         state.window = nil;
     }
 
-    state.current_input_map = &state.input_map;
+    state.current_input_map = &state.input_map.mode[.Normal];
 }
 
 LuaHookRef :: i32;
@@ -69,7 +70,7 @@ State :: struct {
     should_close_window: bool,
 
     input_map: InputMap,
-    current_input_map: ^InputMap,
+    current_input_map: ^InputActions,
 
     plugins: [dynamic]plugin.Interface,
     plugin_vtable: plugin.Plugin,
@@ -96,29 +97,47 @@ add_lua_hook :: proc(state: ^State, hook: plugin.Hook, hook_ref: LuaHookRef) {
 
 LuaEditorAction :: struct {
     fn_ref: i32,
-    maybe_input_map: InputMap,
+    maybe_input_map: InputActions,
 };
 PluginEditorAction :: proc "c" (plugin: plugin.Plugin);
 EditorAction :: proc(state: ^State);
-InputGroup :: union {LuaEditorAction, PluginEditorAction, EditorAction, InputMap}
+InputGroup :: union {LuaEditorAction, PluginEditorAction, EditorAction, InputActions}
 Action :: struct {
     action: InputGroup,
     description: string,
 }
 InputMap :: struct {
+    mode: map[Mode]InputActions,
+}
+InputActions :: struct {
     key_actions: map[plugin.Key]Action,
     ctrl_key_actions: map[plugin.Key]Action,
 }
 
 new_input_map :: proc() -> InputMap {
     input_map := InputMap {
+        mode = make(map[Mode]InputActions),
+    }
+    input_map.mode[.Normal] = new_input_actions();
+
+    return input_map;
+}
+
+new_input_actions :: proc() -> InputActions {
+    input_actions := InputActions {
         key_actions = make(map[plugin.Key]Action),
         ctrl_key_actions = make(map[plugin.Key]Action),
     }
 
-    return input_map;
+    return input_actions;
 }
 delete_input_map :: proc(input_map: ^InputMap) {
+    for _, actions in &input_map.mode {
+        delete_input_actions(&actions);
+    }
+    delete(input_map.mode);
+}
+delete_input_actions :: proc(input_map: ^InputActions) {
     delete(input_map.key_actions);
     delete(input_map.ctrl_key_actions);
 }
@@ -126,7 +145,7 @@ delete_input_map :: proc(input_map: ^InputMap) {
 // NOTE(pcleavelin): might be a bug in the compiler where it can't coerce
 // `EditorAction` to `InputGroup` when given as a proc parameter, that is why there
 // are two functions
-register_plugin_key_action_single :: proc(input_map: ^InputMap, key: plugin.Key, action: PluginEditorAction, description: string = "") {
+register_plugin_key_action_single :: proc(input_map: ^InputActions, key: plugin.Key, action: PluginEditorAction, description: string = "") {
     if ok := key in input_map.key_actions; ok {
         // TODO: log that key is already registered
         fmt.eprintln("plugin key already registered with single action", key);
@@ -138,7 +157,7 @@ register_plugin_key_action_single :: proc(input_map: ^InputMap, key: plugin.Key,
     };
 }
 
-register_key_action_single :: proc(input_map: ^InputMap, key: plugin.Key, action: EditorAction, description: string = "") {
+register_key_action_single :: proc(input_map: ^InputActions, key: plugin.Key, action: EditorAction, description: string = "") {
     if ok := key in input_map.key_actions; ok {
         // TODO: log that key is already registered
         fmt.eprintln("key already registered with single action", key);
@@ -150,7 +169,7 @@ register_key_action_single :: proc(input_map: ^InputMap, key: plugin.Key, action
     };
 }
 
-register_key_action_group :: proc(input_map: ^InputMap, key: plugin.Key, input_group: InputGroup, description: string = "") {
+register_key_action_group :: proc(input_map: ^InputActions, key: plugin.Key, input_group: InputGroup, description: string = "") {
     if ok := key in input_map.key_actions; ok {
         // TODO: log that key is already registered
         fmt.eprintln("key already registered with single action", key);
@@ -162,7 +181,7 @@ register_key_action_group :: proc(input_map: ^InputMap, key: plugin.Key, input_g
     };
 }
 
-register_ctrl_key_action_single :: proc(input_map: ^InputMap, key: plugin.Key, action: EditorAction, description: string = "") {
+register_ctrl_key_action_single :: proc(input_map: ^InputActions, key: plugin.Key, action: EditorAction, description: string = "") {
     if ok := key in input_map.key_actions; ok {
         // TODO: log that key is already registered
         fmt.eprintln("key already registered with single action", key);
@@ -174,7 +193,7 @@ register_ctrl_key_action_single :: proc(input_map: ^InputMap, key: plugin.Key, a
     };
 }
 
-register_ctrl_key_action_group :: proc(input_map: ^InputMap, key: plugin.Key, input_group: InputGroup, description: string = "") {
+register_ctrl_key_action_group :: proc(input_map: ^InputActions, key: plugin.Key, input_group: InputGroup, description: string = "") {
     if ok := key in input_map.key_actions; ok {
         // TODO: log that key is already registered
         fmt.eprintln("key already registered with single action", key);

@@ -79,24 +79,27 @@ do_insert_mode :: proc(state: ^State, buffer: ^FileBuffer) {
     }
 }
 
-register_default_leader_actions :: proc(input_map: ^core.InputMap) {
+do_visual_mode :: proc(state: ^State, buffer: ^FileBuffer) {
+}
+
+register_default_leader_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .Q, proc(state: ^State) {
-        state.current_input_map = &state.input_map;
+        state.current_input_map = &state.input_map.mode[.Normal];
     }, "close this help");
 }
 
-register_default_go_actions :: proc(input_map: ^core.InputMap) {
+register_default_go_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .H, proc(state: ^State) {
         core.move_cursor_start_of_line(&state.buffers[state.current_buffer]);
-        state.current_input_map = &state.input_map;
+        state.current_input_map = &state.input_map.mode[.Normal];
     }, "move to beginning of line");
     core.register_key_action(input_map, .L, proc(state: ^State) {
         core.move_cursor_end_of_line(&state.buffers[state.current_buffer]);
-        state.current_input_map = &state.input_map;
+        state.current_input_map = &state.input_map.mode[.Normal];
     }, "move to end of line");
 }
 
-register_default_input_actions :: proc(input_map: ^core.InputMap) {
+register_default_input_actions :: proc(input_map: ^core.InputActions) {
     // Cursor Movement
     {
         core.register_key_action(input_map, .W, proc(state: ^State) {
@@ -174,11 +177,11 @@ register_default_input_actions :: proc(input_map: ^core.InputMap) {
         }, "insert mode on newline");
     }
 
-    core.register_key_action(input_map, .SPACE, core.new_input_map(), "leader commands");
-    register_default_leader_actions(&(&input_map.key_actions[.SPACE]).action.(core.InputMap));
+    core.register_key_action(input_map, .SPACE, core.new_input_actions(), "leader commands");
+    register_default_leader_actions(&(&input_map.key_actions[.SPACE]).action.(core.InputActions));
 
-    core.register_key_action(input_map, .G, core.new_input_map(), "Go commands");
-    register_default_go_actions(&(&input_map.key_actions[.G]).action.(core.InputMap));
+    core.register_key_action(input_map, .G, core.new_input_actions(), "Go commands");
+    register_default_go_actions(&(&input_map.key_actions[.G]).action.(core.InputActions));
 }
 
 load_plugin :: proc(info: os.File_Info, in_err: os.Errno, state: rawptr) -> (err: os.Errno, skip_dir: bool) {
@@ -226,7 +229,7 @@ draw :: proc(state_with_ui: ^StateWithUi) {
     ui.compute_layout(state_with_ui.ui_context, { state_with_ui.state.screen_width, state_with_ui.state.screen_height }, state_with_ui.state.source_font_width, state_with_ui.state.source_font_height, state_with_ui.ui_context.root);
     ui.draw(state_with_ui.ui_context, state_with_ui.state, state_with_ui.state.source_font_width, state_with_ui.state.source_font_height, state_with_ui.ui_context.root);
 
-    if state_with_ui.state.current_input_map != &state_with_ui.state.input_map {
+    if state_with_ui.state.current_input_map != &state_with_ui.state.input_map.mode[.Normal] {
         longest_description := 0;
         for key, action in state_with_ui.state.current_input_map.key_actions {
             if len(action.description) > longest_description {
@@ -324,6 +327,8 @@ ui_file_buffer :: proc(ctx: ^ui.Context, buffer: ^FileBuffer) -> ui.Interaction 
         ui.push_parent(ctx, info_box);
         defer ui.pop_parent(ctx);
 
+        ui.label(ctx, fmt.tprintf("%s", state.mode))
+        ui.spacer(ctx, "spacer");
         ui.label(ctx, relative_file_path);
     }
 
@@ -352,10 +357,10 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
         register_input_group = proc "c" (input_map: rawptr, key: plugin.Key, register_group: plugin.InputGroupProc) {
             context = state.ctx;
 
-            to_be_edited_map: ^core.InputMap = nil;
+            to_be_edited_map: ^core.InputActions = nil;
 
             if input_map != nil {
-                to_be_edited_map = transmute(^core.InputMap)input_map;
+                to_be_edited_map = transmute(^core.InputActions)input_map;
             } else {
                 to_be_edited_map = state.current_input_map;
             }
@@ -368,23 +373,23 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
                         fmt.eprintln("Plugin attempted to register input group on existing key action (added from Plugin)");
                     case core.EditorAction:
                         fmt.eprintln("Plugin attempted to register input group on existing key action");
-                    case core.InputMap:
-                        input_map := &(&to_be_edited_map.key_actions[key]).action.(core.InputMap);
+                    case core.InputActions:
+                        input_map := &(&to_be_edited_map.key_actions[key]).action.(core.InputActions);
                         register_group(state.plugin_vtable, transmute(rawptr)input_map);
                 }
             } else {
-                core.register_key_action(to_be_edited_map, key, core.new_input_map(), "PLUGIN INPUT GROUP");
-                register_group(state.plugin_vtable, &(&to_be_edited_map.key_actions[key]).action.(core.InputMap));
+                core.register_key_action(to_be_edited_map, key, core.new_input_actions(), "PLUGIN INPUT GROUP");
+                register_group(state.plugin_vtable, &(&to_be_edited_map.key_actions[key]).action.(core.InputActions));
             }
         },
         register_input = proc "c" (input_map: rawptr, key: plugin.Key, input_action: plugin.InputActionProc, description: cstring) {
             context = state.ctx;
 
-            to_be_edited_map: ^core.InputMap = nil;
+            to_be_edited_map: ^core.InputActions = nil;
             description := strings.clone(string(description));
 
             if input_map != nil {
-                to_be_edited_map = transmute(^core.InputMap)input_map;
+                to_be_edited_map = transmute(^core.InputActions)input_map;
             } else {
                 to_be_edited_map = state.current_input_map;
             }
@@ -397,7 +402,7 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
                         fmt.eprintln("Plugin attempted to register key action on existing key action (added from Plugin)");
                     case core.EditorAction:
                         fmt.eprintln("Plugin attempted to register input key action on existing key action");
-                    case core.InputMap:
+                    case core.InputActions:
                         fmt.eprintln("Plugin attempted to register input key action on existing input group");
                 }
             } else {
@@ -408,7 +413,7 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
             context = state.ctx;
             window := new(core.Window);
             window^ = core.Window {
-                input_map = core.new_input_map(),
+                input_map = core.new_input_actions(),
                 draw = draw_proc,
                 get_buffer = get_buffer_proc,
                 free_user_data = free_window_proc,
@@ -951,8 +956,8 @@ main :: proc() {
         lua_hooks = make(map[plugin.Hook][dynamic]core.LuaHookRef),
     };
 
-    state.current_input_map = &state.input_map;
-    register_default_input_actions(&state.input_map);
+    state.current_input_map = &state.input_map.mode[.Normal];
+    register_default_input_actions(&state.input_map.mode[.Normal]);
 
     for arg in os.args[1:] {
         buffer, err := core.new_file_buffer(context.allocator, arg, state.directory);
@@ -1090,7 +1095,7 @@ main :: proc() {
 
                 lua.L_checktype(L, 1, i32(lua.TTABLE));
 
-                table_to_action :: proc(L: ^lua.State, index: i32, input_map: ^core.InputMap) {
+                table_to_action :: proc(L: ^lua.State, index: i32, input_map: ^core.InputActions) {
                     lua.len(L, index);
                     key_group_len := lua.tointeger(L, -1);
                     lua.pop(L, 1);
@@ -1117,13 +1122,13 @@ main :: proc() {
                                             fmt.eprintln("Plugin attempted to register input group on existing key action (added from Plugin)");
                                         case core.EditorAction:
                                             fmt.eprintln("Plugin attempted to register input group on existing key action");
-                                        case core.InputMap:
-                                            input_map := &(&input_map.key_actions[key]).action.(core.InputMap);
+                                        case core.InputActions:
+                                            input_map := &(&input_map.key_actions[key]).action.(core.InputActions);
                                             table_to_action(L, lua.gettop(L), input_map);
                                     }
                                 } else {
-                                    core.register_key_action(input_map, key, core.new_input_map(), desc);
-                                    table_to_action(L, lua.gettop(L), &((&input_map.key_actions[key]).action.(core.InputMap)));
+                                    core.register_key_action(input_map, key, core.new_input_actions(), desc);
+                                    table_to_action(L, lua.gettop(L), &((&input_map.key_actions[key]).action.(core.InputActions)));
                                 }
                                 lua.pop(L, 1);
 
@@ -1131,12 +1136,12 @@ main :: proc() {
                                 fn_ref := lua.L_ref(L, i32(lua.REGISTRYINDEX));
 
                                 if lua.rawgeti(L, -1, 4) == i32(lua.TTABLE) {
-                                    maybe_input_map := core.new_input_map();
+                                    maybe_input_map := core.new_input_actions();
                                     table_to_action(L, lua.gettop(L), &maybe_input_map);
 
                                     core.register_key_action_group(input_map, key, core.LuaEditorAction { fn_ref, maybe_input_map }, desc);
                                 } else {
-                                    core.register_key_action_group(input_map, key, core.LuaEditorAction { fn_ref, core.InputMap {} }, desc);
+                                    core.register_key_action_group(input_map, key, core.LuaEditorAction { fn_ref, core.InputActions {} }, desc);
                                 }
 
                             case:
@@ -1868,8 +1873,8 @@ main :: proc() {
                                                 value(state.plugin_vtable);
                                             case core.EditorAction:
                                                 value(&state);
-                                            case core.InputMap:
-                                                state.current_input_map = &(&state.current_input_map.ctrl_key_actions[key]).action.(core.InputMap)
+                                            case core.InputActions:
+                                                state.current_input_map = &(&state.current_input_map.ctrl_key_actions[key]).action.(core.InputActions)
                                         }
                                     }
                                 } else {
@@ -1894,8 +1899,8 @@ main :: proc() {
                                                 value(state.plugin_vtable);
                                             case core.EditorAction:
                                                 value(&state);
-                                            case core.InputMap:
-                                                state.current_input_map = &(&state.current_input_map.key_actions[key]).action.(core.InputMap)
+                                            case core.InputActions:
+                                                state.current_input_map = &(&state.current_input_map.key_actions[key]).action.(core.InputActions)
                                         }
                                     }
                                 }
@@ -1980,6 +1985,26 @@ main :: proc() {
                             }
                         }
                     }
+                    case .Visual: {
+                        buffer: ^FileBuffer;
+
+                        if state.window != nil && state.window.get_buffer != nil {
+                            buffer = transmute(^core.FileBuffer)(state.window.get_buffer(state.plugin_vtable, state.window.user_data));
+                        } else {
+                            buffer = &state.buffers[state.current_buffer];
+                        }
+
+                        if sdl_event.type == .KEYDOWN {
+                            key := plugin.Key(sdl_event.key.keysym.sym);
+
+                            #partial switch key {
+                                case .ESCAPE: {
+                                    state.mode = .Normal;
+                                    // TODO: visual mode
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -2004,6 +2029,13 @@ main :: proc() {
                 } else {
                     buffer := &state.buffers[state.current_buffer];
                     do_insert_mode(&state, buffer);
+                }
+            case .Visual:
+                if state.window != nil && state.window.get_buffer != nil {
+                    // TODO
+                } else {
+                    buffer := &state.buffers[state.current_buffer];
+                    do_visual_mode(&state, buffer);
                 }
         }
 
