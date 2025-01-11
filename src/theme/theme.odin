@@ -79,7 +79,8 @@ light_palette := []u32 {
     0x7c6f64ff,
 
     0xcc241dff,
-    0x98971aff,
+    // FIXME: change this back to not e transparent
+    0x98971a33,
     0xd79921ff,
     0x458588ff,
     0xb16286ff,

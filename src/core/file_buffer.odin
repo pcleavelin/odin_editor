@@ -38,6 +38,11 @@ Cursor :: struct {
     index: FileBufferIndex,
 }
 
+Selection :: struct {
+    start: Cursor,
+    end: Cursor,
+}
+
 Glyph :: struct #packed {
     codepoint: u8,
     color: theme.PaletteColor,
@@ -52,6 +57,7 @@ FileBuffer :: struct {
 
     top_line: int,
     cursor: Cursor,
+    selection: Maybe(Selection),
 
     original_content: [dynamic]u8,
     added_content: [dynamic]u8,
@@ -415,43 +421,61 @@ file_buffer_line_length :: proc(buffer: ^FileBuffer, index: FileBufferIndex) -> 
     return line_length;
 }
 
-move_cursor_start_of_line :: proc(buffer: ^FileBuffer) {
-    if buffer.cursor.col > 0 {
-        it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+move_cursor_start_of_line :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = nil) {
+    cursor := cursor;
+
+    if cursor == nil {
+        cursor = &buffer.cursor;
+    }
+
+    if cursor.?.col > 0 {
+        it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
         for _ in iterate_file_buffer_reverse(&it) {
             if it.cursor.col <= 0 {
                 break;
             }
         }
 
-        buffer.cursor = it.cursor;
+        cursor.?^ = it.cursor;
     }
 }
 
-move_cursor_end_of_line :: proc(buffer: ^FileBuffer, stop_at_end: bool = true) {
-    it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+move_cursor_end_of_line :: proc(buffer: ^FileBuffer, stop_at_end: bool = true, cursor: Maybe(^Cursor) = nil) {
+    cursor := cursor;
+
+    if cursor == nil {
+        cursor = &buffer.cursor;
+    }
+
+    it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
     line_length := file_buffer_line_length(buffer, it.cursor.index);
     if stop_at_end {
         line_length -= 1;
     }
 
-    if buffer.cursor.col < line_length {
+    if cursor.?.col < line_length {
         for _ in iterate_file_buffer(&it) {
             if it.cursor.col >= line_length {
                 break;
             }
         }
 
-        buffer.cursor = it.cursor;
+        cursor.?^ = it.cursor;
     }
 }
 
-move_cursor_up :: proc(buffer: ^FileBuffer, amount: int = 1) {
-    if buffer.cursor.line > 0 {
-        current_line := buffer.cursor.line;
-        current_col := buffer.cursor.col;
+move_cursor_up :: proc(buffer: ^FileBuffer, amount: int = 1, cursor: Maybe(^Cursor) = nil) {
+    cursor := cursor;
 
-        it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+    if cursor == nil {
+        cursor = &buffer.cursor;
+    }
+
+    if cursor.?.line > 0 {
+        current_line := cursor.?.line;
+        current_col := cursor.?.col;
+
+        it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
         for _ in iterate_file_buffer_reverse(&it) {
             if it.cursor.line <= current_line-amount || it.cursor.line < 1 {
                 break;
@@ -468,17 +492,23 @@ move_cursor_up :: proc(buffer: ^FileBuffer, amount: int = 1) {
             }
         }
 
-        buffer.cursor = it.cursor;
+        cursor.?^ = it.cursor;
     }
 
-    update_file_buffer_scroll(buffer);
+    update_file_buffer_scroll(buffer, cursor);
 }
 
-move_cursor_down :: proc(buffer: ^FileBuffer, amount: int = 1) {
-    current_line := buffer.cursor.line;
-    current_col := buffer.cursor.col;
+move_cursor_down :: proc(buffer: ^FileBuffer, amount: int = 1, cursor: Maybe(^Cursor) = nil) {
+    cursor := cursor;
 
-    it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+    if cursor == nil {
+        cursor = &buffer.cursor;
+    }
+
+    current_line := cursor.?.line;
+    current_col := cursor.?.col;
+
+    it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
     for _ in iterate_file_buffer(&it) {
         if it.cursor.line >= current_line+amount {
             break;
@@ -494,60 +524,112 @@ move_cursor_down :: proc(buffer: ^FileBuffer, amount: int = 1) {
         }
     }
 
-    buffer.cursor = it.cursor;
-    update_file_buffer_scroll(buffer);
+    cursor.?^ = it.cursor;
+    update_file_buffer_scroll(buffer, cursor);
 }
 
-move_cursor_left :: proc(buffer: ^FileBuffer) {
-    if buffer.cursor.col > 0 {
-        it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+move_cursor_left :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = nil) {
+    cursor := cursor;
+
+    if cursor == nil {
+        cursor = &buffer.cursor;
+    }
+
+    if cursor.?.col > 0 {
+        it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
         iterate_file_buffer_reverse(&it);
-        buffer.cursor = it.cursor;
+        cursor.?^ = it.cursor;
     }
 }
 
-move_cursor_right :: proc(buffer: ^FileBuffer, stop_at_end: bool = true) {
-    it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+move_cursor_right :: proc(buffer: ^FileBuffer, stop_at_end: bool = true, cursor: Maybe(^Cursor) = nil) {
+    cursor := cursor;
+
+    if cursor == nil {
+        cursor = &buffer.cursor;
+    }
+
+    it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
     line_length := file_buffer_line_length(buffer, it.cursor.index);
 
-    if !stop_at_end || buffer.cursor.col < line_length-1 {
+    if !stop_at_end || cursor.?.col < line_length-1 {
         iterate_file_buffer(&it);
-        buffer.cursor = it.cursor;
+        cursor.?^ = it.cursor;
     }
 }
 
-move_cursor_forward_start_of_word :: proc(buffer: ^FileBuffer) {
-    it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+move_cursor_forward_start_of_word :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = nil) {
+    cursor := cursor;
+
+    if cursor == nil {
+        cursor = &buffer.cursor;
+    }
+
+    it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
     iterate_file_buffer_until(&it, until_start_of_word);
-    buffer.cursor = it.cursor;
+    cursor.?^ = it.cursor;
 
-    update_file_buffer_scroll(buffer);
+    update_file_buffer_scroll(buffer, cursor);
 }
 
-move_cursor_forward_end_of_word :: proc(buffer: ^FileBuffer) {
-    it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+move_cursor_forward_end_of_word :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = nil) {
+    cursor := cursor;
+
+    if cursor == nil {
+        cursor = &buffer.cursor;
+    }
+
+    it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
     iterate_file_buffer_until(&it, until_end_of_word);
-    buffer.cursor = it.cursor;
+    cursor.?^ = it.cursor;
 
-    update_file_buffer_scroll(buffer);
+    update_file_buffer_scroll(buffer, cursor);
 }
 
-move_cursor_backward_start_of_word :: proc(buffer: ^FileBuffer) {
-    it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+move_cursor_backward_start_of_word :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = nil) {
+    cursor := cursor;
+
+    if cursor == nil {
+        cursor = &buffer.cursor;
+    }
+
+    it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
     iterate_file_buffer_until_reverse(&it, until_end_of_word);
     //iterate_file_buffer_until(&it, until_non_whitespace);
-    buffer.cursor = it.cursor;
+    cursor.?^ = it.cursor;
 
-    update_file_buffer_scroll(buffer);
+    update_file_buffer_scroll(buffer, cursor);
 }
 
-move_cursor_backward_end_of_word :: proc(buffer: ^FileBuffer) {
-    it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+move_cursor_backward_end_of_word :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = nil) {
+    cursor := cursor;
+
+    if cursor == nil {
+        cursor = &buffer.cursor;
+    }
+
+    it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
     iterate_file_buffer_until_reverse(&it, until_start_of_word);
-    buffer.cursor = it.cursor;
+    cursor.?^ = it.cursor;
 
-    update_file_buffer_scroll(buffer);
+    update_file_buffer_scroll(buffer, cursor);
 }
+
+new_selection_zero_length :: proc(cursor: Cursor) -> Selection {
+    return {
+        start = cursor,
+        end = cursor,
+    };
+}
+
+new_selection_span :: proc(start: Cursor, end: Cursor) -> Selection {
+    return {
+        start = start,
+        end = end,
+    };
+}
+
+new_selection :: proc{new_selection_zero_length, new_selection_span};
 
 new_virtual_file_buffer :: proc(allocator: mem.Allocator) -> FileBuffer {
     context.allocator = allocator;
@@ -778,9 +860,22 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, sho
     cursor_y -= begin * state.source_font_height;
 
     // draw cursor
-    if state.mode == .Normal || state.mode == .Visual {
+    if state.mode == .Normal {
         draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Background4);
-    } else if state.mode == .Insert {
+    } else if state.mode == .Visual {
+        start_sel_x := x + padding + buffer.selection.?.start.col * state.source_font_width;
+        start_sel_y := y + buffer.selection.?.start.line * state.source_font_height;
+
+        end_sel_x := x + padding + buffer.selection.?.end.col * state.source_font_width;
+        end_sel_y := y + buffer.selection.?.end.line * state.source_font_height;
+
+        start_sel_y -= begin * state.source_font_height;
+        end_sel_y -= begin * state.source_font_height;
+
+        draw_rect(state, start_sel_x, start_sel_y, state.source_font_width, state.source_font_height, .Green);
+        draw_rect(state, end_sel_x, end_sel_y, state.source_font_width, state.source_font_height, .Blue);
+    }
+    else if state.mode == .Insert {
         draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Green);
 
         num_line_break := 0;
@@ -811,35 +906,72 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, sho
             draw_text(state, fmt.tprintf("%d", begin + j + 1), x, text_y);
         }
 
+        line_length := 0;
         for i in 0..<buffer.glyph_buffer_width {
             text_x := x + padding + i * state.source_font_width;
             glyph := buffer.glyph_buffer[i + j * buffer.glyph_buffer_width];
 
             if glyph.codepoint == 0 { break; }
+            line_length += 1;
 
             draw_codepoint(state, rune(glyph.codepoint), text_x, text_y, glyph.color);
         }
+
+        // NOTE: this requires transparent background color because it renders after the text
+        // and its after the text because the line length needs to be calculated
+        if state.mode == .Visual {
+            sel_x := x + padding;
+            width: int
+
+            if begin+j >= buffer.selection.?.start.line && begin+j <= buffer.selection.?.end.line {
+                if begin+j == buffer.selection.?.end.line {
+                    width = buffer.selection.?.end.col * state.source_font_width;
+                } else {
+                    if begin+j == buffer.selection.?.start.line {
+                        width = (line_length - buffer.selection.?.start.col) * state.source_font_width;
+                        sel_x += buffer.selection.?.start.col * state.source_font_width;
+                    } else {
+                        width = line_length * state.source_font_width;
+                    }
+                }
+            }
+
+            draw_rect(state, sel_x, text_y, width, state.source_font_height, .Green);
+        }
+
     }
 }
 
-update_file_buffer_scroll :: proc(buffer: ^FileBuffer) {
-    if buffer.cursor.line > (buffer.top_line + buffer.glyph_buffer_height - 5) {
-        buffer.top_line = math.max(buffer.cursor.line - buffer.glyph_buffer_height + 5, 0);
-    } else if buffer.cursor.line < (buffer.top_line + 5) {
-        buffer.top_line = math.max(buffer.cursor.line - 5, 0);
+update_file_buffer_scroll :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = nil) {
+    cursor := cursor;
+    if cursor == nil {
+        cursor = &buffer.cursor;
     }
+
+    if cursor.?.line > (buffer.top_line + buffer.glyph_buffer_height - 5) {
+        buffer.top_line = math.max(cursor.?.line - buffer.glyph_buffer_height + 5, 0);
+    } else if cursor.?.line < (buffer.top_line + 5) {
+        buffer.top_line = math.max(cursor.?.line - 5, 0);
+    }
+
+    // if buffer.cursor.line > (buffer.top_line + buffer.glyph_buffer_height - 5) {
+    //     buffer.top_line = math.max(buffer.cursor.line - buffer.glyph_buffer_height + 5, 0);
+    // } else if buffer.cursor.line < (buffer.top_line + 5) {
+    //     buffer.top_line = math.max(buffer.cursor.line - 5, 0);
+    // }
 }
 
 // TODO: don't mangle cursor
-scroll_file_buffer :: proc(buffer: ^FileBuffer, dir: ScrollDir) {
+scroll_file_buffer :: proc(buffer: ^FileBuffer, dir: ScrollDir, cursor: Maybe(^Cursor) = nil) {
+
     switch dir {
         case .Up:
         {
-            move_cursor_up(buffer, 20);
+            move_cursor_up(buffer, 20, cursor);
         }
         case .Down:
         {
-            move_cursor_down(buffer, 20);
+            move_cursor_down(buffer, 20, cursor);
         }
     }
 }

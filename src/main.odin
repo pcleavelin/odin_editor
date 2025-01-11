@@ -158,6 +158,75 @@ register_default_input_actions :: proc(input_map: ^core.InputActions) {
 
     core.register_key_action(input_map, .G, core.new_input_actions(), "Go commands");
     register_default_go_actions(&(&input_map.key_actions[.G]).action.(core.InputActions));
+
+    core.register_key_action(&state.input_map.mode[.Normal], .V, proc(state: ^State) {
+        state.mode = .Visual;
+        state.current_input_map = &state.input_map.mode[.Visual];
+
+        state.buffers[state.current_buffer].selection = core.new_selection(state.buffers[state.current_buffer].cursor);
+    }, "enter visual mode");
+
+}
+
+register_default_visual_actions :: proc(input_map: ^core.InputActions) {
+    core.register_key_action(input_map, .ESCAPE, proc(state: ^State) {
+        state.mode = .Normal;
+        state.current_input_map = &state.input_map.mode[.Normal];
+
+        state.buffers[state.current_buffer].selection = nil;
+    }, "exit visual mode");
+
+    // Cursor Movement
+    {
+        core.register_key_action(input_map, .W, proc(state: ^State) {
+            sel_cur := &state.buffers[state.current_buffer].selection.?;
+
+            core.move_cursor_forward_start_of_word(&state.buffers[state.current_buffer], cursor = &sel_cur.end);
+        }, "move forward one word");
+        core.register_key_action(input_map, .E, proc(state: ^State) {
+            sel_cur := &(state.buffers[state.current_buffer].selection.?);
+
+            core.move_cursor_forward_end_of_word(&state.buffers[state.current_buffer], cursor = &sel_cur.end);
+        }, "move forward to end of word");
+
+        core.register_key_action(input_map, .B, proc(state: ^State) {
+            sel_cur := &(state.buffers[state.current_buffer].selection.?);
+
+            core.move_cursor_backward_start_of_word(&state.buffers[state.current_buffer], cursor = &sel_cur.end);
+        }, "move backward one word");
+
+        core.register_key_action(input_map, .K, proc(state: ^State) {
+            sel_cur := &(state.buffers[state.current_buffer].selection.?);
+
+            core.move_cursor_up(&state.buffers[state.current_buffer], cursor = &sel_cur.end);
+        }, "move up one line");
+        core.register_key_action(input_map, .J, proc(state: ^State) {
+            sel_cur := &(state.buffers[state.current_buffer].selection.?);
+
+            core.move_cursor_down(&state.buffers[state.current_buffer], cursor = &sel_cur.end);
+        }, "move down one line");
+        core.register_key_action(input_map, .H, proc(state: ^State) {
+            sel_cur := &(state.buffers[state.current_buffer].selection.?);
+
+            core.move_cursor_left(&state.buffers[state.current_buffer], cursor = &sel_cur.end);
+        }, "move left one char");
+        core.register_key_action(input_map, .L, proc(state: ^State) {
+            sel_cur := &(state.buffers[state.current_buffer].selection.?);
+
+            core.move_cursor_right(&state.buffers[state.current_buffer], cursor = &sel_cur.end);
+        }, "move right one char");
+
+        core.register_ctrl_key_action(input_map, .U, proc(state: ^State) {
+            sel_cur := &(state.buffers[state.current_buffer].selection.?);
+
+            core.scroll_file_buffer(&state.buffers[state.current_buffer], .Up, cursor = &sel_cur.end);
+        }, "scroll buffer up");
+        core.register_ctrl_key_action(input_map, .D, proc(state: ^State) {
+            sel_cur := &(state.buffers[state.current_buffer].selection.?);
+
+            core.scroll_file_buffer(&state.buffers[state.current_buffer], .Down, cursor = &sel_cur.end);
+        }, "scroll buffer up");
+    }
 }
 
 register_default_text_input_actions :: proc(input_map: ^core.InputActions) {
@@ -327,6 +396,9 @@ ui_file_buffer :: proc(ctx: ^ui.Context, buffer: ^FileBuffer) -> ui.Interaction 
         defer ui.pop_parent(ctx);
 
         ui.label(ctx, fmt.tprintf("%s", state.mode))
+        if selection, exists := buffer.selection.?; exists {
+            ui.label(ctx, fmt.tprintf("sel: %d:%d", selection.end.line, selection.end.col));
+        }
         ui.spacer(ctx, "spacer");
         ui.label(ctx, relative_file_path);
     }
@@ -958,11 +1030,7 @@ main :: proc() {
 
     state.current_input_map = &state.input_map.mode[.Normal];
     register_default_input_actions(&state.input_map.mode[.Normal]);
-    register_default_input_actions(&state.input_map.mode[.Visual]);
-    core.register_key_action(&state.input_map.mode[.Normal], .V, proc(state: ^State) {
-        state.mode = .Visual;
-        state.current_input_map = &state.input_map.mode[.Visual];
-    }, "enter visual mode");
+    register_default_visual_actions(&state.input_map.mode[.Visual]);
 
     register_default_text_input_actions(&state.input_map.mode[.Normal]);
 
@@ -1032,6 +1100,8 @@ main :: proc() {
         state.screen_width = int(w);
         state.screen_height = int(h);
     }
+
+    sdl2.SetRenderDrawBlendMode(state.sdl_renderer, .BLEND);
 
     // Done to clear the buffer
     sdl2.StartTextInput();
@@ -1855,8 +1925,6 @@ main :: proc() {
                             key := plugin.Key(sdl_event.key.keysym.sym);
                             if key == .ESCAPE {
                                 core.request_window_close(&state);
-                                state.mode = .Normal;
-                                state.current_input_map = &state.input_map.mode[.Normal];
                             }
 
                             if key == .LCTRL {
