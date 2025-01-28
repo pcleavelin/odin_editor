@@ -43,7 +43,7 @@ Selection :: struct {
     end: Cursor,
 }
 
-Glyph :: struct #packed {
+Glyph :: struct {
     codepoint: u8,
     color: theme.PaletteColor,
 }
@@ -83,6 +83,17 @@ new_file_buffer_iter_with_cursor :: proc(file_buffer: ^FileBuffer, cursor: Curso
     return FileBufferIter { buffer = file_buffer, cursor = cursor };
 }
 new_file_buffer_iter :: proc{new_file_buffer_iter_from_beginning, new_file_buffer_iter_with_cursor};
+
+file_buffer_end :: proc(buffer: ^FileBuffer) -> Cursor {
+    return Cursor {
+        col = 0,
+        line = 0,
+        index = FileBufferIndex {
+            slice_index = len(buffer.content_slices)-1,
+            content_index = len(buffer.content_slices[len(buffer.content_slices)-1])-1,
+        }
+    };
+}
 
 iterate_file_buffer :: proc(it: ^FileBufferIter) -> (character: u8, idx: FileBufferIndex, cond: bool) {
     if it.cursor.index.slice_index >= len(it.buffer.content_slices) || it.cursor.index.content_index >= len(it.buffer.content_slices[it.cursor.index.slice_index]) {
@@ -542,7 +553,7 @@ move_cursor_left :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = nil) {
     }
 }
 
-move_cursor_right :: proc(buffer: ^FileBuffer, stop_at_end: bool = true, cursor: Maybe(^Cursor) = nil) {
+move_cursor_right :: proc(buffer: ^FileBuffer, stop_at_end: bool = true, amt: int = 1, cursor: Maybe(^Cursor) = nil) {
     cursor := cursor;
 
     if cursor == nil {
@@ -552,9 +563,11 @@ move_cursor_right :: proc(buffer: ^FileBuffer, stop_at_end: bool = true, cursor:
     it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
     line_length := file_buffer_line_length(buffer, it.cursor.index);
 
-    if !stop_at_end || cursor.?.col < line_length-1 {
-        iterate_file_buffer(&it);
-        cursor.?^ = it.cursor;
+    for _ in 0..<amt {
+        if !stop_at_end || cursor.?.col < line_length-1 {
+            iterate_file_buffer(&it);
+            cursor.?^ = it.cursor;
+        }
     }
 }
 
@@ -742,7 +755,7 @@ into_buffer_info :: proc(state: ^State, buffer: ^FileBuffer) -> plugin.BufferInf
     };
 }
 into_buffer_info_from_index :: proc(state: ^State, buffer_index: int) -> plugin.BufferInfo {
-    buffer := &state.buffers[buffer_index];
+    buffer := buffer_from_index(state, buffer_index);
     return into_buffer_info(state, buffer);
 }
 
@@ -860,7 +873,7 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, sho
     cursor_y -= begin * state.source_font_height;
 
     // draw cursor
-    if state.mode == .Normal {
+    if state.mode == .Normal || current_buffer(state) != buffer {
         draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Background4);
     } else if state.mode == .Visual {
         start_sel_x := x + padding + buffer.selection.?.start.col * state.source_font_width;
@@ -919,7 +932,7 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, sho
 
         // NOTE: this requires transparent background color because it renders after the text
         // and its after the text because the line length needs to be calculated
-        if state.mode == .Visual {
+        if state.mode == .Visual && current_buffer(state) == buffer {
             sel_x := x + padding;
             width: int
 
@@ -976,14 +989,14 @@ scroll_file_buffer :: proc(buffer: ^FileBuffer, dir: ScrollDir, cursor: Maybe(^C
     }
 }
 
-insert_content :: proc(buffer: ^FileBuffer, to_be_inserted: []u8) {
+insert_content :: proc(buffer: ^FileBuffer, to_be_inserted: []u8, append_to_end: bool = false) {
     if len(to_be_inserted) == 0 {
         return;
     }
 
     // TODO: is this even needed? would mean that the cursor isn't always in a valid state.
-    update_file_buffer_index_from_cursor(buffer);
-    it := new_file_buffer_iter(buffer, buffer.cursor);
+    // update_file_buffer_index_from_cursor(buffer);
+    it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor) if !append_to_end else new_file_buffer_iter_with_cursor(buffer, file_buffer_end(buffer));
 
     length := append(&buffer.added_content, ..to_be_inserted);
     inserted_slice: []u8 = buffer.added_content[len(buffer.added_content)-length:];
@@ -991,7 +1004,7 @@ insert_content :: proc(buffer: ^FileBuffer, to_be_inserted: []u8) {
     if it.cursor.index.content_index == 0 {
         // insertion happening in beginning of content slice
 
-        inject_at(&buffer.content_slices, buffer.cursor.index.slice_index, inserted_slice);
+        inject_at(&buffer.content_slices, it.cursor.index.slice_index, inserted_slice);
     }
     else {
         // insertion is happening in middle of content slice
@@ -1004,7 +1017,10 @@ insert_content :: proc(buffer: ^FileBuffer, to_be_inserted: []u8) {
         inject_at(&buffer.content_slices, it.cursor.index.slice_index+2, end_slice);
     }
 
-    update_file_buffer_index_from_cursor(buffer);
+    if !append_to_end {
+        update_file_buffer_index_from_cursor(buffer);
+        move_cursor_right(buffer, false, amt = len(to_be_inserted));
+    }
 }
 
 // TODO: potentially add FileBufferIndex as parameter

@@ -3,6 +3,7 @@ package core
 import "core:runtime"
 import "core:reflect"
 import "core:fmt"
+import "core:log"
 import "vendor:sdl2"
 import lua "vendor:lua/5.4"
 
@@ -67,6 +68,8 @@ State :: struct {
     current_buffer: int,
     buffers: [dynamic]FileBuffer,
 
+    log_buffer: FileBuffer,
+
     window: ^Window,
     should_close_window: bool,
 
@@ -78,6 +81,22 @@ State :: struct {
     highlighters: map[string]plugin.OnColorBufferProc,
     hooks: map[plugin.Hook][dynamic]plugin.OnHookProc,
     lua_hooks: map[plugin.Hook][dynamic]LuaHookRef,
+}
+
+current_buffer :: proc(state: ^State) -> ^FileBuffer {
+    if state.current_buffer == -2 {
+        return &state.log_buffer;
+    }
+
+    return &state.buffers[state.current_buffer];
+}
+
+buffer_from_index :: proc(state: ^State, buffer_index: int) -> ^FileBuffer {
+    if buffer_index == -2 {
+        return &state.log_buffer;
+    }
+
+    return &state.buffers[buffer_index];
 }
 
 add_hook :: proc(state: ^State, hook: plugin.Hook, hook_proc: plugin.OnHookProc) {
@@ -155,7 +174,7 @@ delete_input_actions :: proc(input_map: ^InputActions) {
 register_plugin_key_action_single :: proc(input_map: ^InputActions, key: plugin.Key, action: PluginEditorAction, description: string = "") {
     if ok := key in input_map.key_actions; ok {
         // TODO: log that key is already registered
-        fmt.eprintln("plugin key already registered with single action", key);
+        log.error("plugin key already registered with single action", key);
     }
 
     input_map.key_actions[key] = Action {
@@ -167,7 +186,7 @@ register_plugin_key_action_single :: proc(input_map: ^InputActions, key: plugin.
 register_key_action_single :: proc(input_map: ^InputActions, key: plugin.Key, action: EditorAction, description: string = "") {
     if ok := key in input_map.key_actions; ok {
         // TODO: log that key is already registered
-        fmt.eprintln("key already registered with single action", key);
+        log.error("key already registered with single action", key);
     }
 
     input_map.key_actions[key] = Action {
@@ -191,7 +210,7 @@ register_key_action_group :: proc(input_map: ^InputActions, key: plugin.Key, inp
 register_ctrl_key_action_single :: proc(input_map: ^InputActions, key: plugin.Key, action: EditorAction, description: string = "") {
     if ok := key in input_map.key_actions; ok {
         // TODO: log that key is already registered
-        fmt.eprintln("key already registered with single action", key);
+        log.error("key already registered with single action", key);
     }
 
     input_map.ctrl_key_actions[key] = Action {
@@ -203,7 +222,7 @@ register_ctrl_key_action_single :: proc(input_map: ^InputActions, key: plugin.Ke
 register_ctrl_key_action_group :: proc(input_map: ^InputActions, key: plugin.Key, input_group: InputGroup, description: string = "") {
     if ok := key in input_map.key_actions; ok {
         // TODO: log that key is already registered
-        fmt.eprintln("key already registered with single action", key);
+        log.error("key already registered with single action", key);
     }
 
     input_map.ctrl_key_actions[key] = Action {

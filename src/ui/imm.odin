@@ -3,6 +3,7 @@ package ui
 import "core:fmt"
 import "core:strings"
 import "core:math"
+import "core:log"
 import "vendor:sdl2"
 
 import "../core"
@@ -652,19 +653,19 @@ debug_print :: proc(ctx: ^Context, box: ^Box, depth: int = 0) {
 
     for box, idx in iterate_box(&iter, true) {
         for _ in 0..<(depth*6) {
-            fmt.print("-");
+            log.debug("-");
         }
         if depth > 0 {
-            fmt.print(">");
+            log.debug(">");
         }
-        fmt.println(idx, "Box _", box.label, "#", box.key.label, "ptr", transmute(rawptr)box); //, "_ first", transmute(rawptr)box.first, "parent", transmute(rawptr)box.parent, box.computed_size);
+        log.debug(idx, "Box _", box.label, "#", box.key.label, "ptr", transmute(rawptr)box); //, "_ first", transmute(rawptr)box.first, "parent", transmute(rawptr)box.parent, box.computed_size);
         debug_print(ctx, box, depth+1);
     }
 
     if depth == 0 {
-        fmt.println("persistent");
+        log.debug("persistent");
         for p in ctx.persistent {
-            fmt.println(p);
+            log.debug(p);
         }
     }
 }

@@ -1,6 +1,9 @@
 local BufferSearchOpen = false
 local BufferSearchOpenElapsed = 0
 
+local LogWindowOpen = false
+local LogWindowOpenElapsed = 0
+
 local CurrentPreviewBufferIndex = Editor.get_current_buffer_index()
 local BufferSearchIndex = 0
 
@@ -99,9 +102,11 @@ function ui_sidemenu(ctx)
                 end
 
                 if UI.advanced_button(ctx, " x ", flags, UI.FitText, UI.FitText).clicked then
-                    print("hahah, you can't close buffers yet silly")
-                    Editor.set_current_buffer_from_index(i)
-                    add_buffer_to_code_view(ActiveCodeView+1, buffer_info.file_path, i)
+                    Editor.log("hahah, you can't close buffers yet silly")
+                    if ActiveCodeView ~= nil then
+                        Editor.set_current_buffer_from_index(i)
+                        add_buffer_to_code_view(ActiveCodeView+1, buffer_info.file_path, i)
+                    end
                 end
 
                 tab_button_interaction = UI.advanced_button(ctx, " "..buffer_info.file_path.." ", flags, UI.Fill, UI.FitText)
@@ -275,6 +280,7 @@ function render_ui_window(ctx)
     end
 
     render_buffer_search(ctx)
+    render_log_window(ctx)
 
     LastMouseX = x
     LastMouseY = y
@@ -317,13 +323,54 @@ function render_buffer_search(ctx)
     end
 end
 
+function render_log_window(ctx)
+    if Editor.get_current_buffer_index() ~= -2 then
+        LogWindowOpen = false
+    end
+
+    if LogWindowOpen or LogWindowOpenElapsed > 0 then
+        if LogWindowOpen and LogWindowOpenElapsed < numFrames then
+            LogWindowOpenElapsed = LogWindowOpenElapsed + 1
+        elseif not LogWindowOpen and LogWindowOpenElapsed > 0 then
+            LogWindowOpenElapsed = LogWindowOpenElapsed - 1
+        end
+    end
+
+    if LogWindowOpen or LogWindowOpenElapsed > 0 then
+        window_percent = 75
+        if LogWindowOpenElapsed > 0 then
+            window_percent = ((LogWindowOpenElapsed/numFrames) * 75)
+        end
+
+        UI.push_parent(ctx, UI.push_floating(ctx, "log window canvas", 0, 0))
+            centered(ctx, "log window", UI.Horizontal, UI.PercentOfParent(window_percent), UI.PercentOfParent(window_percent), (
+                function ()
+                    UI.push_parent(ctx, UI.push_rect(ctx, "window", true, true, UI.Horizontal, UI.Fill, UI.Fill))
+                        -- -2 is the log buffer
+                        UI.buffer(ctx, -2)
+                    UI.pop_parent(ctx)
+                end
+            ))
+        UI.pop_parent(ctx)
+    end
+end
+
 function handle_buffer_input()
-    -- print("you inputted into a buffer")
 end
 
 function OnInit()
-    print("Main View plugin initialized")
+    Editor.log("Main View plugin initialized")
     Editor.register_key_group({
+        {Editor.Key.Backtick, "Open Editor Logs", (function ()
+            if not LogWindowOpen then
+                LogWindowOpen = true 
+                Editor.set_current_buffer_from_index(-2)
+            else 
+                LogWindowOpen = false
+                local code_view = CodeViews[ActiveCodeView]
+                Editor.set_current_buffer_from_index(code_view.tabs[code_view.current_tab]["buffer_index"])
+            end
+        end)},
         {Editor.Key.Space, "", {
             {Editor.Key.B, "Buffer Search", (
                 function ()

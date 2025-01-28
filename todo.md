@@ -1,0 +1,12 @@
+- Finish selections
+    - Guarantee that start and end are always ordered
+    - Add in text actions
+        - Yank
+        - Delete
+        - Change
+- Re-write the UI (again)
+- Re-do dylib plugin system
+- Re-do Lua plugin system
+- Persist end of line cursor position
+- Generate key mappings from the plugin.Key enum
+- Fix jumping forward a word jumping past consecutive brackets

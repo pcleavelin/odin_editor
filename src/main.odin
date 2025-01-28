@@ -6,6 +6,7 @@ import "core:math"
 import "core:strings"
 import "core:runtime"
 import "core:fmt"
+import "core:log"
 import "core:mem"
 import "core:slice"
 import "vendor:sdl2"
@@ -27,6 +28,7 @@ StateWithUi :: struct {
     ui_context: ^ui.Context,
 }
 
+// TODO: why do I have this here again?
 // TODO: use buffer list in state
 do_normal_mode :: proc(state: ^State, buffer: ^FileBuffer) {
     if state.current_input_map != nil {
@@ -90,11 +92,11 @@ register_default_leader_actions :: proc(input_map: ^core.InputActions) {
 
 register_default_go_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .H, proc(state: ^State) {
-        core.move_cursor_start_of_line(&state.buffers[state.current_buffer]);
+        core.move_cursor_start_of_line(core.current_buffer(state));
         state.current_input_map = &state.input_map.mode[state.mode];
     }, "move to beginning of line");
     core.register_key_action(input_map, .L, proc(state: ^State) {
-        core.move_cursor_end_of_line(&state.buffers[state.current_buffer]);
+        core.move_cursor_end_of_line(core.current_buffer(state));
         state.current_input_map = &state.input_map.mode[state.mode];
     }, "move to end of line");
 }
@@ -103,34 +105,34 @@ register_default_input_actions :: proc(input_map: ^core.InputActions) {
     // Cursor Movement
     {
         core.register_key_action(input_map, .W, proc(state: ^State) {
-            core.move_cursor_forward_start_of_word(&state.buffers[state.current_buffer]);
+            core.move_cursor_forward_start_of_word(core.current_buffer(state));
         }, "move forward one word");
         core.register_key_action(input_map, .E, proc(state: ^State) {
-            core.move_cursor_forward_end_of_word(&state.buffers[state.current_buffer]);
+            core.move_cursor_forward_end_of_word(core.current_buffer(state));
         }, "move forward to end of word");
 
         core.register_key_action(input_map, .B, proc(state: ^State) {
-            core.move_cursor_backward_start_of_word(&state.buffers[state.current_buffer]);
+            core.move_cursor_backward_start_of_word(core.current_buffer(state));
         }, "move backward one word");
 
         core.register_key_action(input_map, .K, proc(state: ^State) {
-            core.move_cursor_up(&state.buffers[state.current_buffer]);
+            core.move_cursor_up(core.current_buffer(state));
         }, "move up one line");
         core.register_key_action(input_map, .J, proc(state: ^State) {
-            core.move_cursor_down(&state.buffers[state.current_buffer]);
+            core.move_cursor_down(core.current_buffer(state));
         }, "move down one line");
         core.register_key_action(input_map, .H, proc(state: ^State) {
-            core.move_cursor_left(&state.buffers[state.current_buffer]);
+            core.move_cursor_left(core.current_buffer(state));
         }, "move left one char");
         core.register_key_action(input_map, .L, proc(state: ^State) {
-            core.move_cursor_right(&state.buffers[state.current_buffer]);
+            core.move_cursor_right(core.current_buffer(state));
         }, "move right one char");
 
         core.register_ctrl_key_action(input_map, .U, proc(state: ^State) {
-            core.scroll_file_buffer(&state.buffers[state.current_buffer], .Up);
+            core.scroll_file_buffer(core.current_buffer(state), .Up);
         }, "scroll buffer up");
         core.register_ctrl_key_action(input_map, .D, proc(state: ^State) {
-            core.scroll_file_buffer(&state.buffers[state.current_buffer], .Down);
+            core.scroll_file_buffer(core.current_buffer(state), .Down);
         }, "scroll buffer up");
     }
 
@@ -143,7 +145,7 @@ register_default_input_actions :: proc(input_map: ^core.InputActions) {
 
                 state.font_atlas = core.gen_font_atlas(state, "/System/Library/Fonts/Supplemental/Andale Mono.ttf");
             }
-            fmt.println(state.source_font_height);
+            log.debug(state.source_font_height);
         }, "increase font size");
         core.register_ctrl_key_action(input_map, .EQUAL, proc(state: ^State) {
             state.source_font_height += 2;
@@ -163,7 +165,7 @@ register_default_input_actions :: proc(input_map: ^core.InputActions) {
         state.mode = .Visual;
         state.current_input_map = &state.input_map.mode[.Visual];
 
-        state.buffers[state.current_buffer].selection = core.new_selection(state.buffers[state.current_buffer].cursor);
+        core.current_buffer(state).selection = core.new_selection(core.current_buffer(state).cursor);
     }, "enter visual mode");
 
 }
@@ -173,58 +175,58 @@ register_default_visual_actions :: proc(input_map: ^core.InputActions) {
         state.mode = .Normal;
         state.current_input_map = &state.input_map.mode[.Normal];
 
-        state.buffers[state.current_buffer].selection = nil;
+        core.current_buffer(state).selection = nil;
     }, "exit visual mode");
 
     // Cursor Movement
     {
         core.register_key_action(input_map, .W, proc(state: ^State) {
-            sel_cur := &state.buffers[state.current_buffer].selection.?;
+            sel_cur := core.current_buffer(state).selection.?;
 
-            core.move_cursor_forward_start_of_word(&state.buffers[state.current_buffer], cursor = &sel_cur.end);
+            core.move_cursor_forward_start_of_word(core.current_buffer(state), cursor = &sel_cur.end);
         }, "move forward one word");
         core.register_key_action(input_map, .E, proc(state: ^State) {
-            sel_cur := &(state.buffers[state.current_buffer].selection.?);
+            sel_cur := &(core.current_buffer(state).selection.?);
 
-            core.move_cursor_forward_end_of_word(&state.buffers[state.current_buffer], cursor = &sel_cur.end);
+            core.move_cursor_forward_end_of_word(core.current_buffer(state), cursor = &sel_cur.end);
         }, "move forward to end of word");
 
         core.register_key_action(input_map, .B, proc(state: ^State) {
-            sel_cur := &(state.buffers[state.current_buffer].selection.?);
+            sel_cur := &(core.current_buffer(state).selection.?);
 
-            core.move_cursor_backward_start_of_word(&state.buffers[state.current_buffer], cursor = &sel_cur.end);
+            core.move_cursor_backward_start_of_word(core.current_buffer(state), cursor = &sel_cur.end);
         }, "move backward one word");
 
         core.register_key_action(input_map, .K, proc(state: ^State) {
-            sel_cur := &(state.buffers[state.current_buffer].selection.?);
+            sel_cur := &(core.current_buffer(state).selection.?);
 
-            core.move_cursor_up(&state.buffers[state.current_buffer], cursor = &sel_cur.end);
+            core.move_cursor_up(core.current_buffer(state), cursor = &sel_cur.end);
         }, "move up one line");
         core.register_key_action(input_map, .J, proc(state: ^State) {
-            sel_cur := &(state.buffers[state.current_buffer].selection.?);
+            sel_cur := &(core.current_buffer(state).selection.?);
 
-            core.move_cursor_down(&state.buffers[state.current_buffer], cursor = &sel_cur.end);
+            core.move_cursor_down(core.current_buffer(state), cursor = &sel_cur.end);
         }, "move down one line");
         core.register_key_action(input_map, .H, proc(state: ^State) {
-            sel_cur := &(state.buffers[state.current_buffer].selection.?);
+            sel_cur := &(core.current_buffer(state).selection.?);
 
-            core.move_cursor_left(&state.buffers[state.current_buffer], cursor = &sel_cur.end);
+            core.move_cursor_left(core.current_buffer(state), cursor = &sel_cur.end);
         }, "move left one char");
         core.register_key_action(input_map, .L, proc(state: ^State) {
-            sel_cur := &(state.buffers[state.current_buffer].selection.?);
+            sel_cur := &(core.current_buffer(state).selection.?);
 
-            core.move_cursor_right(&state.buffers[state.current_buffer], cursor = &sel_cur.end);
+            core.move_cursor_right(core.current_buffer(state), cursor = &sel_cur.end);
         }, "move right one char");
 
         core.register_ctrl_key_action(input_map, .U, proc(state: ^State) {
-            sel_cur := &(state.buffers[state.current_buffer].selection.?);
+            sel_cur := &(core.current_buffer(state).selection.?);
 
-            core.scroll_file_buffer(&state.buffers[state.current_buffer], .Up, cursor = &sel_cur.end);
+            core.scroll_file_buffer(core.current_buffer(state), .Up, cursor = &sel_cur.end);
         }, "scroll buffer up");
         core.register_ctrl_key_action(input_map, .D, proc(state: ^State) {
-            sel_cur := &(state.buffers[state.current_buffer].selection.?);
+            sel_cur := &(core.current_buffer(state).selection.?);
 
-            core.scroll_file_buffer(&state.buffers[state.current_buffer], .Down, cursor = &sel_cur.end);
+            core.scroll_file_buffer(core.current_buffer(state), .Down, cursor = &sel_cur.end);
         }, "scroll buffer up");
     }
 }
@@ -235,7 +237,7 @@ register_default_text_input_actions :: proc(input_map: ^core.InputActions) {
         sdl2.StartTextInput();
     }, "enter insert mode");
     core.register_key_action(input_map, .A, proc(state: ^State) {
-        core.move_cursor_right(&state.buffers[state.current_buffer], false);
+        core.move_cursor_right(core.current_buffer(state), false);
         state.mode = .Insert;
         sdl2.StartTextInput();
     }, "enter insert mode after character (append)");
@@ -243,9 +245,9 @@ register_default_text_input_actions :: proc(input_map: ^core.InputActions) {
     // TODO: add shift+o to insert newline above current one
 
     core.register_key_action(input_map, .O, proc(state: ^State) {
-        core.move_cursor_end_of_line(&state.buffers[state.current_buffer], false);
-        core.insert_content(&state.buffers[state.current_buffer], []u8{'\n'});
-        core.move_cursor_down(&state.buffers[state.current_buffer]);
+        core.move_cursor_end_of_line(core.current_buffer(state), false);
+        core.insert_content(core.current_buffer(state), []u8{'\n'});
+        core.move_cursor_down(core.current_buffer(state));
         state.mode = .Insert;
 
         sdl2.StartTextInput();
@@ -263,9 +265,9 @@ load_plugin :: proc(info: os.File_Info, in_err: os.Errno, state: rawptr) -> (err
             append(&state.plugins, loaded_plugin);
 
             if rel_error == .None {
-                fmt.println("Loaded", relative_file_path);
+                log.info("Loaded", relative_file_path);
             } else {
-                fmt.println("Loaded", info.fullpath);
+                log.info("Loaded", info.fullpath);
             }
         }
     }
@@ -281,7 +283,7 @@ ui_font_height :: proc() -> i32 {
 }
 
 draw :: proc(state_with_ui: ^StateWithUi) {
-    buffer := &state_with_ui.state.buffers[state_with_ui.state.current_buffer];
+    buffer := core.current_buffer(state_with_ui.state);
 
     buffer.glyph_buffer_height = math.min(256, int((state_with_ui.state.screen_height - state_with_ui.state.source_font_height*2) / state_with_ui.state.source_font_height)) + 1;
     buffer.glyph_buffer_width = math.min(256, int((state_with_ui.state.screen_width - state_with_ui.state.source_font_width) / state_with_ui.state.source_font_width));
@@ -420,7 +422,7 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
             extension := strings.clone(string(extension));
 
             if _, exists := state.highlighters[extension]; exists {
-                fmt.eprintln("Highlighter already registered for", extension, "files");
+                log.error("Highlighter already registered for", extension, "files");
             } else {
                 state.highlighters[extension] = on_color_buffer;
             }
@@ -440,11 +442,11 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
             if action, exists := to_be_edited_map.key_actions[key]; exists {
                 switch value in action.action {
                     case core.LuaEditorAction:
-                        fmt.eprintln("Plugin attempted to register input group on existing key action (added from Lua)");
+                        log.warn("Plugin attempted to register input group on existing key action (added from Lua)");
                     case core.PluginEditorAction:
-                        fmt.eprintln("Plugin attempted to register input group on existing key action (added from Plugin)");
+                        log.warn("Plugin attempted to register input group on existing key action (added from Plugin)");
                     case core.EditorAction:
-                        fmt.eprintln("Plugin attempted to register input group on existing key action");
+                        log.warn("Plugin attempted to register input group on existing key action");
                     case core.InputActions:
                         input_map := &(&to_be_edited_map.key_actions[key]).action.(core.InputActions);
                         register_group(state.plugin_vtable, transmute(rawptr)input_map);
@@ -469,13 +471,13 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
             if action, exists := to_be_edited_map.key_actions[key]; exists {
                 switch value in action.action {
                     case core.LuaEditorAction:
-                        fmt.eprintln("Plugin attempted to register key action on existing key action (added from Lua)");
+                        log.warn("Plugin attempted to register key action on existing key action (added from Lua)");
                     case core.PluginEditorAction:
-                        fmt.eprintln("Plugin attempted to register key action on existing key action (added from Plugin)");
+                        log.warn("Plugin attempted to register key action on existing key action (added from Plugin)");
                     case core.EditorAction:
-                        fmt.eprintln("Plugin attempted to register input key action on existing key action");
+                        log.warn("Plugin attempted to register input key action on existing key action");
                     case core.InputActions:
-                        fmt.eprintln("Plugin attempted to register input key action on existing input group");
+                        log.warn("Plugin attempted to register input key action on existing input group");
                 }
             } else {
                 core.register_key_action(to_be_edited_map, key, input_action, description);
@@ -545,12 +547,12 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
         },
         draw_buffer_from_index = proc "c" (buffer_index: int, x: int, y: int, glyph_buffer_width: int, glyph_buffer_height: int, show_line_numbers: bool) {
             context = state.ctx;
-            state.buffers[buffer_index].glyph_buffer_width = glyph_buffer_width;
-            state.buffers[buffer_index].glyph_buffer_height = glyph_buffer_height;
+            core.buffer_from_index(&state, buffer_index).glyph_buffer_width = glyph_buffer_width;
+            core.buffer_from_index(&state, buffer_index).glyph_buffer_height = glyph_buffer_height;
 
             core.draw_file_buffer(
                 &state,
-                &state.buffers[buffer_index],
+                core.buffer_from_index(&state, buffer_index),
                 x,
                 y,
                 show_line_numbers);
@@ -573,7 +575,7 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
             get_current_buffer_iterator = proc "c" () -> plugin.BufferIter {
                 context = state.ctx;
 
-                it := core.new_file_buffer_iter(&state.buffers[state.current_buffer]);
+                it := core.new_file_buffer_iter(core.current_buffer(&state));
 
                 // TODO: make this into a function
                 return plugin.BufferIter {
@@ -794,7 +796,7 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
             },
             get_buffer_info_from_index = proc "c" (buffer_index: int) -> plugin.BufferInfo {
                 context = state.ctx;
-                buffer := &state.buffers[buffer_index];
+                buffer := core.buffer_from_index(&state, buffer_index);
 
                 return core.into_buffer_info(&state, buffer);
             },
@@ -843,14 +845,14 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
                 if should_create_buffer {
                     new_buffer, err := core.new_file_buffer(context.allocator, strings.clone(path));
                     if err.type != .None {
-                        fmt.println("Failed to open/create file buffer:", err);
+                        log.error("Failed to open/create file buffer:", err);
                     } else {
                         runtime.append(&state.buffers, new_buffer);
                         state.current_buffer = len(state.buffers)-1;
-                        buffer = &state.buffers[state.current_buffer];
+                        buffer = core.current_buffer(&state);
                     }
                 } else {
-                    buffer = &state.buffers[state.current_buffer];
+                    buffer = core.current_buffer(&state);
                 }
 
                 if buffer != nil {
@@ -971,11 +973,11 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
                 ui_file_buffer(ui_context, buffer);
             },
 
-            buffer_from_index = proc "c" (ui_context: rawptr, buffer: int, show_line_numbers: bool) {
+            buffer_from_index = proc "c" (ui_context: rawptr, buffer_index: int, show_line_numbers: bool) {
                 context = state.ctx;
                 ui_context := transmute(^ui.Context)ui_context;
 
-                buffer := &state.buffers[buffer];
+                buffer := core.buffer_from_index(&state, buffer_index);
 
                 ui_file_buffer(ui_context, buffer);
             },
@@ -1026,7 +1028,12 @@ main :: proc() {
         highlighters = make(map[string]plugin.OnColorBufferProc),
         hooks = make(map[plugin.Hook][dynamic]plugin.OnHookProc),
         lua_hooks = make(map[plugin.Hook][dynamic]core.LuaHookRef),
+
+        log_buffer = core.new_virtual_file_buffer(context.allocator),
     };
+
+    context.logger = core.new_logger(&state.log_buffer);
+    state.ctx = context;
 
     state.current_input_map = &state.input_map.mode[.Normal];
     register_default_input_actions(&state.input_map.mode[.Normal]);
@@ -1037,7 +1044,7 @@ main :: proc() {
     for arg in os.args[1:] {
         buffer, err := core.new_file_buffer(context.allocator, arg, state.directory);
         if err.type != .None {
-            fmt.println("Failed to create file buffer:", err);
+            log.error("Failed to create file buffer:", err);
             continue;
         }
 
@@ -1045,12 +1052,12 @@ main :: proc() {
     }
 
     if sdl2.Init({.VIDEO}) < 0 {
-        fmt.eprintln("SDL failed to initialize:", sdl2.GetError());
+        log.error("SDL failed to initialize:", sdl2.GetError());
         return;
     }
 
     if ttf.Init() < 0 {
-        fmt.eprintln("SDL_TTF failed to initialize:", ttf.GetError());
+        log.error("SDL_TTF failed to initialize:", ttf.GetError());
         return;
     }
     defer ttf.Quit();
@@ -1068,7 +1075,7 @@ main :: proc() {
     }
 
     if sdl_window == nil {
-        fmt.eprintln("Failed to create window:", sdl2.GetError());
+        log.error("Failed to create window:", sdl2.GetError());
         return;
     }
 
@@ -1078,7 +1085,7 @@ main :: proc() {
     }
 
     if state.sdl_renderer == nil {
-        fmt.eprintln("Failed to create renderer:", sdl2.GetError());
+        log.error("Failed to create renderer:", sdl2.GetError());
         return;
     }
     state.font_atlas = core.gen_font_atlas(&state, "/System/Library/Fonts/Supplemental/Andale Mono.ttf");
@@ -1139,13 +1146,13 @@ main :: proc() {
             }
         },
         lua.L_Reg {
-            "print",
+            "log",
             proc "c" (L: ^lua.State) -> i32 {
                 context = state.ctx;
 
-                a := lua.L_checkinteger(L, 1);
+                text := string(lua.L_checkstring(L, 1));
+                log.info("[LUA]:", text);
 
-                fmt.printf("LUA: print(%d)\n", a);
                 return i32(lua.OK);
             }
         },
@@ -1194,11 +1201,11 @@ main :: proc() {
                                 if action, exists := input_map.key_actions[key]; exists {
                                     switch value in action.action {
                                         case core.LuaEditorAction:
-                                            fmt.eprintln("Plugin attempted to register input group on existing key action (added from Lua)");
+                                            log.warn("Plugin attempted to register input group on existing key action (added from Lua)");
                                         case core.PluginEditorAction:
-                                            fmt.eprintln("Plugin attempted to register input group on existing key action (added from Plugin)");
+                                            log.warn("Plugin attempted to register input group on existing key action (added from Plugin)");
                                         case core.EditorAction:
-                                            fmt.eprintln("Plugin attempted to register input group on existing key action");
+                                            log.warn("Plugin attempted to register input group on existing key action");
                                         case core.InputActions:
                                             input_map := &(&input_map.key_actions[key]).action.(core.InputActions);
                                             table_to_action(L, lua.gettop(L), input_map);
@@ -1258,7 +1265,7 @@ main :: proc() {
                 context = state.ctx;
 
                 buffer_index := int(lua.L_checkinteger(L, 1));
-                if buffer_index < 0 || buffer_index >= len(state.buffers) {
+                if buffer_index != -2 && (buffer_index < 0 || buffer_index >= len(state.buffers)) {
                     return i32(lua.ERRRUN);
                 } else {
                     state.current_buffer = buffer_index;
@@ -1301,7 +1308,7 @@ main :: proc() {
                         }
                     }
 
-                    push_lua_buffer_info(L, &state.buffers[buffer_index]);
+                    push_lua_buffer_info(L, core.buffer_from_index(&state, buffer_index));
                 }
 
                 return 1;
@@ -1661,11 +1668,29 @@ main :: proc() {
                 if ui_ctx != nil {
                     buffer_index := int(lua.L_checkinteger(L, 2));
 
-                    if buffer_index < 0 || buffer_index >= len(state.buffers) {
+                    if buffer_index != -2 && (buffer_index < 0 || buffer_index >= len(state.buffers)) {
                         return i32(lua.ERRRUN);
                     }
 
-                    ui_file_buffer(ui_ctx, &state.buffers[buffer_index]);
+                    ui_file_buffer(ui_ctx, core.buffer_from_index(&state, buffer_index));
+
+                    return i32(lua.OK);
+                }
+
+                return i32(lua.ERRRUN);
+            }
+        },
+        lua.L_Reg {
+            "log_buffer",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
+                lua.pushvalue(L, 1);
+                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
+
+                if ui_ctx != nil {
+                    ui_file_buffer(ui_ctx, &state.log_buffer);
 
                     return i32(lua.OK);
                 }
@@ -1675,6 +1700,7 @@ main :: proc() {
         }
     };
 
+    // TODO: generate this from the plugin.Key enum
     lua.newtable(L);
     {
         lua.newtable(L);
@@ -1701,6 +1727,9 @@ main :: proc() {
 
         lua.pushinteger(L, lua.Integer(plugin.Key.Q));
         lua.setfield(L, -2, "Q");
+
+        lua.pushinteger(L, lua.Integer(plugin.Key.BACKQUOTE));
+        lua.setfield(L, -2, "Backtick");
 
         lua.pushinteger(L, lua.Integer(plugin.Key.ESCAPE));
         lua.setfield(L, -2, "Escape");
@@ -1748,7 +1777,7 @@ main :: proc() {
         err := lua.tostring(L, lua.gettop(L));
         lua.pop(L, lua.gettop(L));
 
-        fmt.eprintln(err);
+        log.error(err);
     }
 
     // Initialize Lua Plugins
@@ -1760,7 +1789,7 @@ main :: proc() {
             err := lua.tostring(L, lua.gettop(L));
             lua.pop(L, lua.gettop(L));
 
-            fmt.eprintln("failed to initialize plugin (OnInit):", err);
+            log.error("failed to initialize plugin (OnInit):", err);
         }
     }
     // **********************************************************************
@@ -1768,7 +1797,7 @@ main :: proc() {
     control_key_pressed: bool;
     for !state.should_close {
         // if false {
-        //     buffer := &state.buffers[state.current_buffer];
+        //     buffer := core.current_buffer(&state);
 
         //     ui.push_parent(&ui_context, ui.push_box(&ui_context, "main", {}, .Vertical, semantic_size = {ui.make_semantic_size(.Fill, 100), ui.make_semantic_size(.Fill, 100)}));
         //     defer ui.pop_parent(&ui_context);
@@ -1824,7 +1853,7 @@ main :: proc() {
         //             defer ui.pop_parent(&ui_context);
 
         //             {
-        //                 if ui_file_buffer(&ui_context, &state.buffers[state.current_buffer]).clicked {
+        //                 if ui_file_buffer(&ui_context, core.current_buffer(&state)).clicked {
         //                     state.current_buffer = 3;
         //                 }
         //             }
@@ -1872,6 +1901,15 @@ main :: proc() {
         //     }
         // }
 
+        // TODO: move this to view.lua
+        // log_window, _ := ui.push_floating(&ui_context, "log", {0,0}, flags = {.Floating, .DrawBackground}, semantic_size = {ui.make_semantic_size(.PercentOfParent, 75), ui.make_semantic_size(.PercentOfParent, 75)});
+        // ui.push_parent(&ui_context, log_window);
+        // {
+        //     defer ui.pop_parent(&ui_context);
+        //     ui_file_buffer(&ui_context, &state.log_buffer);
+        // }
+
+
         for hook_ref in state.lua_hooks[plugin.Hook.Draw] {
             lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(hook_ref));
             lua.pushlightuserdata(state.L, &ui_context);
@@ -1879,7 +1917,7 @@ main :: proc() {
                 err := lua.tostring(L, lua.gettop(L));
                 lua.pop(L, lua.gettop(L));
 
-                fmt.eprintln(err);
+                log.error(err);
             } else {
                 lua.pop(L, lua.gettop(L));
             }
@@ -1939,7 +1977,7 @@ main :: proc() {
                                                     err := lua.tostring(L, lua.gettop(L));
                                                     lua.pop(L, lua.gettop(L));
 
-                                                    fmt.eprintln(err);
+                                                    log.error(err);
                                                 } else {
                                                     lua.pop(L, lua.gettop(L));
                                                 }
@@ -1964,7 +2002,7 @@ main :: proc() {
                                                     err := lua.tostring(L, lua.gettop(L));
                                                     lua.pop(L, lua.gettop(L));
 
-                                                    fmt.eprintln(err);
+                                                    log.error(err);
                                                 } else {
                                                     lua.pop(L, lua.gettop(L));
                                                 }
@@ -1997,7 +2035,7 @@ main :: proc() {
                         if state.window != nil && state.window.get_buffer != nil {
                             buffer = transmute(^core.FileBuffer)(state.window.get_buffer(state.plugin_vtable, state.window.user_data));
                         } else {
-                            buffer = &state.buffers[state.current_buffer];
+                            buffer = core.current_buffer(&state);
                         }
 
                         if sdl_event.type == .KEYDOWN {
@@ -2024,7 +2062,7 @@ main :: proc() {
                                             err := lua.tostring(L, lua.gettop(L));
                                             lua.pop(L, lua.gettop(L));
 
-                                            fmt.eprintln(err);
+                                            log.error(err);
                                         } else {
                                             lua.pop(L, lua.gettop(L));
                                         }
@@ -2054,7 +2092,7 @@ main :: proc() {
                                             err := lua.tostring(L, lua.gettop(L));
                                             lua.pop(L, lua.gettop(L));
 
-                                            fmt.eprintln(err);
+                                            log.error(err);
                                         } else {
                                             lua.pop(L, lua.gettop(L));
                                         }
@@ -2077,7 +2115,7 @@ main :: proc() {
                     buffer := transmute(^core.FileBuffer)(state.window.get_buffer(state.plugin_vtable, state.window.user_data));
                     do_normal_mode(&state, buffer);
                 } else {
-                    buffer := &state.buffers[state.current_buffer];
+                    buffer := core.current_buffer(&state);
                     do_normal_mode(&state, buffer);
                 }
             case .Insert:
@@ -2085,14 +2123,14 @@ main :: proc() {
                     buffer := transmute(^core.FileBuffer)(state.window.get_buffer(state.plugin_vtable, state.window.user_data));
                     do_insert_mode(&state, buffer);
                 } else {
-                    buffer := &state.buffers[state.current_buffer];
+                    buffer := core.current_buffer(&state);
                     do_insert_mode(&state, buffer);
                 }
             case .Visual:
                 if state.window != nil && state.window.get_buffer != nil {
                     // TODO
                 } else {
-                    buffer := &state.buffers[state.current_buffer];
+                    buffer := core.current_buffer(&state);
                     do_visual_mode(&state, buffer);
                 }
         }

@@ -3,6 +3,7 @@ package plugin;
 import "core:intrinsics"
 import "core:dynlib"
 import "core:fmt"
+import "core:log"
 
 import "../theme"
 
@@ -419,7 +420,7 @@ load_proc_address :: proc(lib_path: string, library: dynlib.Library, symbol: str
     if address, found := dynlib.symbol_address(library, symbol); found {
         return transmute(ProcType)address;
     } else {
-        fmt.println("Could not find symbol", symbol, "in library", lib_path);
+        log.warn("Could not find symbol", symbol, "in library", lib_path);
     }
 
     return nil;
