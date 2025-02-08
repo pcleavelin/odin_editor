@@ -1,6 +1,6 @@
 package core;
 
-import "core:runtime"
+import "base:runtime"
 
 ErrorType :: enum {
     None,

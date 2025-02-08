@@ -1,6 +1,6 @@
 package core
 
-import "core:runtime"
+import "base:runtime"
 import "core:reflect"
 import "core:fmt"
 import "core:log"
@@ -97,6 +97,10 @@ current_buffer :: proc(state: ^State) -> ^FileBuffer {
         return &state.log_buffer;
     }
 
+    if len(state.buffers) < 1 {
+        return nil
+    }
+
     return &state.buffers[state.current_buffer];
 }
 
@@ -167,7 +171,7 @@ new_input_actions :: proc() -> InputActions {
     return input_actions;
 }
 delete_input_map :: proc(input_map: ^InputMap) {
-    for _, &actions in &input_map.mode {
+    for _, &actions in input_map.mode {
         delete_input_actions(&actions);
     }
     delete(input_map.mode);

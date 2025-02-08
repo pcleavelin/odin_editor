@@ -1,7 +1,7 @@
 // The default syntax highlighter plugin for Odin & Rust
 package highlighter;
 
-import "core:runtime"
+import "base:runtime"
 import "core:fmt"
 
 import p "../../../src/plugin"

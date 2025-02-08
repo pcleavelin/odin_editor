@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
-    ffi::{c_char, c_void, CStr},
+    ffi::{c_char, c_void, CStr, CString},
+    fmt::write,
     path::Path,
 };
 
@@ -133,8 +134,11 @@ impl BufferVTable {
         }
     }
     pub fn open_buffer(&self, path: impl AsRef<Path>, line: i32, col: i32) {
-        let c_str = path.as_ref().to_string_lossy().as_ptr();
-        (self.open_buffer)(c_str, line as isize, col as isize);
+        let Ok(c_str) = CString::new(path.as_ref().as_os_str().as_encoded_bytes()) else {
+            eprintln!("grep plugin failed to open buffer");
+            return;
+        };
+        (self.open_buffer)(c_str.as_ptr() as *const u8, line as isize, col as isize);
     }
     pub fn open_virtual_buffer(&self) -> Buffer {
         Buffer {

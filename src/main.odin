@@ -1,10 +1,11 @@
 package main
 
+import "core:c"
 import "core:os"
 import "core:path/filepath"
 import "core:math"
 import "core:strings"
-import "core:runtime"
+import "base:runtime"
 import "core:fmt"
 import "core:log"
 import "core:mem"
@@ -17,6 +18,8 @@ import "core"
 import "theme"
 import "ui"
 import "plugin"
+
+HardcodedFontPath :: "bin/BerkeleyMono-Regular.ttf";
 
 State :: core.State;
 FileBuffer :: core.FileBuffer;
@@ -146,7 +149,7 @@ register_default_input_actions :: proc(input_map: ^core.InputActions) {
                 state.source_font_height -= 2;
                 state.source_font_width = state.source_font_height / 2;
 
-                state.font_atlas = core.gen_font_atlas(state, "/System/Library/Fonts/Supplemental/Andale Mono.ttf");
+                state.font_atlas = core.gen_font_atlas(state, HardcodedFontPath);
             }
             log.debug(state.source_font_height);
         }, "increase font size");
@@ -154,7 +157,7 @@ register_default_input_actions :: proc(input_map: ^core.InputActions) {
             state.source_font_height += 2;
             state.source_font_width = state.source_font_height / 2;
 
-            state.font_atlas = core.gen_font_atlas(state, "/System/Library/Fonts/Supplemental/Andale Mono.ttf");
+            state.font_atlas = core.gen_font_atlas(state, HardcodedFontPath);
         }, "decrease font size");
     }
 
@@ -286,10 +289,10 @@ ui_font_height :: proc() -> i32 {
 }
 
 draw :: proc(state_with_ui: ^StateWithUi) {
-    buffer := core.current_buffer(state_with_ui.state);
-
-    buffer.glyph_buffer_height = math.min(256, int((state_with_ui.state.screen_height - state_with_ui.state.source_font_height*2) / state_with_ui.state.source_font_height)) + 1;
-    buffer.glyph_buffer_width = math.min(256, int((state_with_ui.state.screen_width - state_with_ui.state.source_font_width) / state_with_ui.state.source_font_width));
+    if buffer := core.current_buffer(state_with_ui.state); buffer != nil {
+        buffer.glyph_buffer_height = math.min(256, int((state_with_ui.state.screen_height - state_with_ui.state.source_font_height*2) / state_with_ui.state.source_font_height)) + 1;
+        buffer.glyph_buffer_width = math.min(256, int((state_with_ui.state.screen_width - state_with_ui.state.source_font_width) / state_with_ui.state.source_font_width));
+    }
 
     render_color := theme.get_palette_color(.Background);
     sdl2.SetRenderDrawColor(state_with_ui.state.sdl_renderer, render_color.r, render_color.g, render_color.b, render_color.a);
@@ -832,6 +835,8 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
             open_buffer = proc "c" (path: cstring, line: int, col: int) {
                 context = state.ctx;
 
+                fmt.eprintln("opening file from dll", path)
+
                 path := string(path);
                 should_create_buffer := true;
                 for buffer, index in state.buffers {
@@ -1106,7 +1111,7 @@ main :: proc() {
     sdl_window := sdl2.CreateWindow(
         "odin_editor - [now with more ui]",
         sdl2.WINDOWPOS_UNDEFINED,
-        0,
+        sdl2.WINDOWPOS_UNDEFINED,
         640,
         480,
         {.SHOWN, .RESIZABLE, .ALLOW_HIGHDPI}
@@ -1129,7 +1134,7 @@ main :: proc() {
         log.error("Failed to create renderer:", sdl2.GetError());
         return;
     }
-    state.font_atlas = core.gen_font_atlas(&state, "/System/Library/Fonts/Supplemental/Andale Mono.ttf");
+    state.font_atlas = core.gen_font_atlas(&state, HardcodedFontPath);
     defer {
         if state.font_atlas.font != nil {
             ttf.CloseFont(state.font_atlas.font);
@@ -1170,9 +1175,29 @@ main :: proc() {
     }
 
     // **********************************************************************
-    L := lua.L_newstate();
-    state.L = L;
-    lua.L_openlibs(L);
+    lua_allocator :: proc "c" (ud: rawptr, ptr: rawptr, osize, nsize: c.size_t) -> (buf: rawptr) {
+        old_size := int(osize)
+        new_size := int(nsize)
+        context = (^runtime.Context)(ud)^
+
+        if ptr == nil {
+            data, err := runtime.mem_alloc(new_size)
+            return raw_data(data) if err == .None else nil
+        } else {
+            if nsize > 0 {
+                data, err := runtime.mem_resize(ptr, old_size, new_size)
+                return raw_data(data) if err == .None else nil
+            } else {
+                runtime.mem_free(ptr)
+                return
+            }
+        }
+    }
+    _context := context;
+    // L := lua.newstate(lua_allocator, &_context);
+    // L := lua.L_newstate();
+    state.L = lua.L_newstate();
+    lua.L_openlibs(state.L);
 
     bbb: [^]lua.L_Reg;
     editor_lib := [?]lua.L_Reg {
@@ -1780,93 +1805,93 @@ main :: proc() {
     };
 
     // TODO: generate this from the plugin.Key enum
-    lua.newtable(L);
+    lua.newtable(state.L);
     {
-        lua.newtable(L);
-        lua.pushinteger(L, lua.Integer(plugin.Key.B));
-        lua.setfield(L, -2, "B");
+        lua.newtable(state.L);
+        lua.pushinteger(state.L, lua.Integer(plugin.Key.B));
+        lua.setfield(state.L, -2, "B");
 
-        lua.pushinteger(L, lua.Integer(plugin.Key.T));
-        lua.setfield(L, -2, "T");
+        lua.pushinteger(state.L, lua.Integer(plugin.Key.T));
+        lua.setfield(state.L, -2, "T");
 
-        lua.pushinteger(L, lua.Integer(plugin.Key.Y));
-        lua.setfield(L, -2, "Y");
+        lua.pushinteger(state.L, lua.Integer(plugin.Key.Y));
+        lua.setfield(state.L, -2, "Y");
 
-        lua.pushinteger(L, lua.Integer(plugin.Key.P));
-        lua.setfield(L, -2, "P");
+        lua.pushinteger(state.L, lua.Integer(plugin.Key.P));
+        lua.setfield(state.L, -2, "P");
 
-        lua.pushinteger(L, lua.Integer(plugin.Key.M));
-        lua.setfield(L, -2, "M");
+        lua.pushinteger(state.L, lua.Integer(plugin.Key.M));
+        lua.setfield(state.L, -2, "M");
 
-        lua.pushinteger(L, lua.Integer(plugin.Key.K));
-        lua.setfield(L, -2, "K");
+        lua.pushinteger(state.L, lua.Integer(plugin.Key.K));
+        lua.setfield(state.L, -2, "K");
 
-        lua.pushinteger(L, lua.Integer(plugin.Key.J));
-        lua.setfield(L, -2, "J");
+        lua.pushinteger(state.L, lua.Integer(plugin.Key.J));
+        lua.setfield(state.L, -2, "J");
 
-        lua.pushinteger(L, lua.Integer(plugin.Key.Q));
-        lua.setfield(L, -2, "Q");
+        lua.pushinteger(state.L, lua.Integer(plugin.Key.Q));
+        lua.setfield(state.L, -2, "Q");
 
-        lua.pushinteger(L, lua.Integer(plugin.Key.BACKQUOTE));
-        lua.setfield(L, -2, "Backtick");
+        lua.pushinteger(state.L, lua.Integer(plugin.Key.BACKQUOTE));
+        lua.setfield(state.L, -2, "Backtick");
 
-        lua.pushinteger(L, lua.Integer(plugin.Key.ESCAPE));
-        lua.setfield(L, -2, "Escape");
+        lua.pushinteger(state.L, lua.Integer(plugin.Key.ESCAPE));
+        lua.setfield(state.L, -2, "Escape");
 
-        lua.pushinteger(L, lua.Integer(plugin.Key.ENTER));
-        lua.setfield(L, -2, "Enter");
+        lua.pushinteger(state.L, lua.Integer(plugin.Key.ENTER));
+        lua.setfield(state.L, -2, "Enter");
 
-        lua.pushinteger(L, lua.Integer(plugin.Key.SPACE));
-        lua.setfield(L, -2, "Space");
+        lua.pushinteger(state.L, lua.Integer(plugin.Key.SPACE));
+        lua.setfield(state.L, -2, "Space");
     }
-    lua.setfield(L, -2, "Key");
+    lua.setfield(state.L, -2, "Key");
 
     {
-        lua.newtable(L);
-        lua.pushinteger(L, lua.Integer(plugin.Hook.BufferInput));
-        lua.setfield(L, -2, "OnBufferInput");
-        lua.pushinteger(L, lua.Integer(plugin.Hook.Draw));
-        lua.setfield(L, -2, "OnDraw");
+        lua.newtable(state.L);
+        lua.pushinteger(state.L, lua.Integer(plugin.Hook.BufferInput));
+        lua.setfield(state.L, -2, "OnBufferInput");
+        lua.pushinteger(state.L, lua.Integer(plugin.Hook.Draw));
+        lua.setfield(state.L, -2, "OnDraw");
     }
-    lua.setfield(L, -2, "Hook");
+    lua.setfield(state.L, -2, "Hook");
 
-    lua.L_setfuncs(L, bbb, 0);
-    lua.setglobal(L, "Editor");
+    lua.L_setfuncs(state.L, bbb, 0);
+    lua.setglobal(state.L, "Editor");
 
-    lua.newtable(L);
+    lua.newtable(state.L);
     {
-        lua.pushinteger(L, lua.Integer(ui.Axis.Horizontal));
-        lua.setfield(L, -2, "Horizontal");
-        lua.pushinteger(L, lua.Integer(ui.Axis.Vertical));
-        lua.setfield(L, -2, "Vertical");
-        push_lua_semantic_size_table(L, { ui.SemanticSizeKind.Fill, 0 });
-        lua.setfield(L, -2, "Fill");
-        push_lua_semantic_size_table(L, { ui.SemanticSizeKind.ChildrenSum, 0 });
-        lua.setfield(L, -2, "ChildrenSum");
-        push_lua_semantic_size_table(L, { ui.SemanticSizeKind.FitText, 0 });
-        lua.setfield(L, -2, "FitText");
+        lua.pushinteger(state.L, lua.Integer(ui.Axis.Horizontal));
+        lua.setfield(state.L, -2, "Horizontal");
+        lua.pushinteger(state.L, lua.Integer(ui.Axis.Vertical));
+        lua.setfield(state.L, -2, "Vertical");
+        push_lua_semantic_size_table(state.L, { ui.SemanticSizeKind.Fill, 0 });
+        lua.setfield(state.L, -2, "Fill");
+        push_lua_semantic_size_table(state.L, { ui.SemanticSizeKind.ChildrenSum, 0 });
+        lua.setfield(state.L, -2, "ChildrenSum");
+        push_lua_semantic_size_table(state.L, { ui.SemanticSizeKind.FitText, 0 });
+        lua.setfield(state.L, -2, "FitText");
 
-        lua.L_setfuncs(L, raw_data(&ui_lib), 0);
-        lua.setglobal(L, "UI");
+        lua.L_setfuncs(state.L, raw_data(&ui_lib), 0);
+        lua.setglobal(state.L, "UI");
     }
 
-    if lua.L_dofile(L, "plugins/lua/view.lua") == i32(lua.OK) {
-        lua.pop(L, lua.gettop(L));
+    if lua.L_dofile(state.L, "plugins/lua/view.lua") == i32(lua.OK) {
+        lua.pop(state.L, lua.gettop(state.L));
     } else {
-        err := lua.tostring(L, lua.gettop(L));
-        lua.pop(L, lua.gettop(L));
+        err := lua.tostring(state.L, lua.gettop(state.L));
+        lua.pop(state.L, lua.gettop(state.L));
 
         log.error(err);
     }
 
     // Initialize Lua Plugins
     {
-        lua.getglobal(L, "OnInit");
-        if lua.pcall(L, 0, 0, 0) == i32(lua.OK) {
-            lua.pop(L, lua.gettop(L));
+        lua.getglobal(state.L, "OnInit");
+        if lua.pcall(state.L, 0, 0, 0) == i32(lua.OK) {
+            lua.pop(state.L, lua.gettop(state.L));
         } else {
-            err := lua.tostring(L, lua.gettop(L));
-            lua.pop(L, lua.gettop(L));
+            err := lua.tostring(state.L, lua.gettop(state.L));
+            lua.pop(state.L, lua.gettop(state.L));
 
             log.error("failed to initialize plugin (OnInit):", err);
         }
@@ -1989,16 +2014,18 @@ main :: proc() {
         // }
 
 
-        for hook_ref in state.lua_hooks[plugin.Hook.Draw] {
-            lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(hook_ref));
-            lua.pushlightuserdata(state.L, &ui_context);
-            if lua.pcall(state.L, 1, 0, 0) != i32(lua.OK) {
-                err := lua.tostring(L, lua.gettop(L));
-                lua.pop(L, lua.gettop(L));
+        if draw_hooks, ok := state.lua_hooks[plugin.Hook.Draw]; ok {
+            for hook_ref in draw_hooks {
+                lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(hook_ref));
+                lua.pushlightuserdata(state.L, &ui_context);
+                if lua.pcall(state.L, 1, 0, 0) != i32(lua.OK) {
+                    err := lua.tostring(state.L, lua.gettop(state.L));
+                    lua.pop(state.L, lua.gettop(state.L));
 
-                log.error(err);
-            } else {
-                lua.pop(L, lua.gettop(L));
+                    log.error(err);
+                } else {
+                    lua.pop(state.L, lua.gettop(state.L));
+                }
             }
         }
 
@@ -2053,12 +2080,12 @@ main :: proc() {
                                             case core.LuaEditorAction:
                                                 lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(value.fn_ref));
                                                 if lua.pcall(state.L, 0, 0, 0) != i32(lua.OK) {
-                                                    err := lua.tostring(L, lua.gettop(L));
-                                                    lua.pop(L, lua.gettop(L));
+                                                    err := lua.tostring(state.L, lua.gettop(state.L));
+                                                    lua.pop(state.L, lua.gettop(state.L));
 
                                                     log.error(err);
                                                 } else {
-                                                    lua.pop(L, lua.gettop(L));
+                                                    lua.pop(state.L, lua.gettop(state.L));
                                                 }
 
                                                 if value.maybe_input_map.ctrl_key_actions != nil {
@@ -2078,12 +2105,12 @@ main :: proc() {
                                             case core.LuaEditorAction:
                                                 lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(value.fn_ref));
                                                 if lua.pcall(state.L, 0, 0, 0) != i32(lua.OK) {
-                                                    err := lua.tostring(L, lua.gettop(L));
-                                                    lua.pop(L, lua.gettop(L));
+                                                    err := lua.tostring(state.L, lua.gettop(state.L));
+                                                    lua.pop(state.L, lua.gettop(state.L));
 
                                                     log.error(err);
                                                 } else {
-                                                    lua.pop(L, lua.gettop(L));
+                                                    lua.pop(state.L, lua.gettop(state.L));
                                                 }
 
                                                 if value.maybe_input_map.key_actions != nil {
@@ -2138,12 +2165,12 @@ main :: proc() {
                                     for hook_ref in state.lua_hooks[plugin.Hook.BufferInput] {
                                         lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(hook_ref));
                                         if lua.pcall(state.L, 0, 0, 0) != i32(lua.OK) {
-                                            err := lua.tostring(L, lua.gettop(L));
-                                            lua.pop(L, lua.gettop(L));
+                                            err := lua.tostring(state.L, lua.gettop(state.L));
+                                            lua.pop(state.L, lua.gettop(state.L));
 
                                             log.error(err);
                                         } else {
-                                            lua.pop(L, lua.gettop(L));
+                                            lua.pop(state.L, lua.gettop(state.L));
                                         }
                                     }
                                 }
@@ -2168,12 +2195,12 @@ main :: proc() {
                                     for hook_ref in state.lua_hooks[plugin.Hook.BufferInput] {
                                         lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(hook_ref));
                                         if lua.pcall(state.L, 0, 0, 0) != i32(lua.OK) {
-                                            err := lua.tostring(L, lua.gettop(L));
-                                            lua.pop(L, lua.gettop(L));
+                                            err := lua.tostring(state.L, lua.gettop(state.L));
+                                            lua.pop(state.L, lua.gettop(state.L));
 
                                             log.error(err);
                                         } else {
-                                            lua.pop(L, lua.gettop(L));
+                                            lua.pop(state.L, lua.gettop(state.L));
                                         }
                                     }
                                 }
@@ -2227,7 +2254,7 @@ main :: proc() {
             plugin.on_exit();
         }
     }
-    lua.close(L);
+    lua.close(state.L);
 
     sdl2.Quit();
 }

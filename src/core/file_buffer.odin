@@ -6,7 +6,7 @@ import "core:mem"
 import "core:fmt"
 import "core:math"
 import "core:slice"
-import "core:runtime"
+import "base:runtime"
 import "core:strings"
 
 import "../theme"
@@ -672,8 +672,10 @@ new_virtual_file_buffer :: proc(allocator: mem.Allocator) -> FileBuffer {
 new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: string = "") -> (FileBuffer, Error) {
     context.allocator = allocator;
 
+    fmt.eprintln("attempting to open", file_path);
+
     fd, err := os.open(file_path);
-    if err != os.ERROR_NONE {
+    if err != nil {
         return FileBuffer{}, make_error(ErrorType.FileIOError, fmt.aprintf("failed to open file: errno=%x", err));
     }
     defer os.close(fd);
@@ -696,10 +698,12 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
         width := 256;
         height := 256;
 
+        fmt.eprintln("file path", fi.fullpath[4:]);
+
         buffer := FileBuffer {
             allocator = allocator,
             directory = dir,
-            file_path = fi.fullpath,
+            file_path = fi.fullpath[4:],
             extension = extension,
 
             original_content = slice.clone_to_dynamic(original_content),
@@ -951,7 +955,6 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, sho
 
             draw_rect(state, sel_x, text_y, width, state.source_font_height, .Green);
         }
-
     }
 }
 

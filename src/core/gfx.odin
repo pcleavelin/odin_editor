@@ -26,6 +26,7 @@ gen_font_atlas :: proc(state: ^State, path: cstring) -> FontAtlas {
         // FIXME: check if this failed
         font = ttf.OpenFont(path, font_height),
     }
+    assert(atlas.font != nil);
     ttf.SetFontStyle(atlas.font, ttf.STYLE_NORMAL);
 
     // NOTE: not sure if I like the look of this or not yet

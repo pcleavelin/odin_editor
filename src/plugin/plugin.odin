@@ -1,6 +1,6 @@
 package plugin;
 
-import "core:intrinsics"
+import "base:intrinsics"
 import "core:dynlib"
 import "core:fmt"
 import "core:log"
