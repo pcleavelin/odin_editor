@@ -63,13 +63,17 @@
       {
         devShell = pkgs.mkShell {
           buildInputs = with pkgs; (if pkgs.system == "aarch64-darwin" || pkgs.system == "x86_64-darwin" then [
-            fixed-odin
+            # fixed-odin
+            llvmPackages_17.bintools
+            llvmPackages_17.lld
+            llvmPackages_17.clang
             local-rust
             nightly-cargo
             rust-analyzer
             lua54Packages.stdlib
             SDL2
             SDL2_ttf
+            darwin.apple_sdk.frameworks.System
             darwin.apple_sdk.frameworks.CoreData
             darwin.apple_sdk.frameworks.Kernel
             darwin.apple_sdk.frameworks.CoreVideo

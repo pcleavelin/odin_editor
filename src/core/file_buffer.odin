@@ -679,7 +679,7 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
     defer os.close(fd);
 
     fi, fstat_err := os.fstat(fd);
-    if fstat_err > 0 {
+    if fstat_err != nil {
         return FileBuffer{}, make_error(ErrorType.FileIOError, fmt.aprintf("failed to get file info: errno=%x", fstat_err));
     }
 

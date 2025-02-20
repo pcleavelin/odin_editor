@@ -1,6 +1,10 @@
 local BufferSearchOpen = false
 local BufferSearchOpenElapsed = 0
 
+local CommandSearchOpen = false
+local CommandSearchOpenElapsed = 0
+local CommandList = {}
+
 local LogWindowOpen = false
 local LogWindowOpenElapsed = 0
 
@@ -280,6 +284,7 @@ function render_ui_window(ctx)
     end
 
     render_buffer_search(ctx)
+    render_command_search(ctx)
     render_log_window(ctx)
 
     LastMouseX = x
@@ -316,6 +321,45 @@ function render_buffer_search(ctx)
                             end
                         UI.pop_parent(ctx)
                         UI.buffer(ctx, BufferSearchIndex)
+                    UI.pop_parent(ctx)
+                end
+            ))
+        UI.pop_parent(ctx)
+    end
+end
+
+function render_command_search(ctx)
+    if CommandSearchOpen or CommandSearchOpenElapsed > 0 then
+        if CommandSearchOpen and CommandSearchOpenElapsed < numFrames then
+            CommandSearchOpenElapsed = CommandSearchOpenElapsed + 1
+        elseif not CommandSearchOpen and CommandSearchOpenElapsed > 0 then
+            CommandSearchOpenElapsed = CommandSearchOpenElapsed - 1
+        end
+    end
+
+    if CommandSearchOpen or CommandSearchOpenElapsed > 0 then
+        window_percent_width = 75
+        window_percent_height = 25
+        if CommandSearchOpenElapsed > 0 then
+            window_percent_width = ((CommandSearchOpenElapsed/numFrames) * 75)
+            window_percent_height = ((CommandSearchOpenElapsed/numFrames) * 25)
+        end
+
+        UI.push_parent(ctx, UI.push_floating(ctx, "buffer search canvas", 0, 0))
+            centered(ctx, "command search window", UI.Horizontal, UI.PercentOfParent(window_percent_width), UI.PercentOfParent(window_percent_height), (
+                function ()
+                    UI.push_parent(ctx, UI.push_rect(ctx, "window", true, true, UI.Horizontal, UI.Fill, UI.Fill))
+                        UI.push_parent(ctx, UI.push_rect(ctx, "command list", false, false, UI.Vertical, UI.Fill, UI.Fill))
+                            -- local commands = Editor.query_command_group("nl.spacegirl.editor.core")
+                            for i, cmd in ipairs(CommandList) do
+                                flags = {"DrawText"}
+
+                                if i == CommandSearchIndex then
+                                    table.insert(flags, 1, "DrawBorder")
+                                end
+                                interaction = UI.advanced_button(ctx, " "..cmd.name..": "..cmd.description.." ", flags, UI.Fill, UI.FitText)
+                            end
+                        UI.pop_parent(ctx)
                     UI.pop_parent(ctx)
                 end
             ))
@@ -372,6 +416,36 @@ function OnInit()
             end
         end)},
         {Editor.Key.Space, "", {
+            {Editor.Key.Backtick, "Command Palette",
+                (function ()
+                    CommandSearchOpen = true
+                    CommandSearchIndex = 1
+
+                    CommandList = Editor.query_command_group("nl.spacegirl.editor.core")
+                end),
+                {
+                    {Editor.Key.Escape, "Close Window", (
+                        function ()
+                            Editor.request_window_close()
+                            CommandSearchOpen = false
+                        end
+                    )},
+                    {Editor.Key.Enter, "Run Command", (
+                            function ()
+                                if CommandList[CommandSearchIndex] ~= nil then 
+                                    Editor.run_command("nl.spacegirl.editor.core", CommandList[CommandSearchIndex]["name"])
+                                    CommandList = {}
+
+                                    Editor.request_window_close()
+                                    CommandSearchOpen = false
+                                end
+                            end
+                    )},
+                    -- TODO: don't scroll past selections
+                    {Editor.Key.K, "Move Selection Up", (function () CommandSearchIndex = CommandSearchIndex - 1 end)},
+                    {Editor.Key.J, "Move Selection Down", (function () CommandSearchIndex = CommandSearchIndex + 1 end)},
+                }
+            },
             {Editor.Key.B, "Buffer Search", (
                 function ()
                     BufferSearchOpen = true

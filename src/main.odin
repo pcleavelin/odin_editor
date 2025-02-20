@@ -21,6 +21,9 @@ import "plugin"
 State :: core.State;
 FileBuffer :: core.FileBuffer;
 
+// TODO: should probably go into state
+scratch: mem.Scratch;
+scratch_alloc: runtime.Allocator;
 state := core.State {};
 
 StateWithUi :: struct {
@@ -1022,6 +1025,8 @@ main :: proc() {
         source_font_width = 8,
         source_font_height = 16,
         input_map = core.new_input_map(),
+        commands = make(core.EditorCommandList),
+
         window = nil,
         directory = os.get_current_directory(),
         plugins = make([dynamic]plugin.Interface),
@@ -1035,19 +1040,55 @@ main :: proc() {
     context.logger = core.new_logger(&state.log_buffer);
     state.ctx = context;
 
+    mem.scratch_allocator_init(&scratch, 1024*1024);
+    scratch_alloc = mem.scratch_allocator(&scratch);
+
     state.current_input_map = &state.input_map.mode[.Normal];
     register_default_input_actions(&state.input_map.mode[.Normal]);
     register_default_visual_actions(&state.input_map.mode[.Visual]);
 
     register_default_text_input_actions(&state.input_map.mode[.Normal]);
 
-    for arg in os.args[1:] {
-        buffer, err := core.new_file_buffer(context.allocator, arg, state.directory);
-        if err.type != .None {
-            log.error("Failed to create file buffer:", err);
-            continue;
+    core.register_editor_command(
+        &state.commands,
+        "nl.spacegirl.editor.core",
+        "New Scratch Buffer",
+        "Opens a new scratch buffer",
+        proc(state: ^State) {
+            buffer := core.new_virtual_file_buffer(context.allocator);
+            runtime.append(&state.buffers, buffer);
         }
+    )
+    core.register_editor_command(
+        &state.commands,
+        "nl.spacegirl.editor.core",
+        "Quit",
+        "Quits the application",
+        proc(state: ^State) {
+            state.should_close = true
+        }
+    )
 
+    {
+        cmds := core.query_editor_commands_by_group(&state.commands, "nl.spacegirl.editor.core", scratch_alloc);
+        log.info("List of commands:");
+        for cmd in cmds {
+            log.info(cmd.name, ":", cmd.description);
+        }
+    }
+
+    if len(os.args) > 1 {
+        for arg in os.args[1:] {
+            buffer, err := core.new_file_buffer(context.allocator, arg, state.directory);
+            if err.type != .None {
+                log.error("Failed to create file buffer:", err);
+                continue;
+            }
+
+            runtime.append(&state.buffers, buffer);
+        }
+    } else {
+        buffer := core.new_virtual_file_buffer(context.allocator);
         runtime.append(&state.buffers, buffer);
     }
 
@@ -1314,6 +1355,44 @@ main :: proc() {
                 return 1;
             }
         },
+        lua.L_Reg {
+            "query_command_group",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                group := lua.L_checkstring(L, 1);
+                cmds := core.query_editor_commands_by_group(&state.commands, string(group), scratch_alloc);
+
+                lua.newtable(L);
+                {
+                    for cmd, i in cmds {
+                        lua.newtable(L);
+                        {
+                            lua.pushstring(L, strings.clone_to_cstring(cmd.name, scratch_alloc));
+                            lua.setfield(L, -2, "name");
+
+                            lua.pushstring(L, strings.clone_to_cstring(cmd.description, scratch_alloc));
+                            lua.setfield(L, -2, "description");
+                        }
+                        lua.rawseti(L, -2, lua.Integer(i+1));
+                    }
+                }
+
+                return 1;
+            }
+        },
+        lua.L_Reg {
+            "run_command",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                group := lua.L_checkstring(L, 1);
+                name := lua.L_checkstring(L, 2);
+                core.run_command(&state, string(group), string(name));
+
+                return 1;
+            }
+        }
     };
     bbb = raw_data(editor_lib[:]);
 

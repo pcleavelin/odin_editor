@@ -46,6 +46,7 @@ close_window_and_free :: proc(state: ^State) {
 }
 
 LuaHookRef :: i32;
+EditorCommandList :: map[string][dynamic]EditorCommand;
 State :: struct {
     ctx: runtime.Context,
     L: ^lua.State,
@@ -76,11 +77,19 @@ State :: struct {
     input_map: InputMap,
     current_input_map: ^InputActions,
 
+    commands: EditorCommandList,
+
     plugins: [dynamic]plugin.Interface,
     plugin_vtable: plugin.Plugin,
     highlighters: map[string]plugin.OnColorBufferProc,
     hooks: map[plugin.Hook][dynamic]plugin.OnHookProc,
     lua_hooks: map[plugin.Hook][dynamic]LuaHookRef,
+}
+
+EditorCommand :: struct {
+    name: string,
+    description: string,
+    action: EditorAction,
 }
 
 current_buffer :: proc(state: ^State) -> ^FileBuffer {
@@ -142,7 +151,7 @@ new_input_map :: proc() -> InputMap {
     ti := runtime.type_info_base(type_info_of(Mode));
     if v, ok := ti.variant.(runtime.Type_Info_Enum); ok {
         for i in &v.values {
-            input_map.mode[(cast(^Mode)(&i))^] = new_input_actions();
+            input_map.mode[cast(Mode)i] = new_input_actions();
         }
     }
 
@@ -158,7 +167,7 @@ new_input_actions :: proc() -> InputActions {
     return input_actions;
 }
 delete_input_map :: proc(input_map: ^InputMap) {
-    for _, actions in &input_map.mode {
+    for _, &actions in &input_map.mode {
         delete_input_actions(&actions);
     }
     delete(input_map.mode);
@@ -233,3 +242,59 @@ register_ctrl_key_action_group :: proc(input_map: ^InputActions, key: plugin.Key
 
 register_key_action :: proc{register_plugin_key_action_single, register_key_action_single, register_key_action_group};
 register_ctrl_key_action :: proc{register_ctrl_key_action_single, register_ctrl_key_action_group};
+
+register_editor_command :: proc(command_list: ^EditorCommandList, command_group, name, description: string, action: EditorAction) {
+    if _, ok := command_list[command_group]; !ok {
+        command_list[command_group] = make([dynamic]EditorCommand);
+    }
+
+    runtime.append(&command_list[command_group], EditorCommand {
+        name = name,
+        description = description,
+        action = action,
+    });
+}
+
+query_editor_commands_by_name :: proc(command_list: ^EditorCommandList, name: string, allocator: runtime.Allocator) -> []EditorCommand {
+    context.allocator = allocator;
+    commands := make([dynamic]EditorCommand)
+
+    for group, list in command_list {
+        for cmd in list {
+            if cmd.name == name {
+                append(&commands, cmd);
+            }        
+        }
+    }
+
+    return commands[:];
+}
+
+query_editor_commands_by_group :: proc(command_list: ^EditorCommandList, name: string, allocator: runtime.Allocator) -> []EditorCommand {
+    context.allocator = allocator;
+    commands := make([dynamic]EditorCommand)
+
+    for group, list in command_list {
+        if group == name {
+            for cmd in list {
+                append(&commands, cmd);
+            }
+        }
+    }
+
+    return commands[:];
+}
+
+run_command :: proc(state: ^State, group: string, name: string) {
+    if cmds, ok := state.commands[group]; ok {
+        for cmd in cmds {
+            if cmd.name == name {
+                log.info("Running command", group, name);
+                cmd.action(state);
+                return;
+            }
+        }
+    }
+
+    log.error("no command", group, name);
+}
