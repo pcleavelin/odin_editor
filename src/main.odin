@@ -182,12 +182,13 @@ register_default_visual_actions :: proc(input_map: ^core.InputActions) {
         state.current_input_map = &state.input_map.mode[.Normal];
 
         core.current_buffer(state).selection = nil;
+        core.update_file_buffer_scroll(core.current_buffer(state))
     }, "exit visual mode");
 
     // Cursor Movement
     {
         core.register_key_action(input_map, .W, proc(state: ^State) {
-            sel_cur := core.current_buffer(state).selection.?;
+            sel_cur := &(core.current_buffer(state).selection.?);
 
             core.move_cursor_forward_start_of_word(core.current_buffer(state), cursor = &sel_cur.end);
         }, "move forward one word");
@@ -235,6 +236,20 @@ register_default_visual_actions :: proc(input_map: ^core.InputActions) {
             core.scroll_file_buffer(core.current_buffer(state), .Down, cursor = &sel_cur.end);
         }, "scroll buffer up");
     }
+
+    // Text Modification
+    {
+        core.register_key_action(input_map, .D, proc(state: ^State) {
+            sel_cur := &(core.current_buffer(state).selection.?);
+
+            core.delete_content(core.current_buffer(state), sel_cur);
+
+            state.mode = .Normal
+            state.current_input_map = &state.input_map.mode[.Normal];
+            core.current_buffer(state).selection = nil;
+            core.update_file_buffer_scroll(core.current_buffer(state))
+        }, "delete selection");
+    }
 }
 
 register_default_text_input_actions :: proc(input_map: ^core.InputActions) {
@@ -253,7 +268,6 @@ register_default_text_input_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .O, proc(state: ^State) {
         core.move_cursor_end_of_line(core.current_buffer(state), false);
         core.insert_content(core.current_buffer(state), []u8{'\n'});
-        core.move_cursor_down(core.current_buffer(state));
         state.mode = .Insert;
 
         sdl2.StartTextInput();
@@ -1023,6 +1037,9 @@ lua_ui_flags :: proc(L: ^lua.State, index: i32) -> (bit_set[ui.Flag], bool) {
 }
 
 main :: proc() {
+    _command_arena: mem.Arena
+    mem.arena_init(&_command_arena, make([]u8, 1024*1024));
+
     state = State {
         ctx = context,
         screen_width = 640,
@@ -1031,6 +1048,7 @@ main :: proc() {
         source_font_height = 16,
         input_map = core.new_input_map(),
         commands = make(core.EditorCommandList),
+        command_arena = mem.arena_allocator(&_command_arena),
 
         window = nil,
         directory = os.get_current_directory(),
@@ -1042,9 +1060,28 @@ main :: proc() {
         log_buffer = core.new_virtual_file_buffer(context.allocator),
     };
 
+    // TODO: please move somewhere else
+    {
+        ti := runtime.type_info_base(type_info_of(plugin.Hook));
+        if v, ok := ti.variant.(runtime.Type_Info_Enum); ok {
+            for i in &v.values {
+                state.hooks[cast(plugin.Hook)i] = make([dynamic]plugin.OnHookProc);
+            }
+        }
+    }
+    {
+        ti := runtime.type_info_base(type_info_of(plugin.Hook));
+        if v, ok := ti.variant.(runtime.Type_Info_Enum); ok {
+            for i in &v.values {
+                state.lua_hooks[cast(plugin.Hook)i] = make([dynamic]core.LuaHookRef);
+            }
+        }
+    }
+
     context.logger = core.new_logger(&state.log_buffer);
     state.ctx = context;
 
+    // TODO: don't use this
     mem.scratch_allocator_init(&scratch, 1024*1024);
     scratch_alloc = mem.scratch_allocator(&scratch);
 
@@ -1067,20 +1104,37 @@ main :: proc() {
     core.register_editor_command(
         &state.commands,
         "nl.spacegirl.editor.core",
+        "Open File",
+        "Opens a file in a new buffer",
+        proc(state: ^State) {
+            log.info("open file args:");
+
+            Args :: struct {
+                file_path: string
+            }
+
+            if args, ok := core.attempt_read_command_args(Args, state.command_args[:]); ok {
+                log.info("attempting to open file", args.file_path)
+
+                buffer, err := core.new_file_buffer(context.allocator, args.file_path, state.directory);
+                if err.type != .None {
+                    log.error("Failed to create file buffer:", err);
+                    return;
+                }
+
+                runtime.append(&state.buffers, buffer);
+            }
+        }
+    )
+    core.register_editor_command(
+        &state.commands,
+        "nl.spacegirl.editor.core",
         "Quit",
         "Quits the application",
         proc(state: ^State) {
             state.should_close = true
         }
     )
-
-    {
-        cmds := core.query_editor_commands_by_group(&state.commands, "nl.spacegirl.editor.core", scratch_alloc);
-        log.info("List of commands:");
-        for cmd in cmds {
-            log.info(cmd.name, ":", cmd.description);
-        }
-    }
 
     if len(os.args) > 1 {
         for arg in os.args[1:] {
@@ -2155,6 +2209,27 @@ main :: proc() {
                                     runtime.clear(&buffer.input_buffer);
 
                                     sdl2.StopTextInput();
+                                }
+                                case .TAB: {
+                                    // TODO: change this to insert a tab character
+                                    for _ in 0..<4 {
+                                        append(&buffer.input_buffer, ' ');
+
+                                        for hook_proc in state.hooks[plugin.Hook.BufferInput] {
+                                            hook_proc(state.plugin_vtable, buffer);
+                                        }
+                                        for hook_ref in state.lua_hooks[plugin.Hook.BufferInput] {
+                                            lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(hook_ref));
+                                            if lua.pcall(state.L, 0, 0, 0) != i32(lua.OK) {
+                                                err := lua.tostring(state.L, lua.gettop(state.L));
+                                                lua.pop(state.L, lua.gettop(state.L));
+
+                                                log.error(err);
+                                            } else {
+                                                lua.pop(state.L, lua.gettop(state.L));
+                                            }
+                                        }
+                                    }
                                 }
                                 case .BACKSPACE: {
                                     core.delete_content(buffer, 1);

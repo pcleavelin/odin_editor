@@ -1,20 +1,20 @@
-- Stack Like Allocator (for cross-frame temp data)
-
 - Undo/Redo
     - Edit History Tree
 - Finish selections
     - Guarantee that start and end are always ordered
     - Add in text actions
         - Yank
-        - Delete
+        - [x] Delete
         - Change
+- Virtual Whitespace
+    - Allow any-sized tabs
 - Modify input system to allow for keybinds that take input
     - Vim's f and F movement commands
     - Vim's r command
 - Command Search and Execution
     - Palette based UI?
-    - Registering Plugin Commands that can be run in palette and via other plugins
-        - A way to query these commands by-plugin
+    - [ ] Registering Plugin Commands that can be run in palette and via other plugins
+        - [x] A way to query these commands by-plugin
 - Re-write the UI (again)
 - Re-do plugin system
     - Potentially have a C# plugins system? Use it instead of Lua? (probably not)

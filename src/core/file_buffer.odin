@@ -1,6 +1,7 @@
 package core;
 
 import "core:os"
+import "core:log"
 import "core:path/filepath"
 import "core:mem"
 import "core:fmt"
@@ -644,6 +645,20 @@ new_selection_span :: proc(start: Cursor, end: Cursor) -> Selection {
 
 new_selection :: proc{new_selection_zero_length, new_selection_span};
 
+swap_selections :: proc(selection: Selection) -> (swapped: Selection) {
+    swapped = selection
+
+    if selection.start.index.slice_index > selection.end.index.slice_index ||
+        (selection.start.index.slice_index == selection.end.index.slice_index
+            && selection.start.index.content_index > selection.end.index.content_index)
+    {
+        swapped.start = selection.end
+        swapped.end = selection.start
+    }
+
+    return swapped
+}
+
 new_virtual_file_buffer :: proc(allocator: mem.Allocator) -> FileBuffer {
     context.allocator = allocator;
     width := 256;
@@ -937,16 +952,22 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, sho
         // NOTE: this requires transparent background color because it renders after the text
         // and its after the text because the line length needs to be calculated
         if state.mode == .Visual && current_buffer(state) == buffer {
+            selection := swap_selections(buffer.selection.?)
+            // selection := buffer.selection.?
+
             sel_x := x + padding;
             width: int
 
-            if begin+j >= buffer.selection.?.start.line && begin+j <= buffer.selection.?.end.line {
-                if begin+j == buffer.selection.?.end.line {
-                    width = buffer.selection.?.end.col * state.source_font_width;
+            if begin+j >= selection.start.line && begin+j <= selection.end.line {
+                if begin+j == selection.start.line && selection.start.line == selection.end.line {
+                    width = (selection.end.col - selection.start.col) * state.source_font_width;
+                    sel_x += selection.start.col * state.source_font_width;
+                } else if begin+j == selection.end.line {
+                    width = selection.end.col * state.source_font_width;
                 } else {
-                    if begin+j == buffer.selection.?.start.line {
-                        width = (line_length - buffer.selection.?.start.col) * state.source_font_width;
-                        sel_x += buffer.selection.?.start.col * state.source_font_width;
+                    if begin+j == selection.start.line {
+                        width = (line_length - selection.start.col) * state.source_font_width;
+                        sel_x += selection.start.col * state.source_font_width;
                     } else {
                         width = line_length * state.source_font_width;
                     }
@@ -1027,22 +1048,44 @@ insert_content :: proc(buffer: ^FileBuffer, to_be_inserted: []u8, append_to_end:
 }
 
 // TODO: potentially add FileBufferIndex as parameter
-split_content_slice :: proc(buffer: ^FileBuffer) {
-    if buffer.cursor.index.content_index == 0 {
+split_content_slice_from_cursor :: proc(buffer: ^FileBuffer, cursor: ^Cursor) -> (did_split: bool) {
+    if cursor.index.content_index == 0 {
         return;
     }
 
-    end_slice := buffer.content_slices[buffer.cursor.index.slice_index][buffer.cursor.index.content_index:];
-    buffer.content_slices[buffer.cursor.index.slice_index] = buffer.content_slices[buffer.cursor.index.slice_index][:buffer.cursor.index.content_index];
+    end_slice := buffer.content_slices[cursor.index.slice_index][cursor.index.content_index:];
+    buffer.content_slices[cursor.index.slice_index] = buffer.content_slices[cursor.index.slice_index][:cursor.index.content_index];
 
-    inject_at(&buffer.content_slices, buffer.cursor.index.slice_index+1, end_slice);
+    inject_at(&buffer.content_slices, cursor.index.slice_index+1, end_slice);
 
     // TODO: maybe move this out of this function
-    buffer.cursor.index.slice_index += 1;
-    buffer.cursor.index.content_index = 0;
+    cursor.index.slice_index += 1;
+    cursor.index.content_index = 0;
+
+    return true
 }
 
-delete_content :: proc(buffer: ^FileBuffer, amount: int) {
+split_content_slice_from_selection :: proc(buffer: ^FileBuffer, selection: ^Selection) {
+    // TODO: swap selections
+
+    log.info("start:", selection.start, "- end:", selection.end);
+
+    // move the end cursor forward one (we want the splitting to be exclusive, not inclusive)
+    it := new_file_buffer_iter_with_cursor(buffer, selection.end);
+    iterate_file_buffer(&it);
+    selection.end = it.cursor;
+
+    split_content_slice_from_cursor(buffer, &selection.end);
+    if split_content_slice_from_cursor(buffer, &selection.start) {
+        selection.end.index.slice_index += 1;
+    }
+
+    log.info("start:", selection.start, "- end:", selection.end);
+}
+
+split_content_slice :: proc{split_content_slice_from_cursor, split_content_slice_from_selection};
+
+delete_content_from_buffer_cursor :: proc(buffer: ^FileBuffer, amount: int) {
     if amount <= len(buffer.input_buffer) {
         runtime.resize(&buffer.input_buffer, len(buffer.input_buffer)-amount);
     } else {
@@ -1053,7 +1096,7 @@ delete_content :: proc(buffer: ^FileBuffer, amount: int) {
             return;
         }
 
-        split_content_slice(buffer);
+        split_content_slice(buffer, &buffer.cursor);
 
         it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
 
@@ -1085,4 +1128,28 @@ delete_content :: proc(buffer: ^FileBuffer, amount: int) {
         buffer.cursor = it.cursor;
     }
 }
+
+delete_content_from_selection :: proc(buffer: ^FileBuffer, selection: ^Selection) {
+    assert(len(buffer.content_slices) >= 1);
+
+    selection^ = swap_selections(selection^)
+
+    split_content_slice(buffer, selection);
+
+    it := new_file_buffer_iter_with_cursor(buffer, selection.start);
+
+    // go back one (to be at the end of the content slice)
+    iterate_file_buffer_reverse(&it);
+
+    for _ in selection.start.index.slice_index..<selection.end.index.slice_index {
+        runtime.ordered_remove(&buffer.content_slices, selection.start.index.slice_index);
+    }
+
+    if !it.hit_end {
+        iterate_file_buffer(&it);
+    }
+    buffer.cursor = it.cursor;
+}
+
+delete_content :: proc{delete_content_from_buffer_cursor, delete_content_from_selection};
 

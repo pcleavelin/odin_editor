@@ -1,6 +1,7 @@
 package core
 
 import "base:runtime"
+import "base:intrinsics"
 import "core:reflect"
 import "core:fmt"
 import "core:log"
@@ -78,6 +79,8 @@ State :: struct {
     current_input_map: ^InputActions,
 
     commands: EditorCommandList,
+    command_arena: runtime.Allocator,
+    command_args: [dynamic]EditorCommandArgument,
 
     plugins: [dynamic]plugin.Interface,
     plugin_vtable: plugin.Plugin,
@@ -90,6 +93,16 @@ EditorCommand :: struct {
     name: string,
     description: string,
     action: EditorAction,
+}
+
+EditorCommandExec :: struct {
+    num_args: int,
+    args: [dynamic]EditorCommandArgument,
+}
+
+EditorCommandArgument :: union {
+    string,
+    i32
 }
 
 current_buffer :: proc(state: ^State) -> ^FileBuffer {
@@ -123,6 +136,7 @@ add_hook :: proc(state: ^State, hook: plugin.Hook, hook_proc: plugin.OnHookProc)
 add_lua_hook :: proc(state: ^State, hook: plugin.Hook, hook_ref: LuaHookRef) {
     if _, exists := state.lua_hooks[hook]; !exists {
         state.lua_hooks[hook] = make([dynamic]LuaHookRef);
+        log.info("added lua hook", hook)
     }
 
     runtime.append(&state.lua_hooks[hook], hook_ref);
@@ -289,7 +303,26 @@ query_editor_commands_by_group :: proc(command_list: ^EditorCommandList, name: s
     return commands[:];
 }
 
+push_command_arg :: proc(state: ^State, command_arg: EditorCommandArgument) {
+    context.allocator = state.command_arena;
+
+    if state.command_args == nil {
+        state.command_args = make([dynamic]EditorCommandArgument);
+    }
+
+    append(&state.command_args, command_arg)
+}
+
 run_command :: proc(state: ^State, group: string, name: string) {
+    if state.command_args == nil {
+        state.command_args = make([dynamic]EditorCommandArgument);
+    }
+
+    defer {
+        state.command_args = nil
+        runtime.free_all(state.command_arena)
+    }
+
     if cmds, ok := state.commands[group]; ok {
         for cmd in cmds {
             if cmd.name == name {
@@ -301,4 +334,56 @@ run_command :: proc(state: ^State, group: string, name: string) {
     }
 
     log.error("no command", group, name);
+}
+
+attempt_read_command_args :: proc($T: typeid, args: []EditorCommandArgument) -> (value: T, ok: bool)
+where intrinsics.type_is_struct(T) {
+    ti := runtime.type_info_base(type_info_of(T));
+
+    #partial switch v in ti.variant {
+        case runtime.Type_Info_Struct:
+        {
+            if int(v.field_count) != len(args) {
+                ok = false
+                log.error("invalid number of arguments", len(args), ", expected", v.field_count);
+                return
+            } 
+
+            for arg, i in args {
+                switch varg in arg {
+                    case string:
+                    {
+                        if _, is_string := v.types[i].variant.(runtime.Type_Info_String); !is_string {
+                            ok = false
+                            log.error("invalid argument #", i, "given to command, found string, expected", v.types[i].variant)
+                            return
+                        }
+
+                        value_string: ^string = transmute(^string)(uintptr(&value) + v.offsets[i])
+                        value_string^ = varg
+                    }
+                    case i32:
+                    {
+
+                        if _, is_integer := v.types[i].variant.(runtime.Type_Info_Integer); !is_integer {
+                            ok = false
+                            log.error("invalid argument #", i, "given to command, unexpected integer, expected", v.types[i].variant)
+                            return
+                        }
+
+                        value_i32: ^i32 = transmute(^i32)(uintptr(&value) + v.offsets[i])
+                        value_i32^ = varg
+                    }
+                }
+            }
+        }
+        case:
+        {
+            return
+        }
+    }
+
+    ok = true
+
+    return
 }

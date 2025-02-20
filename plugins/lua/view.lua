@@ -25,8 +25,8 @@ local MovingTabInBetween = false
 local LastMouseX = 0
 local LastMouseY = 0
 
-function buffer_list_iter()
-    local idx = 0
+function buffer_list_iter(start)
+    local idx = start 
     return function ()
         buffer_info = Editor.buffer_info_from_index(idx)
         idx = idx + 1
@@ -46,6 +46,30 @@ function centered(ctx, label, axis, width, height, body)
             UI.spacer(ctx, "bottom spacer")
         UI.pop_parent(ctx)
         UI.spacer(ctx, "right spacer")
+    UI.pop_parent(ctx)
+end
+
+function list_iter(start, list)
+    local idx = start 
+
+    return function()
+        local value = list[idx]
+        idx = idx + 1
+        return value, idx-1
+    end
+end
+
+function list(ctx, label, selection_index, list, render_func)
+    list_with_iter(ctx, label, selection_index, list_iter(selection_index, list), render_func)
+end
+
+function list_with_iter(ctx, label, selection_index, list_iter, render_func)
+    local num_items = 10
+
+    UI.push_parent(ctx, UI.push_rect(ctx, label, true, true, UI.Vertical, UI.Fill, UI.Fill))
+        for data, i in list_iter do
+            render_func(ctx, data, i == selection_index)
+        end
     UI.pop_parent(ctx)
 end
 
@@ -97,7 +121,7 @@ function ui_sidemenu(ctx)
         UI.pop_parent(ctx)
         UI.push_rect(ctx, "padded bottom open files", false, false, UI.Horizontal, UI.Fill, UI.Exact(8))
 
-        for buffer_info, i in buffer_list_iter() do
+        for buffer_info, i in buffer_list_iter(0) do
             button_container = UI.push_rect(ctx, "button container"..i, false, false, UI.Horizontal, UI.Fill, UI.ChildrenSum)
             UI.push_parent(ctx, button_container)
                 flags = {"Clickable", "Hoverable", "DrawText"}
@@ -309,19 +333,32 @@ function render_buffer_search(ctx)
         UI.push_parent(ctx, UI.push_floating(ctx, "buffer search canvas", 0, 0))
             centered(ctx, "buffer search window", UI.Horizontal, UI.PercentOfParent(window_percent), UI.PercentOfParent(window_percent), (
                 function ()
-                    UI.push_parent(ctx, UI.push_rect(ctx, "window", true, true, UI.Horizontal, UI.Fill, UI.Fill))
-                        UI.push_parent(ctx, UI.push_rect(ctx, "buffer list", false, false, UI.Vertical, UI.Fill, UI.Fill))
-                            for buffer_info, i in buffer_list_iter() do
-                                flags = {"DrawText"}
+                    list_with_iter(ctx, "buffer list", BufferSearchIndex, buffer_list_iter(BufferSearchIndex),
+                        function(ctx, buffer_info, is_selected)
+                            flags = {"DrawText"}
 
-                                if i == BufferSearchIndex then
-                                    table.insert(flags, 1, "DrawBorder")
-                                end
-                                interaction = UI.advanced_button(ctx, " "..buffer_info.file_path.." ", flags, UI.Fill, UI.FitText)
+                            if is_selected then
+                                table.insert(flags, 1, "DrawBorder")
                             end
-                        UI.pop_parent(ctx)
-                        UI.buffer(ctx, BufferSearchIndex)
-                    UI.pop_parent(ctx)
+
+                            interaction = UI.advanced_button(ctx, " "..buffer_info.file_path.." ", flags, UI.Fill, UI.FitText)
+                        end
+                    )
+                    UI.buffer(ctx, BufferSearchIndex)
+
+                    -- UI.push_parent(ctx, UI.push_rect(ctx, "window", true, true, UI.Horizontal, UI.Fill, UI.Fill))
+                    --     UI.push_parent(ctx, UI.push_rect(ctx, "buffer list", false, false, UI.Vertical, UI.Fill, UI.Fill))
+                    --         for buffer_info, i in buffer_list_iter() do
+                    --             flags = {"DrawText"}
+                    --
+                    --             if i == BufferSearchIndex then
+                    --                 table.insert(flags, 1, "DrawBorder")
+                    --             end
+                    --             interaction = UI.advanced_button(ctx, " "..buffer_info.file_path.." ", flags, UI.Fill, UI.FitText)
+                    --         end
+                    --     UI.pop_parent(ctx)
+                    --     UI.buffer(ctx, BufferSearchIndex)
+                    -- UI.pop_parent(ctx)
                 end
             ))
         UI.pop_parent(ctx)
@@ -346,23 +383,21 @@ function render_command_search(ctx)
         end
 
         UI.push_parent(ctx, UI.push_floating(ctx, "buffer search canvas", 0, 0))
-            centered(ctx, "command search window", UI.Horizontal, UI.PercentOfParent(window_percent_width), UI.PercentOfParent(window_percent_height), (
+            centered(ctx, "command search window", UI.Horizontal, UI.PercentOfParent(window_percent_width), UI.PercentOfParent(window_percent_height),
                 function ()
-                    UI.push_parent(ctx, UI.push_rect(ctx, "window", true, true, UI.Horizontal, UI.Fill, UI.Fill))
-                        UI.push_parent(ctx, UI.push_rect(ctx, "command list", false, false, UI.Vertical, UI.Fill, UI.Fill))
-                            -- local commands = Editor.query_command_group("nl.spacegirl.editor.core")
-                            for i, cmd in ipairs(CommandList) do
-                                flags = {"DrawText"}
+                    list(ctx, "command list", CommandSearchIndex, CommandList,
+                        function(ctx, cmd, is_selected)
+                            flags = {"DrawText"}
 
-                                if i == CommandSearchIndex then
-                                    table.insert(flags, 1, "DrawBorder")
-                                end
-                                interaction = UI.advanced_button(ctx, " "..cmd.name..": "..cmd.description.." ", flags, UI.Fill, UI.FitText)
+                            if is_selected then
+                                table.insert(flags, 1, "DrawBorder")
                             end
-                        UI.pop_parent(ctx)
-                    UI.pop_parent(ctx)
+
+                            interaction = UI.advanced_button(ctx, " "..cmd.name..": "..cmd.description.." ", flags, UI.Fill, UI.FitText)
+                        end
+                    )
                 end
-            ))
+            )
         UI.pop_parent(ctx)
     end
 end
@@ -416,7 +451,7 @@ function OnInit()
             end
         end)},
         {Editor.Key.Space, "", {
-            {Editor.Key.Backtick, "Command Palette",
+            {Editor.Key.P, "Command Palette",
                 (function ()
                     CommandSearchOpen = true
                     CommandSearchIndex = 1
