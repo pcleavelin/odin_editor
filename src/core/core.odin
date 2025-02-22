@@ -27,6 +27,10 @@ Window :: struct {
 
     user_data: rawptr,
 }
+NewWindow :: struct {
+    input_map: InputActions,
+    lua_draw_proc: i32,
+}
 request_window_close :: proc(state: ^State) {
     state.should_close_window = true;
 }
@@ -41,6 +45,11 @@ close_window_and_free :: proc(state: ^State) {
         free(state.window);
 
         state.window = nil;
+    }
+
+    if window, ok := &state.new_window.(NewWindow); ok {
+        delete_input_actions(&window.input_map);
+        state.new_window = nil
     }
 
     state.current_input_map = &state.input_map.mode[.Normal];
@@ -73,6 +82,7 @@ State :: struct {
     log_buffer: FileBuffer,
 
     window: ^Window,
+    new_window: Maybe(NewWindow),
     should_close_window: bool,
 
     input_map: InputMap,
@@ -83,6 +93,7 @@ State :: struct {
     command_args: [dynamic]EditorCommandArgument,
 
     plugins: [dynamic]plugin.Interface,
+    new_plugins: [dynamic]plugin.NewInterface,
     plugin_vtable: plugin.Plugin,
     highlighters: map[string]plugin.OnColorBufferProc,
     hooks: map[plugin.Hook][dynamic]plugin.OnHookProc,
@@ -281,7 +292,7 @@ query_editor_commands_by_name :: proc(command_list: ^EditorCommandList, name: st
         for cmd in list {
             if cmd.name == name {
                 append(&commands, cmd);
-            }        
+            }
         }
     }
 
@@ -347,7 +358,7 @@ where intrinsics.type_is_struct(T) {
                 ok = false
                 log.error("invalid number of arguments", len(args), ", expected", v.field_count);
                 return
-            } 
+            }
 
             for arg, i in args {
                 switch varg in arg {

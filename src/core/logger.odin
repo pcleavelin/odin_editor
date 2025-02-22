@@ -1,6 +1,7 @@
 package core
 
-import "core:runtime"
+import "base:runtime"
+
 import "core:reflect"
 import "core:fmt"
 import "core:log"

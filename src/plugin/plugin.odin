@@ -16,6 +16,12 @@ Interface :: struct {
     on_draw: OnDrawProc,
 }
 
+NewInterface :: struct {
+    name: string,
+    version: string,
+    namespace: string,
+}
+
 BufferIndex :: struct {
     slice_index: int,
     content_index: int,

@@ -1,3 +1,9 @@
+local M = {}
+
+M.version = "0.1"
+M.name = "Legacy_View"
+M.namespace = "nl_spacegirl_plugin_Default"
+
 local BufferSearchOpen = false
 local BufferSearchOpenElapsed = 0
 
@@ -235,7 +241,7 @@ function ui_code_view(ctx, code_view_index)
     return code_view_interaction
 end
 
-function render_ui_window(ctx)
+function M.render_ui_window(ctx)
     current_buffer_index = Editor.get_current_buffer_index()
     x,y = UI.get_mouse_pos(ctx)
     delta_x = LastMouseX - x
@@ -307,7 +313,7 @@ function render_ui_window(ctx)
         end
     end
 
-    render_buffer_search(ctx)
+    -- render_buffer_search(ctx)
     render_command_search(ctx)
     render_log_window(ctx)
 
@@ -315,24 +321,47 @@ function render_ui_window(ctx)
     LastMouseY = y
 end
 
-function render_buffer_search(ctx)
-    if BufferSearchOpen or BufferSearchOpenElapsed > 0 then
-        if BufferSearchOpen and BufferSearchOpenElapsed < numFrames then
-            BufferSearchOpenElapsed = BufferSearchOpenElapsed + 1
-        elseif not BufferSearchOpen and BufferSearchOpenElapsed > 0 then
-            BufferSearchOpenElapsed = BufferSearchOpenElapsed - 1
-        end
-    end
+function M.open_buffer_search_window(ctx)
+    -- if BufferSearchOpen or BufferSearchOpenElapsed > 0 then
+    --     if BufferSearchOpen and BufferSearchOpenElapsed < numFrames then
+    --         BufferSearchOpenElapsed = BufferSearchOpenElapsed + 1
+    --     elseif not BufferSearchOpen and BufferSearchOpenElapsed > 0 then
+    --         BufferSearchOpenElapsed = BufferSearchOpenElapsed - 1
+    --     end
+    -- end
 
-    if BufferSearchOpen or BufferSearchOpenElapsed > 0 then
-        window_percent = 75
-        if BufferSearchOpenElapsed > 0 then
-            window_percent = ((BufferSearchOpenElapsed/numFrames) * 75)
-        end
+    -- if BufferSearchOpen or BufferSearchOpenElapsed > 0 then
+    --     window_percent = 75
+    --     if BufferSearchOpenElapsed > 0 then
+    --         window_percent = ((BufferSearchOpenElapsed/numFrames) * 75)
+    --     end
 
-        UI.push_parent(ctx, UI.push_floating(ctx, "buffer search canvas", 0, 0))
-            centered(ctx, "buffer search window", UI.Horizontal, UI.PercentOfParent(window_percent), UI.PercentOfParent(window_percent), (
-                function ()
+    local input = {
+        {Editor.Key.Escape, "Close Window", (
+            function ()
+                Editor.request_window_close()
+                BufferSearchOpen = false
+            end
+        )},
+        {Editor.Key.Enter, "Switch to Buffer", (
+            function ()
+                buffer_info = Editor.buffer_info_from_index(BufferSearchIndex)
+                add_buffer_to_code_view(ActiveCodeView, buffer_info.file_path, BufferSearchIndex)
+
+                Editor.set_current_buffer_from_index(BufferSearchIndex)
+                Editor.request_window_close()
+                BufferSearchOpen = false
+            end
+        )},
+        -- TODO: don't scroll past buffers
+        {Editor.Key.K, "Move Selection Up", (function () BufferSearchIndex = BufferSearchIndex - 1 end)},
+        {Editor.Key.J, "Move Selection Down", (function () BufferSearchIndex = BufferSearchIndex + 1 end)},
+    }
+
+    Editor.spawn_floating_window(input, function(ctx)
+        -- UI.push_parent(ctx, UI.push_floating(ctx, "buffer search canvas", 0, 0))
+            -- centered(ctx, "buffer search window", UI.Horizontal, UI.PercentOfParent(window_percent), UI.PercentOfParent(window_percent), (
+            --     function ()
                     list_with_iter(ctx, "buffer list", BufferSearchIndex, buffer_list_iter(BufferSearchIndex),
                         function(ctx, buffer_info, is_selected)
                             flags = {"DrawText"}
@@ -359,10 +388,11 @@ function render_buffer_search(ctx)
                     --     UI.pop_parent(ctx)
                     --     UI.buffer(ctx, BufferSearchIndex)
                     -- UI.pop_parent(ctx)
-                end
-            ))
-        UI.pop_parent(ctx)
-    end
+                -- end
+            -- ))
+        -- UI.pop_parent(ctx)
+    end)
+    -- end
 end
 
 function render_command_search(ctx)
@@ -437,8 +467,9 @@ end
 function handle_buffer_input()
 end
 
-function OnInit()
-    Editor.log("Main View plugin initialized")
+function M.OnLoad()
+    Editor.log("Legacy View plugin loaded")
+
     Editor.register_key_group({
         {Editor.Key.Backtick, "Open Editor Logs", (function ()
             if not LogWindowOpen then
@@ -481,36 +512,12 @@ function OnInit()
                     {Editor.Key.J, "Move Selection Down", (function () CommandSearchIndex = CommandSearchIndex + 1 end)},
                 }
             },
-            {Editor.Key.B, "Buffer Search", (
-                function ()
-                    BufferSearchOpen = true
-                    BufferSearchIndex = 0
-                end
-            ),
-            {
-                {Editor.Key.Escape, "Close Window", (
-                    function ()
-                        Editor.request_window_close()
-                        BufferSearchOpen = false
-                    end
-                )},
-                {Editor.Key.Enter, "Switch to Buffer", (
-                    function ()
-                        buffer_info = Editor.buffer_info_from_index(BufferSearchIndex)
-                        add_buffer_to_code_view(ActiveCodeView, buffer_info.file_path, BufferSearchIndex)
-
-                        Editor.set_current_buffer_from_index(BufferSearchIndex)
-                        Editor.request_window_close()
-                        BufferSearchOpen = false
-                    end
-                )},
-                -- TODO: don't scroll past buffers
-                {Editor.Key.K, "Move Selection Up", (function () BufferSearchIndex = BufferSearchIndex - 1 end)},
-                {Editor.Key.J, "Move Selection Down", (function () BufferSearchIndex = BufferSearchIndex + 1 end)},
-            }}
+            {Editor.Key.B, "Buffer Search", M.open_buffer_search_window}
         }}
     })
 
     Editor.register_hook(Editor.Hook.OnDraw, render_ui_window)
     Editor.register_hook(Editor.Hook.OnBufferInput, handle_buffer_input)
 end
+
+return M

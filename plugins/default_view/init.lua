@@ -1,0 +1,38 @@
+local M = {}
+
+M.version = "0.1"
+M.name = "Default_View"
+M.namespace = "nl_spacegirl_plugin_Default"
+
+function M.open_file_search_window()
+    local input = {
+        {Editor.Key.Enter, "Open File", function() Editor.log("this should open a file") end}
+    }
+
+    Editor.spawn_floating_window(input, function(ctx)
+        UI.label(ctx, "eventually this will be a window where you can search through a bunch of files 1")
+        UI.label(ctx, "eventually this will be a window where you can search through a bunch of files 2")
+        UI.label(ctx, "eventually this will be a window where you can search through a bunch of files 3")
+        UI.label(ctx, "eventually this will be a window where you can search through a bunch of files 4")
+        UI.label(ctx, "eventually this will be a window where you can search through a bunch of files 5")
+        UI.label(ctx, "eventually this will be a window where you can search through a bunch of files 6")
+        UI.label(ctx, "eventually this will be a window where you can search through a bunch of files 7")
+    end)
+end
+
+function M.OnLoad()
+    Editor.log("default view loaded")
+    Editor.log(nl_spacegirl_plugin_Default_Legacy_View['namespace'])
+
+    Editor.register_key_group({
+        {Editor.Key.Space, "", {
+            {Editor.Key.F, "Open File", M.open_file_search_window}
+        }}
+    })
+end
+
+function M.view_render(cx)
+    UI.label(cx, "Look its a me, a plugin")
+end
+
+return M

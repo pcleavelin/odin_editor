@@ -1,11 +1,16 @@
+- Get input maps working with `spawn_floating_window`
+
+
+
+- Save/Load files
 - Undo/Redo
     - Edit History Tree
 - Finish selections
-    - Guarantee that start and end are always ordered
+    - [x] Guarantee that start and end are always ordered
     - Add in text actions
         - Yank
         - [x] Delete
-        - Change
+        - [x] Change
 - Virtual Whitespace
     - Allow any-sized tabs
 - Modify input system to allow for keybinds that take input
@@ -16,13 +21,16 @@
     - [ ] Registering Plugin Commands that can be run in palette and via other plugins
         - [x] A way to query these commands by-plugin
 - Re-write the UI (again)
+    - Separate ui components from layout
 - Re-do plugin system
     - Potentially have a C# plugins system? Use it instead of Lua? (probably not)
     - Re-do dylib plugin system
     - Re-do Lua plugin system
-    - Define ultra-core common API
-        - 3rd-party core UI modifications must abide by this API (for example, another plugin must be able to open a file and have it be focused)
+    - Core Events ~Define ultra-core common API~
+        - ~3rd-party core UI modifications must abide by this API (for example, another plugin must be able to open a file and have it be focused)~
+        - e.g. Open File, currently focused UI panel recieves event
     - Ability to probe core for installed plugins and their version
+    - Plugins can register to be UI components that the user can define where they are laid out
 - Persist end of line cursor position
 - Generate key mappings from the plugin.Key enum
 - Fix jumping forward a word jumping past consecutive brackets

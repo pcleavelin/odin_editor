@@ -12,8 +12,8 @@ import "core:mem"
 import "core:slice"
 import "vendor:sdl2"
 import "vendor:sdl2/ttf"
-import lua "vendor:lua/5.4"
 
+import "lua"
 import "core"
 import "theme"
 import "ui"
@@ -243,12 +243,24 @@ register_default_visual_actions :: proc(input_map: ^core.InputActions) {
             sel_cur := &(core.current_buffer(state).selection.?);
 
             core.delete_content(core.current_buffer(state), sel_cur);
+            core.current_buffer(state).selection = nil;
+            core.update_file_buffer_scroll(core.current_buffer(state))
 
             state.mode = .Normal
             state.current_input_map = &state.input_map.mode[.Normal];
+        }, "delete selection");
+
+        core.register_key_action(input_map, .C, proc(state: ^State) {
+            sel_cur := &(core.current_buffer(state).selection.?);
+
+            core.delete_content(core.current_buffer(state), sel_cur);
             core.current_buffer(state).selection = nil;
             core.update_file_buffer_scroll(core.current_buffer(state))
-        }, "delete selection");
+
+            state.mode = .Insert
+            state.current_input_map = &state.input_map.mode[.Normal];
+            sdl2.StartTextInput();
+        }, "change selection");
     }
 }
 
@@ -1007,35 +1019,6 @@ init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {
     };
 }
 
-lua_ui_flags :: proc(L: ^lua.State, index: i32) -> (bit_set[ui.Flag], bool) {
-    lua.L_checktype(L, index, i32(lua.TTABLE));
-    lua.len(L, index);
-    array_len := lua.tointeger(L, -1);
-    lua.pop(L, 1);
-
-    flags: bit_set[ui.Flag]
-
-    for i in 1..=array_len {
-        lua.rawgeti(L, index, i);
-        defer lua.pop(L, 1);
-
-        flag := lua.tostring(L, -1);
-        switch flag {
-            case "Clickable": flags |= {.Clickable}
-            case "Hoverable": flags |= {.Hoverable}
-            case "Scrollable": flags |= {.Scrollable}
-            case "DrawText": flags |= {.DrawText}
-            case "DrawBorder": flags |= {.DrawBorder}
-            case "DrawBackground": flags |= {.DrawBackground}
-            case "RoundedBorder": flags |= {.RoundedBorder}
-            case "Floating": flags |= {.Floating}
-            case "CustomDrawFunc": flags |= {.CustomDrawFunc}
-        }
-    }
-
-    return flags, true
-}
-
 main :: proc() {
     _command_arena: mem.Arena
     mem.arena_init(&_command_arena, make([]u8, 1024*1024));
@@ -1053,6 +1036,7 @@ main :: proc() {
         window = nil,
         directory = os.get_current_directory(),
         plugins = make([dynamic]plugin.Interface),
+        new_plugins = make([dynamic]plugin.NewInterface),
         highlighters = make(map[string]plugin.OnColorBufferProc),
         hooks = make(map[plugin.Hook][dynamic]plugin.OnHookProc),
         lua_hooks = make(map[plugin.Hook][dynamic]core.LuaHookRef),
@@ -1078,7 +1062,8 @@ main :: proc() {
         }
     }
 
-    context.logger = core.new_logger(&state.log_buffer);
+    // context.logger = core.new_logger(&state.log_buffer);
+    context.logger = log.create_console_logger();
     state.ctx = context;
 
     // TODO: don't use this
@@ -1228,729 +1213,8 @@ main :: proc() {
         }
     }
 
-    // **********************************************************************
-    lua_allocator :: proc "c" (ud: rawptr, ptr: rawptr, osize, nsize: c.size_t) -> (buf: rawptr) {
-        old_size := int(osize)
-        new_size := int(nsize)
-        context = (^runtime.Context)(ud)^
-
-        if ptr == nil {
-            data, err := runtime.mem_alloc(new_size)
-            return raw_data(data) if err == .None else nil
-        } else {
-            if nsize > 0 {
-                data, err := runtime.mem_resize(ptr, old_size, new_size)
-                return raw_data(data) if err == .None else nil
-            } else {
-                runtime.mem_free(ptr)
-                return
-            }
-        }
-    }
-    _context := context;
-    // L := lua.newstate(lua_allocator, &_context);
-    // L := lua.L_newstate();
-    state.L = lua.L_newstate();
-    lua.L_openlibs(state.L);
-
-    bbb: [^]lua.L_Reg;
-    editor_lib := [?]lua.L_Reg {
-        lua.L_Reg {
-            "quit",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-
-                state.should_close = true;
-                return i32(lua.OK);
-            }
-        },
-        lua.L_Reg {
-            "log",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                text := string(lua.L_checkstring(L, 1));
-                log.info("[LUA]:", text);
-
-                return i32(lua.OK);
-            }
-        },
-        lua.L_Reg {
-            "register_hook",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                hook := lua.L_checkinteger(L, 1);
-
-                lua.L_checktype(L, 2, i32(lua.TFUNCTION));
-                lua.pushvalue(L, 2);
-                fn_ref := lua.L_ref(L, i32(lua.REGISTRYINDEX));
-
-                core.add_lua_hook(&state, plugin.Hook(hook), fn_ref);
-
-                return i32(lua.OK);
-            }
-        },
-        lua.L_Reg {
-            "register_key_group",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                lua.L_checktype(L, 1, i32(lua.TTABLE));
-
-                table_to_action :: proc(L: ^lua.State, index: i32, input_map: ^core.InputActions) {
-                    lua.len(L, index);
-                    key_group_len := lua.tointeger(L, -1);
-                    lua.pop(L, 1);
-
-                    for i in 1..=key_group_len {
-                        lua.rawgeti(L, index, i);
-                        defer lua.pop(L, 1);
-
-                        lua.rawgeti(L, -1, 1);
-                        key:= plugin.Key(lua.tointeger(L, -1));
-                        lua.pop(L, 1);
-
-                        lua.rawgeti(L, -1, 2);
-                        desc := strings.clone(string(lua.tostring(L, -1)));
-                        lua.pop(L, 1);
-
-                        switch lua.rawgeti(L, -1, 3) {
-                            case i32(lua.TTABLE):
-                                if action, exists := input_map.key_actions[key]; exists {
-                                    switch value in action.action {
-                                        case core.LuaEditorAction:
-                                            log.warn("Plugin attempted to register input group on existing key action (added from Lua)");
-                                        case core.PluginEditorAction:
-                                            log.warn("Plugin attempted to register input group on existing key action (added from Plugin)");
-                                        case core.EditorAction:
-                                            log.warn("Plugin attempted to register input group on existing key action");
-                                        case core.InputActions:
-                                            input_map := &(&input_map.key_actions[key]).action.(core.InputActions);
-                                            table_to_action(L, lua.gettop(L), input_map);
-                                    }
-                                } else {
-                                    core.register_key_action(input_map, key, core.new_input_actions(), desc);
-                                    table_to_action(L, lua.gettop(L), &((&input_map.key_actions[key]).action.(core.InputActions)));
-                                }
-                                lua.pop(L, 1);
-
-                            case i32(lua.TFUNCTION):
-                                fn_ref := lua.L_ref(L, i32(lua.REGISTRYINDEX));
-
-                                if lua.rawgeti(L, -1, 4) == i32(lua.TTABLE) {
-                                    maybe_input_map := core.new_input_actions();
-                                    table_to_action(L, lua.gettop(L), &maybe_input_map);
-
-                                    core.register_key_action_group(input_map, key, core.LuaEditorAction { fn_ref, maybe_input_map }, desc);
-                                } else {
-                                    core.register_key_action_group(input_map, key, core.LuaEditorAction { fn_ref, core.InputActions {} }, desc);
-                                }
-
-                            case:
-                                lua.pop(L, 1);
-                        }
-                    }
-                }
-
-                table_to_action(L, 1, state.current_input_map);
-
-                return i32(lua.OK);
-            }
-        },
-        lua.L_Reg {
-            "request_window_close",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                core.request_window_close(&state);
-
-                return i32(lua.OK);
-            }
-        },
-        lua.L_Reg {
-            "get_current_buffer_index",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                lua.pushinteger(L, lua.Integer(state.current_buffer));
-
-                return 1;
-            }
-        },
-        lua.L_Reg {
-            "set_current_buffer_from_index",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                buffer_index := int(lua.L_checkinteger(L, 1));
-                if buffer_index != -2 && (buffer_index < 0 || buffer_index >= len(state.buffers)) {
-                    return i32(lua.ERRRUN);
-                } else {
-                    state.current_buffer = buffer_index;
-                }
-
-                return i32(lua.OK);
-            }
-        },
-        lua.L_Reg {
-            "buffer_info_from_index",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                buffer_index := int(lua.L_checkinteger(L, 1));
-                if buffer_index < 0 || buffer_index >= len(state.buffers) {
-                    lua.pushnil(L);
-                } else {
-                    push_lua_buffer_info :: proc(L: ^lua.State, buffer: ^FileBuffer) {
-                        lua.newtable(L);
-                        {
-                            lua.pushlightuserdata(L, buffer);
-                            lua.setfield(L, -2, "buffer");
-
-                            lua.newtable(L);
-                            {
-                                lua.pushinteger(L, lua.Integer(buffer.cursor.col));
-                                lua.setfield(L, -2, "col");
-
-                                lua.pushinteger(L, lua.Integer(buffer.cursor.line));
-                                lua.setfield(L, -2, "line");
-                            }
-                            lua.setfield(L, -2, "cursor");
-
-                            lua.pushstring(L, strings.clone_to_cstring(buffer.file_path, context.temp_allocator));
-                            lua.setfield(L, -2, "full_file_path");
-
-                            relative_file_path, _ := filepath.rel(state.directory, buffer.file_path, context.temp_allocator)
-                            lua.pushstring(L, strings.clone_to_cstring(relative_file_path, context.temp_allocator));
-                            lua.setfield(L, -2, "file_path");
-                        }
-                    }
-
-                    push_lua_buffer_info(L, core.buffer_from_index(&state, buffer_index));
-                }
-
-                return 1;
-            }
-        },
-        lua.L_Reg {
-            "query_command_group",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                group := lua.L_checkstring(L, 1);
-                cmds := core.query_editor_commands_by_group(&state.commands, string(group), scratch_alloc);
-
-                lua.newtable(L);
-                {
-                    for cmd, i in cmds {
-                        lua.newtable(L);
-                        {
-                            lua.pushstring(L, strings.clone_to_cstring(cmd.name, scratch_alloc));
-                            lua.setfield(L, -2, "name");
-
-                            lua.pushstring(L, strings.clone_to_cstring(cmd.description, scratch_alloc));
-                            lua.setfield(L, -2, "description");
-                        }
-                        lua.rawseti(L, -2, lua.Integer(i+1));
-                    }
-                }
-
-                return 1;
-            }
-        },
-        lua.L_Reg {
-            "run_command",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                group := lua.L_checkstring(L, 1);
-                name := lua.L_checkstring(L, 2);
-                core.run_command(&state, string(group), string(name));
-
-                return 1;
-            }
-        }
-    };
-    bbb = raw_data(editor_lib[:]);
-
-    get_lua_semantic_size :: proc(L: ^lua.State, index: i32) -> ui.SemanticSize {
-        if lua.istable(L, index) {
-            lua.rawgeti(L, index, 1);
-            semantic_kind := ui.SemanticSizeKind(lua.tointeger(L, -1));
-            lua.pop(L, 1);
-
-            lua.rawgeti(L, index, 2);
-            semantic_value := int(lua.tointeger(L, -1));
-            lua.pop(L, 1);
-
-            return {semantic_kind, semantic_value};
-        } else {
-            semantic_kind := ui.SemanticSizeKind(lua.L_checkinteger(L, index));
-            return {semantic_kind, 0};
-        }
-    }
-
-    push_lua_semantic_size_table :: proc(L: ^lua.State, size: ui.SemanticSize) {
-        lua.newtable(L);
-        {
-            lua.pushinteger(L, lua.Integer(i32(size.kind)));
-            lua.rawseti(L, -2, 1);
-
-            lua.pushinteger(L, lua.Integer(size.value));
-            lua.rawseti(L, -2, 2);
-        }
-    }
-
-    push_lua_box_interaction :: proc(L: ^lua.State, interaction: ui.Interaction) {
-        lua.newtable(L);
-        {
-            lua.pushboolean(L, b32(interaction.clicked));
-            lua.setfield(L, -2, "clicked");
-
-            lua.pushboolean(L, b32(interaction.hovering));
-            lua.setfield(L, -2, "hovering");
-
-            lua.pushboolean(L, b32(interaction.dragging));
-            lua.setfield(L, -2, "dragging");
-
-            lua.newtable(L);
-            {
-                lua.pushinteger(L, lua.Integer(interaction.box_pos.x));
-                lua.setfield(L, -2, "x");
-
-                lua.pushinteger(L, lua.Integer(interaction.box_pos.y));
-                lua.setfield(L, -2, "y");
-            }
-            lua.setfield(L, -2, "box_pos");
-
-            lua.newtable(L);
-            {
-                lua.pushinteger(L, lua.Integer(interaction.box_size.x));
-                lua.setfield(L, -2, "x");
-
-                lua.pushinteger(L, lua.Integer(interaction.box_size.y));
-                lua.setfield(L, -2, "y");
-            }
-            lua.setfield(L, -2, "box_size");
-        }
-    }
-
-    ui_lib := [?]lua.L_Reg {
-        lua.L_Reg {
-            "get_mouse_pos",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
-                lua.pushvalue(L, 1);
-                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
-                if ui_ctx == nil { return i32(lua.ERRRUN); }
-
-                lua.pushinteger(L, lua.Integer(ui_ctx.mouse_x));
-                lua.pushinteger(L, lua.Integer(ui_ctx.mouse_y));
-
-                return 2;
-            }
-        },
-        lua.L_Reg {
-            "Exact",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                value := lua.L_checknumber(L, 1);
-                push_lua_semantic_size_table(L, { ui.SemanticSizeKind.Exact, int(value) });
-
-                return 1;
-            }
-        },
-        lua.L_Reg {
-            "PercentOfParent",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                value := lua.L_checknumber(L, 1);
-                push_lua_semantic_size_table(L, { ui.SemanticSizeKind.PercentOfParent, int(value) });
-
-                return 1;
-            }
-        },
-        lua.L_Reg {
-            "push_parent",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
-                lua.pushvalue(L, 1);
-                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
-                if ui_ctx == nil { return i32(lua.ERRRUN); }
-
-                lua.L_checktype(L, 2, i32(lua.TLIGHTUSERDATA));
-                lua.pushvalue(L, 2);
-                box := transmute(^ui.Box)lua.touserdata(L, -1);
-                if box == nil { return i32(lua.ERRRUN); }
-
-                ui.push_parent(ui_ctx, box);
-                return i32(lua.OK);
-            }
-        },
-        lua.L_Reg {
-            "pop_parent",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
-                lua.pushvalue(L, 1);
-                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
-                if ui_ctx == nil { return i32(lua.ERRRUN); }
-
-                ui.pop_parent(ui_ctx);
-                return i32(lua.OK);
-            }
-        },
-        lua.L_Reg {
-            "push_floating",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
-                lua.pushvalue(L, 1);
-                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
-                if ui_ctx != nil {
-                    label := lua.L_checkstring(L, 2);
-                    x := int(lua.L_checkinteger(L, 3));
-                    y := int(lua.L_checkinteger(L, 4));
-
-                    box, interaction := ui.push_floating(ui_ctx, strings.clone(string(label), context.temp_allocator), {x,y});
-                    lua.pushlightuserdata(L, box);
-                    push_lua_box_interaction(L, interaction);
-                    return 2;
-                }
-
-                return i32(lua.ERRRUN);
-            }
-        },
-        lua.L_Reg {
-            "push_box",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
-                lua.pushvalue(L, 1);
-                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
-                if ui_ctx != nil {
-                    label := lua.L_checkstring(L, 2);
-                    flags, err := lua_ui_flags(L, 3);
-                    axis := ui.Axis(lua.L_checkinteger(L, 4));
-
-                    semantic_width := get_lua_semantic_size(L, 5);
-                    semantic_height := get_lua_semantic_size(L, 6);
-
-                    box, interaction := ui.push_box(ui_ctx, strings.clone(string(label), context.temp_allocator), flags, axis, { semantic_width, semantic_height });
-
-                    lua.pushlightuserdata(L, box);
-                    push_lua_box_interaction(L, interaction)
-                    return 2;
-                }
-
-                return i32(lua.ERRRUN);
-            }
-        },
-        lua.L_Reg {
-            "_box_interaction",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
-                lua.pushvalue(L, 1);
-                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
-                if ui_ctx == nil { return i32(lua.ERRRUN); }
-
-                lua.L_checktype(L, 2, i32(lua.TLIGHTUSERDATA));
-                lua.pushvalue(L, 2);
-                box := transmute(^ui.Box)lua.touserdata(L, -1);
-                if box == nil { return i32(lua.ERRRUN); }
-
-                interaction := ui.test_box(ui_ctx, box);
-                push_lua_box_interaction(L, interaction)
-                return 1;
-            }
-        },
-        lua.L_Reg {
-            "push_box",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
-                lua.pushvalue(L, 1);
-                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
-                if ui_ctx != nil {
-                    label := lua.L_checkstring(L, 2);
-                    flags, err := lua_ui_flags(L, 3);
-                    axis := ui.Axis(lua.L_checkinteger(L, 4));
-
-                    semantic_width := get_lua_semantic_size(L, 5);
-                    semantic_height := get_lua_semantic_size(L, 6);
-
-                    box, interaction := ui.push_box(ui_ctx, strings.clone(string(label), context.temp_allocator), flags, axis, { semantic_width, semantic_height });
-                    lua.pushlightuserdata(L, box);
-                    push_lua_box_interaction(L, interaction)
-                    return 2;
-                }
-
-                return i32(lua.ERRRUN);
-            }
-        },
-        lua.L_Reg {
-            "push_rect",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
-                lua.pushvalue(L, 1);
-                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
-                if ui_ctx != nil {
-                    label := lua.L_checkstring(L, 2);
-                    background := bool(lua.toboolean(L, 3));
-                    border := bool(lua.toboolean(L, 4));
-                    axis := ui.Axis(lua.L_checkinteger(L, 5));
-
-                    semantic_width := get_lua_semantic_size(L, 6);
-                    semantic_height := get_lua_semantic_size(L, 7);
-
-                    box, interaction := ui.push_rect(ui_ctx, strings.clone(string(label), context.temp_allocator), background, border, axis, { semantic_width, semantic_height });
-                    lua.pushlightuserdata(L, box);
-                    push_lua_box_interaction(L, interaction)
-                    return 2;
-                }
-
-                return i32(lua.ERRRUN);
-            }
-        },
-        lua.L_Reg {
-            "spacer",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
-                lua.pushvalue(L, 1);
-                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
-                if ui_ctx != nil {
-                    label := lua.L_checkstring(L, 2);
-
-                    interaction := ui.spacer(ui_ctx, strings.clone(string(label), context.temp_allocator), semantic_size = {{.Fill, 0}, {.Fill, 0}});
-
-                    push_lua_box_interaction(L, interaction)
-
-                    return 1;
-                }
-
-                return i32(lua.ERRRUN);
-            }
-        },
-        lua.L_Reg {
-            "label",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
-                lua.pushvalue(L, 1);
-                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
-                if ui_ctx != nil {
-                    label := lua.L_checkstring(L, 2);
-
-                    interaction := ui.label(ui_ctx, strings.clone(string(label), context.temp_allocator));
-                    push_lua_box_interaction(L, interaction)
-
-                    return 1;
-                }
-
-                return i32(lua.ERRRUN);
-            }
-        },
-        lua.L_Reg {
-            "button",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
-                lua.pushvalue(L, 1);
-                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
-                if ui_ctx != nil {
-                    label := lua.L_checkstring(L, 2);
-
-                    interaction := ui.button(ui_ctx, strings.clone(string(label), context.temp_allocator));
-                    push_lua_box_interaction(L, interaction)
-
-                    return 1;
-                }
-
-                return i32(lua.ERRRUN);
-            }
-        },
-        lua.L_Reg {
-            "advanced_button",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
-                lua.pushvalue(L, 1);
-                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
-
-                if ui_ctx != nil {
-                    label := lua.L_checkstring(L, 2);
-                    flags, err := lua_ui_flags(L, 3);
-
-                    semantic_width := get_lua_semantic_size(L, 4);
-                    semantic_height := get_lua_semantic_size(L, 5);
-
-                    interaction := ui.advanced_button(ui_ctx, strings.clone(string(label), context.temp_allocator), flags, { semantic_width, semantic_height });
-                    push_lua_box_interaction(L, interaction)
-
-                    return 1;
-                }
-
-                return i32(lua.ERRRUN);
-            }
-        },
-        lua.L_Reg {
-            "buffer",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
-                lua.pushvalue(L, 1);
-                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
-
-                if ui_ctx != nil {
-                    buffer_index := int(lua.L_checkinteger(L, 2));
-
-                    if buffer_index != -2 && (buffer_index < 0 || buffer_index >= len(state.buffers)) {
-                        return i32(lua.ERRRUN);
-                    }
-
-                    ui_file_buffer(ui_ctx, core.buffer_from_index(&state, buffer_index));
-
-                    return i32(lua.OK);
-                }
-
-                return i32(lua.ERRRUN);
-            }
-        },
-        lua.L_Reg {
-            "log_buffer",
-            proc "c" (L: ^lua.State) -> i32 {
-                context = state.ctx;
-
-                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
-                lua.pushvalue(L, 1);
-                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
-
-                if ui_ctx != nil {
-                    ui_file_buffer(ui_ctx, &state.log_buffer);
-
-                    return i32(lua.OK);
-                }
-
-                return i32(lua.ERRRUN);
-            }
-        }
-    };
-
-    // TODO: generate this from the plugin.Key enum
-    lua.newtable(state.L);
-    {
-        lua.newtable(state.L);
-        lua.pushinteger(state.L, lua.Integer(plugin.Key.B));
-        lua.setfield(state.L, -2, "B");
-
-        lua.pushinteger(state.L, lua.Integer(plugin.Key.T));
-        lua.setfield(state.L, -2, "T");
-
-        lua.pushinteger(state.L, lua.Integer(plugin.Key.Y));
-        lua.setfield(state.L, -2, "Y");
-
-        lua.pushinteger(state.L, lua.Integer(plugin.Key.P));
-        lua.setfield(state.L, -2, "P");
-
-        lua.pushinteger(state.L, lua.Integer(plugin.Key.M));
-        lua.setfield(state.L, -2, "M");
-
-        lua.pushinteger(state.L, lua.Integer(plugin.Key.K));
-        lua.setfield(state.L, -2, "K");
-
-        lua.pushinteger(state.L, lua.Integer(plugin.Key.J));
-        lua.setfield(state.L, -2, "J");
-
-        lua.pushinteger(state.L, lua.Integer(plugin.Key.Q));
-        lua.setfield(state.L, -2, "Q");
-
-        lua.pushinteger(state.L, lua.Integer(plugin.Key.BACKQUOTE));
-        lua.setfield(state.L, -2, "Backtick");
-
-        lua.pushinteger(state.L, lua.Integer(plugin.Key.ESCAPE));
-        lua.setfield(state.L, -2, "Escape");
-
-        lua.pushinteger(state.L, lua.Integer(plugin.Key.ENTER));
-        lua.setfield(state.L, -2, "Enter");
-
-        lua.pushinteger(state.L, lua.Integer(plugin.Key.SPACE));
-        lua.setfield(state.L, -2, "Space");
-    }
-    lua.setfield(state.L, -2, "Key");
-
-    {
-        lua.newtable(state.L);
-        lua.pushinteger(state.L, lua.Integer(plugin.Hook.BufferInput));
-        lua.setfield(state.L, -2, "OnBufferInput");
-        lua.pushinteger(state.L, lua.Integer(plugin.Hook.Draw));
-        lua.setfield(state.L, -2, "OnDraw");
-    }
-    lua.setfield(state.L, -2, "Hook");
-
-    lua.L_setfuncs(state.L, bbb, 0);
-    lua.setglobal(state.L, "Editor");
-
-    lua.newtable(state.L);
-    {
-        lua.pushinteger(state.L, lua.Integer(ui.Axis.Horizontal));
-        lua.setfield(state.L, -2, "Horizontal");
-        lua.pushinteger(state.L, lua.Integer(ui.Axis.Vertical));
-        lua.setfield(state.L, -2, "Vertical");
-        push_lua_semantic_size_table(state.L, { ui.SemanticSizeKind.Fill, 0 });
-        lua.setfield(state.L, -2, "Fill");
-        push_lua_semantic_size_table(state.L, { ui.SemanticSizeKind.ChildrenSum, 0 });
-        lua.setfield(state.L, -2, "ChildrenSum");
-        push_lua_semantic_size_table(state.L, { ui.SemanticSizeKind.FitText, 0 });
-        lua.setfield(state.L, -2, "FitText");
-
-        lua.L_setfuncs(state.L, raw_data(&ui_lib), 0);
-        lua.setglobal(state.L, "UI");
-    }
-
-    if lua.L_dofile(state.L, "plugins/lua/view.lua") == i32(lua.OK) {
-        lua.pop(state.L, lua.gettop(state.L));
-    } else {
-        err := lua.tostring(state.L, lua.gettop(state.L));
-        lua.pop(state.L, lua.gettop(state.L));
-
-        log.error(err);
-    }
-
-    // Initialize Lua Plugins
-    {
-        lua.getglobal(state.L, "OnInit");
-        if lua.pcall(state.L, 0, 0, 0) == i32(lua.OK) {
-            lua.pop(state.L, lua.gettop(state.L));
-        } else {
-            err := lua.tostring(state.L, lua.gettop(state.L));
-            lua.pop(state.L, lua.gettop(state.L));
-
-            log.error("failed to initialize plugin (OnInit):", err);
-        }
-    }
-    // **********************************************************************
+    lua.new_state(&state);
+    lua.load_plugins(&state, "plugins/")
 
     control_key_pressed: bool;
     for !state.should_close {
@@ -2062,14 +1326,15 @@ main :: proc() {
         // TODO: move this to view.lua
         // log_window, _ := ui.push_floating(&ui_context, "log", {0,0}, flags = {.Floating, .DrawBackground}, semantic_size = {ui.make_semantic_size(.PercentOfParent, 75), ui.make_semantic_size(.PercentOfParent, 75)});
         // ui.push_parent(&ui_context, log_window);
-        // {
-        //     defer ui.pop_parent(&ui_context);
-        //     ui_file_buffer(&ui_context, &state.log_buffer);
-        // }
+        {
+            // defer ui.pop_parent(&ui_context);
+            ui_file_buffer(&ui_context, &state.log_buffer);
+        }
 
 
         if draw_hooks, ok := state.lua_hooks[plugin.Hook.Draw]; ok {
             for hook_ref in draw_hooks {
+                /*
                 lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(hook_ref));
                 lua.pushlightuserdata(state.L, &ui_context);
                 if lua.pcall(state.L, 1, 0, 0) != i32(lua.OK) {
@@ -2080,11 +1345,43 @@ main :: proc() {
                 } else {
                     lua.pop(state.L, lua.gettop(state.L));
                 }
+                */
             }
         }
 
         if state.window != nil && state.window.draw != nil {
             state.window.draw(state.plugin_vtable, state.window.user_data);
+        }
+
+
+        if window, ok := &state.new_window.(core.NewWindow); ok {
+            floating, interaction := ui.push_floating(&ui_context, "floating_window", {0,0})
+            ui.push_parent(&ui_context, floating)
+            {
+                canvas, _ := ui.push_rect(&ui_context, "canvas", false, false, .Horizontal, ui.Fill)
+                ui.push_parent(&ui_context, canvas)
+                {
+                    ui.spacer(&ui_context, "left spacer")
+                    
+                    halfway, _ := ui.push_rect(&ui_context, "halfway centered", false, false, .Vertical, {ui.SemanticSize{kind = .ChildrenSum}, ui.SemanticSize{kind = .Fill}})
+                    ui.push_parent(&ui_context, halfway)
+                    {
+                        ui.spacer(&ui_context, "top spacer")
+
+                        centered_container, _ := ui.push_rect(&ui_context, "centered container", true, true, .Horizontal, {ui.SemanticSize{kind = .ChildrenSum, value=state.screen_width-32}, ui.SemanticSize{kind = .ChildrenSum, value = state.screen_height-32}})
+                        ui.push_parent(&ui_context, centered_container)
+                        {
+                            lua.run_ui_function(&state, &ui_context, window.lua_draw_proc);
+                        }
+                        ui.pop_parent(&ui_context)
+                        ui.spacer(&ui_context, "bottom spacer")
+                    }
+                    ui.pop_parent(&ui_context)
+                    ui.spacer(&ui_context, "right spacer")
+                }
+                ui.pop_parent(&ui_context)
+            }
+            ui.pop_parent(&ui_context)
         }
 
         {
@@ -2132,19 +1429,7 @@ main :: proc() {
                                     if action, exists := state.current_input_map.ctrl_key_actions[key]; exists {
                                         switch value in action.action {
                                             case core.LuaEditorAction:
-                                                lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(value.fn_ref));
-                                                if lua.pcall(state.L, 0, 0, 0) != i32(lua.OK) {
-                                                    err := lua.tostring(state.L, lua.gettop(state.L));
-                                                    lua.pop(state.L, lua.gettop(state.L));
-
-                                                    log.error(err);
-                                                } else {
-                                                    lua.pop(state.L, lua.gettop(state.L));
-                                                }
-
-                                                if value.maybe_input_map.ctrl_key_actions != nil {
-
-                                                }
+                                                lua.run_editor_action(&state, key, value)
                                             case core.PluginEditorAction:
                                                 value(state.plugin_vtable);
                                             case core.EditorAction:
@@ -2157,20 +1442,7 @@ main :: proc() {
                                     if action, exists := state.current_input_map.key_actions[key]; exists {
                                         switch value in action.action {
                                             case core.LuaEditorAction:
-                                                lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(value.fn_ref));
-                                                if lua.pcall(state.L, 0, 0, 0) != i32(lua.OK) {
-                                                    err := lua.tostring(state.L, lua.gettop(state.L));
-                                                    lua.pop(state.L, lua.gettop(state.L));
-
-                                                    log.error(err);
-                                                } else {
-                                                    lua.pop(state.L, lua.gettop(state.L));
-                                                }
-
-                                                if value.maybe_input_map.key_actions != nil {
-                                                    ptr_action := &(&state.current_input_map.key_actions[key]).action.(core.LuaEditorAction)
-                                                    state.current_input_map = (&ptr_action.maybe_input_map)
-                                                }
+                                                lua.run_editor_action(&state, key, value)
                                             case core.PluginEditorAction:
                                                 value(state.plugin_vtable);
                                             case core.EditorAction:
@@ -2219,6 +1491,7 @@ main :: proc() {
                                             hook_proc(state.plugin_vtable, buffer);
                                         }
                                         for hook_ref in state.lua_hooks[plugin.Hook.BufferInput] {
+                                            /*
                                             lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(hook_ref));
                                             if lua.pcall(state.L, 0, 0, 0) != i32(lua.OK) {
                                                 err := lua.tostring(state.L, lua.gettop(state.L));
@@ -2228,6 +1501,7 @@ main :: proc() {
                                             } else {
                                                 lua.pop(state.L, lua.gettop(state.L));
                                             }
+                                            */
                                         }
                                     }
                                 }
@@ -2238,6 +1512,7 @@ main :: proc() {
                                         hook_proc(state.plugin_vtable, buffer);
                                     }
                                     for hook_ref in state.lua_hooks[plugin.Hook.BufferInput] {
+                                        /*
                                         lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(hook_ref));
                                         if lua.pcall(state.L, 0, 0, 0) != i32(lua.OK) {
                                             err := lua.tostring(state.L, lua.gettop(state.L));
@@ -2247,6 +1522,7 @@ main :: proc() {
                                         } else {
                                             lua.pop(state.L, lua.gettop(state.L));
                                         }
+                                        */
                                     }
                                 }
                                 case .ENTER: {
@@ -2268,6 +1544,7 @@ main :: proc() {
                                         hook_proc(state.plugin_vtable, buffer);
                                     }
                                     for hook_ref in state.lua_hooks[plugin.Hook.BufferInput] {
+                                        /*
                                         lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(hook_ref));
                                         if lua.pcall(state.L, 0, 0, 0) != i32(lua.OK) {
                                             err := lua.tostring(state.L, lua.gettop(state.L));
@@ -2277,6 +1554,7 @@ main :: proc() {
                                         } else {
                                             lua.pop(state.L, lua.gettop(state.L));
                                         }
+                                        */
                                     }
                                 }
                             }
@@ -2329,6 +1607,7 @@ main :: proc() {
             plugin.on_exit();
         }
     }
+
     lua.close(state.L);
 
     sdl2.Quit();
