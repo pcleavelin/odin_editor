@@ -1033,6 +1033,8 @@ main :: proc() {
         commands = make(core.EditorCommandList),
         command_arena = mem.arena_allocator(&_command_arena),
 
+        panel_catalog = make([dynamic]core.PanelId),
+
         window = nil,
         directory = os.get_current_directory(),
         plugins = make([dynamic]plugin.Interface),
@@ -1062,8 +1064,8 @@ main :: proc() {
         }
     }
 
-    context.logger = core.new_logger(&state.log_buffer);
-    // context.logger = log.create_console_logger();
+    // context.logger = core.new_logger(&state.log_buffer);
+    context.logger = log.create_console_logger();
     state.ctx = context;
 
     // TODO: don't use this
@@ -1075,6 +1077,46 @@ main :: proc() {
     register_default_visual_actions(&state.input_map.mode[.Visual]);
 
     register_default_text_input_actions(&state.input_map.mode[.Normal]);
+
+    core.register_editor_command(
+        &state.commands,
+        "nl.spacegirl.editor.core",
+        "Open New Panel",
+        "Opens a new panel",
+        proc(state: ^State) {
+            Args :: struct {
+                panel_id: string
+            }
+
+            if args, ok := core.attempt_read_command_args(Args, state.command_args[:]); ok {
+                log.info("maybe going to open panel with id", args.panel_id)
+
+                for p in state.panel_catalog {
+                    switch v in p {
+                        case core.LuaPanelId:
+                        {
+                            if v.id == args.panel_id {
+                                if index, ok := lua.add_panel(state, v); ok {
+                                    for i in 0..<len(state.active_panels) {
+                                        if state.active_panels[i] == nil {
+                                            state.active_panels[i] = index
+                                            break;
+                                        }
+                                    }
+                                } else {
+                                    log.error("failed to open panel")
+                                }
+                            }
+                        }
+                        case core.LibPanelId:
+                        {
+                            log.warn("lib panels not supported yet")
+                        }
+                    }
+                }
+            }
+        }
+    )
 
     core.register_editor_command(
         &state.commands,
@@ -1218,137 +1260,25 @@ main :: proc() {
 
     control_key_pressed: bool;
     for !state.should_close {
-        // if false {
-        //     buffer := core.current_buffer(&state);
-
-        //     ui.push_parent(&ui_context, ui.push_box(&ui_context, "main", {}, .Vertical, semantic_size = {ui.make_semantic_size(.Fill, 100), ui.make_semantic_size(.Fill, 100)}));
-        //     defer ui.pop_parent(&ui_context);
-
-        //     {
-        //         ui.push_parent(&ui_context, ui.push_box(&ui_context, "top_nav", {.DrawBackground}, semantic_size = {ui.make_semantic_size(.PercentOfParent, 100), ui.make_semantic_size(.Exact, state.source_font_height)}));
-        //         defer ui.pop_parent(&ui_context);
-
-        //         if ui.label(&ui_context, "Editor").clicked {
-        //             fmt.println("you clicked the button");
-        //         }
-
-        //         ui.push_box(
-        //             &ui_context,
-        //             "nav spacer",
-        //             {.DrawBackground},
-        //             semantic_size = {
-        //                 ui.make_semantic_size(.Exact, 16),
-        //                 ui.make_semantic_size(.Exact, state.source_font_height)
-        //             }
-        //         );
-
-        //         if ui.label(&ui_context, "Buffers").clicked {
-        //             fmt.println("you clicked the button");
-        //         }
-        //     }
-        //     {
-        //         ui.push_parent(&ui_context, ui.push_box(&ui_context, "deezbuffer", {}, .Horizontal, semantic_size = {ui.make_semantic_size(.PercentOfParent, 100), ui.make_semantic_size(.Fill, 0)}));
-        //         defer ui.pop_parent(&ui_context);
-
-        //         {
-        //             ui.push_parent(&ui_context, ui.push_box(&ui_context, "left side", {}, .Vertical, semantic_size = {ui.make_semantic_size(.Fill), ui.make_semantic_size(.Fill, 0)}));
-        //             defer ui.pop_parent(&ui_context);
-
-        //             {
-        //                 if ui_file_buffer(&ui_context, &state.buffers[0]).clicked {
-        //                     state.current_buffer = 0;
-        //                 }
-        //             }
-        //             {
-        //                 if ui_file_buffer(&ui_context, &state.buffers[0+1]).clicked {
-        //                     state.current_buffer = 1;
-        //                 }
-        //             }
-        //             {
-        //                 if ui_file_buffer(&ui_context, &state.buffers[0+2]).clicked {
-        //                     state.current_buffer = 2;
-        //                 }
-        //             }
-        //         }
-        //         {
-        //             ui.push_parent(&ui_context, ui.push_box(&ui_context, "right side", {}, .Vertical, semantic_size = {ui.make_semantic_size(.Fill), ui.make_semantic_size(.Fill, 0)}));
-        //             defer ui.pop_parent(&ui_context);
-
-        //             {
-        //                 if ui_file_buffer(&ui_context, core.current_buffer(&state)).clicked {
-        //                     state.current_buffer = 3;
-        //                 }
-        //             }
-        //         }
-        //     }
-        //     {
-        //         ui.push_parent(&ui_context, ui.push_box(&ui_context, "bottom stats", {.DrawBackground}, semantic_size = {ui.make_semantic_size(.PercentOfParent, 100), ui.make_semantic_size(.Exact, state.source_font_height)}));
-        //         defer ui.pop_parent(&ui_context);
-
-        //         label := "";
-        //         if state.mode == .Insert {
-        //             label = "INSERT";
-        //         } else if state.mode == .Normal {
-        //             label = "NORMAL";
-        //         }
-
-        //         if ui.label(&ui_context, label).clicked {
-        //             fmt.println("you clicked the button");
-        //         }
-        //         ui.spacer(&ui_context, "mode spacer", semantic_size = {ui.make_semantic_size(.Exact, 16), ui.make_semantic_size(.Fill)});
-
-        //         relative_file_path, _ := filepath.rel(state.directory, buffer.file_path, context.temp_allocator)
-        //         ui.label(&ui_context, relative_file_path);
-
-        //         ui.spacer(&ui_context, "stats inbetween");
-
-        //         {
-        //             ui.push_parent(&ui_context, ui.push_box(&ui_context, "center info", {}, semantic_size = ui.ChildrenSum));
-        //             defer ui.pop_parent(&ui_context);
-
-        //             line_info_text := fmt.tprintf(
-        //                 //"Line: %d, Col: %d, Len: %d --- Slice Index: %d, Content Index: %d",
-        //                 "Line: %d, Col: %d",
-        //                 buffer.cursor.line + 1,
-        //                 buffer.cursor.col + 1,
-        //                 //core.file_buffer_line_length(buffer, buffer.cursor.index),
-        //                 // buffer.cursor.index.slice_index,
-        //                 // buffer.cursor.index.content_index,
-        //             );
-        //             ui.label(&ui_context, line_info_text);
-
-        //             mouse_pos_str := fmt.tprintf("x,y: [%d,%d]", ui_context.mouse_x, ui_context.mouse_y);
-        //             ui.label(&ui_context, mouse_pos_str);
-        //         }
-        //     }
-        // }
-
-        // TODO: move this to view.lua
-        // log_window, _ := ui.push_floating(&ui_context, "log", {0,0}, flags = {.Floating, .DrawBackground}, semantic_size = {ui.make_semantic_size(.PercentOfParent, 75), ui.make_semantic_size(.PercentOfParent, 75)});
-        // ui.push_parent(&ui_context, log_window);
-        {
-            // defer ui.pop_parent(&ui_context);
-            ui_file_buffer(&ui_context, &state.log_buffer);
-        }
-
-
+        // TODO: remove this functionality
         if draw_hooks, ok := state.lua_hooks[plugin.Hook.Draw]; ok {
             for hook_ref in draw_hooks {
-                /*
-                lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(hook_ref));
-                lua.pushlightuserdata(state.L, &ui_context);
-                if lua.pcall(state.L, 1, 0, 0) != i32(lua.OK) {
-                    err := lua.tostring(state.L, lua.gettop(state.L));
-                    lua.pop(state.L, lua.gettop(state.L));
-
-                    log.error(err);
-                } else {
-                    lua.pop(state.L, lua.gettop(state.L));
-                }
-                */
+                lua.run_ui_function(&state, &ui_context, hook_ref)
             }
         }
 
+        for panel in state.active_panels {
+            if panel != nil {
+                switch v in panel.? {
+                    case core.LuaPanel:
+                        lua.run_panel_render(&state, &ui_context, v.index, v.render_ref)
+                    case core.LibPanel:
+                        log.warn("LibPanel not supported")
+                }
+            }
+        }
+
+        // TODO: mirror how this is done for Lua
         if state.window != nil && state.window.draw != nil {
             state.window.draw(state.plugin_vtable, state.window.user_data);
         }

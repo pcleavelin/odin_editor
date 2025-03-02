@@ -92,6 +92,9 @@ State :: struct {
     command_arena: runtime.Allocator,
     command_args: [dynamic]EditorCommandArgument,
 
+    active_panels: [128]Maybe(Panel),
+    panel_catalog: [dynamic]PanelId,
+
     plugins: [dynamic]plugin.Interface,
     new_plugins: [dynamic]plugin.NewInterface,
     plugin_vtable: plugin.Plugin,
@@ -111,10 +114,33 @@ EditorCommandExec :: struct {
     args: [dynamic]EditorCommandArgument,
 }
 
-EditorCommandArgument :: union {
+EditorCommandArgument :: union #no_nil {
     string,
     i32
 }
+
+PanelId :: union #no_nil {
+    LuaPanelId,
+    LibPanelId,
+}
+Panel :: union #no_nil {
+    LuaPanel,
+    LibPanel,
+}
+
+
+LuaPanelId :: struct {
+    id: string,
+    name: string,
+}
+LuaPanel :: struct {
+    index: i32,
+    render_ref: i32
+}
+
+// TODO
+LibPanelId :: struct {}
+LibPanel :: struct {}
 
 current_buffer :: proc(state: ^State) -> ^FileBuffer {
     if state.current_buffer == -2 {
@@ -398,3 +424,11 @@ where intrinsics.type_is_struct(T) {
 
     return
 }
+
+register_panel_lua :: proc(state: ^State, name: string, id: string) {
+    append(&state.panel_catalog, LuaPanelId {
+        id = id,
+        name = name,
+    })
+}
+

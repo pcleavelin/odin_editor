@@ -64,6 +64,18 @@ new_state :: proc(_state: ^core.State) {
             register_key_group,
         },
         lua.L_Reg {
+            "register_panel",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                panel_name := strings.clone(string(lua.L_checkstring(L, 1)));
+                panel_identifier := strings.clone(string(lua.L_checkstring(L, 2)));
+                core.register_panel_lua(state, panel_name, panel_identifier)
+
+                return i32(lua.OK)
+            }
+        },
+        lua.L_Reg {
             "spawn_floating_window",
             proc "c" (L: ^lua.State) -> i32 {
                 context = state.ctx;
@@ -195,6 +207,25 @@ new_state :: proc(_state: ^core.State) {
 
                 group := lua.L_checkstring(L, 1);
                 name := lua.L_checkstring(L, 2);
+
+                num_args := lua.gettop(state.L)
+                for i in 0..<(num_args-2) {
+                    if lua.isstring(state.L, 3) {
+                        value := lua.L_checkstring(state.L, 3)
+                        lua.pop(L, 3);
+
+                        core.push_command_arg(state, string(value))
+                    } else if lua.isinteger(state.L, 3) {
+                        value := lua.L_checkinteger(state.L, 3)
+                        lua.pop(L, 3);
+
+                        core.push_command_arg(state, i32(value))
+                    } else {
+                        log.error("expected string or integer for command arguments")
+                        return 0;
+                    }
+                }
+
                 core.run_command(state, string(group), string(name));
 
                 return 1;
@@ -860,13 +891,13 @@ ui_flags :: proc(L: ^lua.State, index: i32) -> (bit_set[ui.Flag], bool) {
     return flags, true
 }
 
-run_editor_action :: proc(state: ^core.State, key: plugin.Key, action: core.LuaEditorAction) {
+run_editor_action :: proc(state: ^core.State, key: plugin.Key, action: core.LuaEditorAction, location := #caller_location) {
     lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(action.fn_ref));
     if lua.pcall(state.L, 0, 0, 0) != i32(lua.OK) {
         err := lua.tostring(state.L, lua.gettop(state.L));
         lua.pop(state.L, lua.gettop(state.L));
 
-        log.error(err);
+        log.error(err, location);
     } else {
         lua.pop(state.L, lua.gettop(state.L));
     }
@@ -888,6 +919,99 @@ run_ui_function :: proc(state: ^core.State, ui_context: ^ui.Context, fn_ref: i32
     } else {
         lua.pop(state.L, lua.gettop(state.L));
     }
+}
+
+run_panel_render :: proc(state: ^core.State, ui_context: ^ui.Context, panel_index: i32, fn_ref: i32) {
+    lua.getglobal(state.L, "__core_panels")
+
+    lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(fn_ref));
+
+    lua.pushinteger(state.L, lua.Integer(panel_index));
+    lua.gettable(state.L, -3);
+
+    lua.pushlightuserdata(state.L, ui_context);
+    if lua.pcall(state.L, 2, 0, 0) != i32(lua.OK) {
+        err := lua.tostring(state.L, lua.gettop(state.L));
+        lua.pop(state.L, lua.gettop(state.L));
+
+        log.error(err);
+    } else {
+        lua.pop(state.L, lua.gettop(state.L));
+    }
+}
+
+add_panel :: proc(state: ^core.State, id: core.LuaPanelId) -> (new_panel: core.LuaPanel, ok: bool) {
+    lua.getglobal(state.L, "__core_panels")
+
+    // create panel list if it doesn't already exist
+    if !lua.istable(state.L, -1) {
+        log.info("__core_panels doesn't exist yet, create it..")
+
+        lua.newtable(state.L)
+        lua.setglobal(state.L, "__core_panels")
+    }
+
+    lua.getglobal(state.L, "__core_panels")
+
+    l_panel_list := lua.gettop(state.L)
+
+    lua.len(state.L, l_panel_list);
+    num_panels := lua.tointeger(state.L, -1);
+    lua.pop(state.L, 1);
+
+    render_ref: i32
+
+    // lua.pushinteger(state.L, lua.Integer(num_panels + 1))
+    {
+        // create new panel object in lua
+
+        // FIXME: eventually grab the appropriate namespace from the panel id
+        lua.getglobal(state.L, "nl_spacegirl_plugin_Default_Default_View");
+
+        lua.getfield(state.L, -1, strings.clone_to_cstring(id.id, allocator = context.temp_allocator));
+        if (lua.isnil(state.L, -1)) {
+            lua.pop(state.L, lua.gettop(state.L)-l_panel_list+1)
+
+            log.error("no lua panel with identifier:", id.id)
+            return
+        }
+
+        lua.getfield(state.L, -1, "render")
+        if lua.isfunction(state.L, -1) {
+            render_ref = lua.L_ref(state.L, i32(lua.REGISTRYINDEX));
+        } else {
+            lua.pop(state.L, lua.gettop(state.L)-l_panel_list+1)
+
+            log.error("no 'render' function for lua panel:", id.id)
+            return
+        }
+
+        lua.getfield(state.L, -1, "new")
+        if (lua.isnil(state.L, -1)) {
+            lua.pop(state.L, lua.gettop(state.L)-l_panel_list+1)
+
+            log.error("no 'new' function for lua panel:", id.id)
+            return
+        }
+
+        if lua.pcall(state.L, 0, 1, 0) != i32(lua.OK) {
+            err := lua.tostring(state.L, lua.gettop(state.L));
+            lua.pop(state.L, lua.gettop(state.L)-l_panel_list+1);
+
+            // FIXME: do we need this?
+            // lua.pop(state.L, 1);
+
+            log.error("failed to create new lua panel:", err);
+        }
+        log.info("called")
+    }
+    lua.rawseti(state.L, l_panel_list, num_panels + 1);
+    lua.settable(state.L, l_panel_list)
+
+    return core.LuaPanel{
+        index = i32(num_panels) + 1,
+        render_ref = render_ref
+    }, true
 }
 
 // TODO: don't duplicate this procedure

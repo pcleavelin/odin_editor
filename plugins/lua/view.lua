@@ -314,7 +314,7 @@ function M.render_ui_window(ctx)
     end
 
     -- render_buffer_search(ctx)
-    render_command_search(ctx)
+    -- render_command_search(ctx)
     render_log_window(ctx)
 
     LastMouseX = x
@@ -395,7 +395,7 @@ function M.open_buffer_search_window(ctx)
     -- end
 end
 
-function M.open_command_palette(ctx)
+function M.open_command_palette()
     -- if CommandSearchOpen or CommandSearchOpenElapsed > 0 then
     --     if CommandSearchOpen and CommandSearchOpenElapsed < numFrames then
     --         CommandSearchOpenElapsed = CommandSearchOpenElapsed + 1
@@ -519,7 +519,7 @@ function M.OnLoad()
         }}
     })
 
-    Editor.register_hook(Editor.Hook.OnDraw, render_ui_window)
+    Editor.register_hook(Editor.Hook.OnDraw, M.render_ui_window)
     Editor.register_hook(Editor.Hook.OnBufferInput, handle_buffer_input)
 end
 
