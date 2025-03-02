@@ -10,6 +10,7 @@ function M.open_file_search_window()
     }
 
     Editor.spawn_floating_window(input, function(ctx)
+        UI.push_parent(ctx, UI.push_rect(ctx, "window", true, true, UI.Vertical, UI.Fill, UI.ChildrenSum))
         UI.label(ctx, "eventually this will be a window where you can search through a bunch of files 1")
         UI.label(ctx, "eventually this will be a window where you can search through a bunch of files 2")
         UI.label(ctx, "eventually this will be a window where you can search through a bunch of files 3")
@@ -17,6 +18,7 @@ function M.open_file_search_window()
         UI.label(ctx, "eventually this will be a window where you can search through a bunch of files 5")
         UI.label(ctx, "eventually this will be a window where you can search through a bunch of files 6")
         UI.label(ctx, "eventually this will be a window where you can search through a bunch of files 7")
+        UI.pop_parent(ctx)
     end)
 end
 

@@ -98,6 +98,7 @@ Box :: struct {
     axis: Axis,
     semantic_size: [2]SemanticSize,
     computed_size: [2]int,
+    computed_child_size: [2]int,
     computed_pos: [2]int,
 
     scroll_offset: int,
@@ -444,7 +445,7 @@ compute_layout :: proc(ctx: ^Context, canvas_size: [2]int, font_width: int, font
         }
     }
 
-    if compute_children {
+    if true || compute_children {
         iter := BoxIter { box.first, 0 };
         child_size: [2]int = {0,0};
 
@@ -456,6 +457,15 @@ compute_layout :: proc(ctx: ^Context, canvas_size: [2]int, font_width: int, font
         number_of_fills[box.axis] = 0;
 
         our_size := box.computed_size;
+        for axis in 0..<2 {
+            if box.semantic_size[axis].kind == .ChildrenSum {
+                if box.computed_size[axis] == 0 {
+                    our_size[axis] = ancestor_size(ctx, box, Axis(axis))
+                } else {
+                    our_size[axis] = box.computed_child_size[axis]
+                }
+            }
+        }
 
         for child in iterate_box(&iter) {
             if .Floating in child.flags { continue; }
@@ -482,8 +492,8 @@ compute_layout :: proc(ctx: ^Context, canvas_size: [2]int, font_width: int, font
         }
     }
 
-    if post_compute_size[Axis.Horizontal] {
-        box.computed_size[Axis.Horizontal] = 0;
+    {
+        box.computed_child_size[Axis.Horizontal] = 0;
 
         iter := BoxIter { box.first, 0 };
         for child in iterate_box(&iter) {
@@ -491,18 +501,22 @@ compute_layout :: proc(ctx: ^Context, canvas_size: [2]int, font_width: int, font
 
             switch box.axis {
                 case .Horizontal: {
-                    box.computed_size[Axis.Horizontal] += child.computed_size[Axis.Horizontal];
+                    box.computed_child_size[Axis.Horizontal] += child.computed_size[Axis.Horizontal];
                 }
                 case .Vertical: {
-                    if child.computed_size[Axis.Horizontal] > box.computed_size[Axis.Horizontal] {
-                        box.computed_size[Axis.Horizontal] = child.computed_size[Axis.Horizontal];
+                    if child.computed_size[Axis.Horizontal] > box.computed_child_size[Axis.Horizontal] {
+                        box.computed_child_size[Axis.Horizontal] = child.computed_size[Axis.Horizontal];
                     }
                 }
             }
         }
     }
-    if post_compute_size[Axis.Vertical] {
-        box.computed_size[Axis.Vertical] = 0;
+    if post_compute_size[Axis.Horizontal] {
+        box.computed_size[Axis.Horizontal] = box.computed_child_size[Axis.Horizontal];
+    }
+
+    {
+        box.computed_child_size[Axis.Vertical] = 0;
 
         iter := BoxIter { box.first, 0 };
         for child in iterate_box(&iter) {
@@ -510,15 +524,18 @@ compute_layout :: proc(ctx: ^Context, canvas_size: [2]int, font_width: int, font
 
             switch box.axis {
                 case .Horizontal: {
-                    if child.computed_size[Axis.Vertical] > box.computed_size[Axis.Vertical] {
-                        box.computed_size[Axis.Vertical] = child.computed_size[Axis.Vertical];
+                    if child.computed_size[Axis.Vertical] > box.computed_child_size[Axis.Vertical] {
+                        box.computed_child_size[Axis.Vertical] = child.computed_size[Axis.Vertical];
                     }
                 }
                 case .Vertical: {
-                    box.computed_size[Axis.Vertical] += child.computed_size[Axis.Vertical];
+                    box.computed_child_size[Axis.Vertical] += child.computed_size[Axis.Vertical];
                 }
             }
         }
+    }
+    if post_compute_size[Axis.Vertical] {
+        box.computed_size[Axis.Vertical] = box.computed_child_size[Axis.Vertical];
     }
 }
 

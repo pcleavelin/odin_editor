@@ -1363,12 +1363,12 @@ main :: proc() {
                 {
                     ui.spacer(&ui_context, "left spacer")
                     
-                    halfway, _ := ui.push_rect(&ui_context, "halfway centered", false, false, .Vertical, {ui.SemanticSize{kind = .ChildrenSum}, ui.SemanticSize{kind = .Fill}})
+                    halfway, _ := ui.push_rect(&ui_context, "halfway centered", false, true, .Vertical, {ui.SemanticSize{kind = .ChildrenSum}, ui.SemanticSize{kind = .Fill}})
                     ui.push_parent(&ui_context, halfway)
                     {
                         ui.spacer(&ui_context, "top spacer")
 
-                        centered_container, _ := ui.push_rect(&ui_context, "centered container", true, true, .Horizontal, {ui.SemanticSize{kind = .ChildrenSum, value=state.screen_width-32}, ui.SemanticSize{kind = .ChildrenSum, value = state.screen_height-32}})
+                        centered_container, _ := ui.push_rect(&ui_context, "centered container", false, false, .Horizontal, {ui.SemanticSize{kind = .Fill}, ui.SemanticSize{kind = .ChildrenSum}})
                         ui.push_parent(&ui_context, centered_container)
                         {
                             lua.run_ui_function(&state, &ui_context, window.lua_draw_proc);
