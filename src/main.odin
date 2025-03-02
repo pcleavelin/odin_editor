@@ -1062,8 +1062,8 @@ main :: proc() {
         }
     }
 
-    // context.logger = core.new_logger(&state.log_buffer);
-    context.logger = log.create_console_logger();
+    context.logger = core.new_logger(&state.log_buffer);
+    // context.logger = log.create_console_logger();
     state.ctx = context;
 
     // TODO: don't use this
@@ -1352,7 +1352,6 @@ main :: proc() {
         if state.window != nil && state.window.draw != nil {
             state.window.draw(state.plugin_vtable, state.window.user_data);
         }
-
 
         if window, ok := &state.new_window.(core.NewWindow); ok {
             floating, interaction := ui.push_floating(&ui_context, "floating_window", {0,0})
