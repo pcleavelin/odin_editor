@@ -324,12 +324,36 @@ draw :: proc(state_with_ui: ^StateWithUi) {
     sdl2.SetRenderDrawColor(state_with_ui.state.sdl_renderer, render_color.r, render_color.g, render_color.b, render_color.a);
     sdl2.RenderClear(state_with_ui.state.sdl_renderer);
 
-    // if state_with_ui.state.window != nil && state_with_ui.state.window.draw != nil {
-    //     state_with_ui.state.window.draw(state_with_ui.state.plugin_vtable, state_with_ui.state.window.user_data);
-    // }
+    new_ui := transmute(^ui.State)state.ui
+
+    ui.open_element(new_ui, nil, {
+        kind = {ui.Fit{}, ui.Exact(400)},
+    })
+    {
+        ui.open_element(new_ui, "Hello, I am a text thingy", {})
+        ui.close_element(new_ui)
+
+        ui.open_element(new_ui, "Number 2", {})
+        ui.close_element(new_ui)
+
+        ui.open_element(new_ui, "I am on the right hopefully", {
+            kind = {ui.Exact(state.screen_width-128), ui.Grow{}}
+        })
+        ui.close_element(new_ui)
+
+        ui.open_element(new_ui, "Number 4", {
+            kind = {ui.Exact(state.screen_width-128), ui.Grow{}}
+        })
+        ui.close_element(new_ui)
+    }
+    ui.close_element(new_ui)
+
+    ui.compute_layout_2(new_ui)
 
     ui.compute_layout(state_with_ui.ui_context, { state_with_ui.state.screen_width, state_with_ui.state.screen_height }, state_with_ui.state.source_font_width, state_with_ui.state.source_font_height, state_with_ui.ui_context.root);
     ui.draw(state_with_ui.ui_context, state_with_ui.state, state_with_ui.state.source_font_width, state_with_ui.state.source_font_height, state_with_ui.ui_context.root);
+
+    ui.new_draw(new_ui, &state)
 
     if state_with_ui.state.mode != .Insert && state_with_ui.state.current_input_map != &state_with_ui.state.input_map.mode[state_with_ui.state.mode] {
         longest_description := 0;
@@ -1067,6 +1091,11 @@ main :: proc() {
     // context.logger = core.new_logger(&state.log_buffer);
     context.logger = log.create_console_logger();
     state.ctx = context;
+
+    state.ui = &ui.State {
+        curr_elements = make([]ui.UI_Element, 8192),
+        prev_elements = make([]ui.UI_Element, 8192),
+    }
 
     // TODO: don't use this
     mem.scratch_allocator_init(&scratch, 1024*1024);

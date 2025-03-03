@@ -62,6 +62,7 @@ State :: struct {
     L: ^lua.State,
     sdl_renderer: ^sdl2.Renderer,
     font_atlas: FontAtlas,
+    ui: rawptr,
 
     mode: Mode,
     should_close: bool,
