@@ -327,22 +327,23 @@ draw :: proc(state_with_ui: ^StateWithUi) {
     new_ui := transmute(^ui.State)state.ui
 
     ui.open_element(new_ui, nil, {
-        kind = {ui.Fit{}, ui.Exact(400)},
+        kind = {ui.Exact(state.screen_width), ui.Exact(state.screen_height)},
     })
     {
-        ui.open_element(new_ui, "Hello, I am a text thingy", {})
-        ui.close_element(new_ui)
-
-        ui.open_element(new_ui, "Number 2", {})
-        ui.close_element(new_ui)
-
-        ui.open_element(new_ui, "I am on the right hopefully", {
-            kind = {ui.Exact(state.screen_width-128), ui.Grow{}}
+        ui.open_element(new_ui, "Hello, I am a text thingy", {
+            kind = {ui.Grow{}, ui.Grow{}}
         })
         ui.close_element(new_ui)
 
+        ui_file_buffer_2(new_ui, core.current_buffer(state_with_ui.state))
+
+        ui.open_element(new_ui, "I am on the right hopefully", {
+            kind = {nil, ui.Grow{}}
+        })
+        ui.close_element(new_ui)
+        
         ui.open_element(new_ui, "Number 4", {
-            kind = {ui.Exact(state.screen_width-128), ui.Grow{}}
+            kind = {nil, ui.Grow{}}
         })
         ui.close_element(new_ui)
     }
@@ -462,6 +463,65 @@ ui_file_buffer :: proc(ctx: ^ui.Context, buffer: ^FileBuffer) -> ui.Interaction 
     }
 
     return interaction;
+}
+
+ui_file_buffer_2 :: proc(s: ^ui.State, buffer: ^FileBuffer) {
+    draw_func := proc(state: ^State, e: ui.UI_Element, user_data: rawptr) {
+        buffer := transmute(^FileBuffer)user_data;
+        if buffer != nil {
+            buffer.glyph_buffer_width = e.layout.size.x / state.source_font_width;
+            buffer.glyph_buffer_height = e.layout.size.y / state.source_font_height + 1;
+
+            core.draw_file_buffer(state, buffer, e.layout.pos.x, e.layout.pos.y);
+        }
+    };
+
+    relative_file_path, _ := filepath.rel(state.directory, buffer.file_path, context.temp_allocator)
+
+    ui.open_element(s, nil, {
+        dir = .TopToBottom,
+        kind = {ui.Grow{}, ui.Grow{}},
+    })
+    {
+        ui.open_element(s, ui.UI_Element_Kind_Custom{fn = draw_func, user_data = transmute(rawptr)buffer}, {
+            kind = {ui.Grow{}, ui.Grow{}}
+        })
+        ui.close_element(s)
+
+        ui.open_element(s, nil, {
+            kind = {ui.Grow{}, ui.Exact(state.source_font_height)}
+        })
+        {
+            ui.open_element(s, fmt.tprintf("%s", state.mode), {})
+            ui.close_element(s)
+        }
+        ui.close_element(s)
+
+        /*
+        ui.open_element(s, nil, {
+            kind = {ui.Grow{}, ui.Exact(state.source_font_height)}
+        })
+        {
+            ui.open_element(s, fmt.tprintf("%s", state.mode), {})
+            ui.close_element(s)
+
+            if selection, exists := buffer.selection.?; exists {
+                ui.open_element(s, fmt.tprintf("sel: %d:%d", selection.end.line, selection.end.col), {});
+                ui.close_element(s)
+            }
+            ui.open_element(s, nil, {
+                kind = {ui.Grow{}, ui.Grow{}}
+            })
+            ui.close_element(s)
+
+            ui.open_element(s, relative_file_path, {});
+            ui.close_element(s)
+        }
+        ui.close_element(s)
+        */
+
+    }
+    ui.close_element(s)
 }
 
 init_plugin_vtable :: proc(ui_context: ^ui.Context) -> plugin.Plugin {

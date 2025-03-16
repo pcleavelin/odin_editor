@@ -563,28 +563,28 @@ push_clip :: proc(ctx: ^Context, pos: [2]int, size: [2]int, inside_parent: bool 
         }
     }
 
-    sdl2.RenderSetClipRect(ctx.renderer, &sdl2.Rect {
-        i32(rect.pos.x),
-        i32(rect.pos.y),
-        i32(rect.size.x),
-        i32(rect.size.y)
-    });
+    // sdl2.RenderSetClipRect(ctx.renderer, &sdl2.Rect {
+    //     i32(rect.pos.x),
+    //     i32(rect.pos.y),
+    //     i32(rect.size.x),
+    //     i32(rect.size.y)
+    // });
 
     append(&ctx.clips, rect);
 }
 
 pop_clip :: proc(ctx: ^Context) {
     if len(ctx.clips) > 0 {
-        rect := pop(&ctx.clips);
+        // rect := pop(&ctx.clips);
 
-        sdl2.RenderSetClipRect(ctx.renderer, &sdl2.Rect {
-            i32(rect.pos.x),
-            i32(rect.pos.y),
-            i32(rect.size.x),
-            i32(rect.size.y)
-        });
+        // sdl2.RenderSetClipRect(ctx.renderer, &sdl2.Rect {
+        //     i32(rect.pos.x),
+        //     i32(rect.pos.y),
+        //     i32(rect.size.x),
+        //     i32(rect.size.y)
+        // });
     } else {
-        sdl2.RenderSetClipRect(ctx.renderer, nil);
+        // sdl2.RenderSetClipRect(ctx.renderer, nil);
     }
 }
 

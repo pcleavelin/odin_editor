@@ -29,10 +29,15 @@ UI_Element :: struct {
 UI_Element_Kind :: union {
     UI_Element_Kind_Text,
     UI_Element_Kind_Image,
+    UI_Element_Kind_Custom,
 }
 
-UI_Element_Kind_Text :: distinct string
+UI_Element_Kind_Text :: string
 UI_Element_Kind_Image :: distinct u64
+UI_Element_Kind_Custom :: struct {
+    user_data: rawptr,
+    fn: proc(state: ^core.State, element: UI_Element, user_data: rawptr),
+}
 
 UI_Layout :: struct {
     dir: UI_Direction,
@@ -64,6 +69,8 @@ open_element :: proc(state: ^State, kind: UI_Element_Kind, layout: UI_Layout) {
         kind = kind,
         layout = layout,
     }
+    e.layout.pos = state.curr_elements[state.num_curr].layout.pos
+    e.layout.size = state.curr_elements[state.num_curr].layout.size
 
     if parent, ok := state.current_open_element.?; ok {
         e.parent = parent
@@ -86,7 +93,7 @@ open_element :: proc(state: ^State, kind: UI_Element_Kind, layout: UI_Layout) {
     state.num_curr += 1
 }
 
-close_element :: proc(state: ^State, loc := #caller_location) {
+close_element :: proc(state: ^State, loc := #caller_location) -> UI_Layout {
     if curr, ok := state.current_open_element.?; ok {
         e := &state.curr_elements[curr]
 
@@ -97,15 +104,16 @@ close_element :: proc(state: ^State, loc := #caller_location) {
                 switch v in e.kind {
                     case UI_Element_Kind_Text: {
                         // FIXME: properly use font size
-                        e.layout.size[0] = len(v) * 9
+                        e.layout.size.x = len(v) * 9
                     }
                     case UI_Element_Kind_Image: {
                         // TODO
                     }
+                    case UI_Element_Kind_Custom: { }
                 }
             }
 
-            case Exact: { e.layout.size[0] = int(v) }
+            case Exact: { e.layout.size.x = int(v) }
             case Fit: {
                 child_index := e.first
                 for child_index != nil {
@@ -114,12 +122,12 @@ close_element :: proc(state: ^State, loc := #caller_location) {
                     switch e.layout.dir {
                         case .RightToLeft: fallthrough
                         case .LeftToRight: {
-                            e.layout.size[0] += child.layout.size[0]
+                            e.layout.size.x += child.layout.size.x
                         }
 
                         case .BottomToTop: fallthrough
                         case .TopToBottom: {
-                            e.layout.size[0] = math.max(e.layout.size[0], child.layout.size[0])
+                            e.layout.size.x = math.max(e.layout.size.x, child.layout.size.x)
                         }
                     }
 
@@ -129,21 +137,22 @@ close_element :: proc(state: ^State, loc := #caller_location) {
             case Grow: { /* Done in the Grow pass */ }
         }
 
-        switch v in e.layout.kind[1] {
+        switch v in e.layout.kind.y {
             case nil: {
                 switch v in e.kind {
                     case UI_Element_Kind_Text: {
                         // TODO: wrap text
                         // FIXME: properly use font size
-                        e.layout.size[1] = 16
+                        e.layout.size.y = 16
                     }
                     case UI_Element_Kind_Image: {
                         // TODO
                     }
+                    case UI_Element_Kind_Custom: { }
                 }
             }
 
-            case Exact: { e.layout.size[1] = int(v) }
+            case Exact: { e.layout.size.y = int(v) }
             case Fit: {
                 child_index := e.first
                 for child_index != nil {
@@ -152,12 +161,12 @@ close_element :: proc(state: ^State, loc := #caller_location) {
                     switch e.layout.dir {
                         case .RightToLeft: fallthrough
                         case .LeftToRight: {
-                            e.layout.size[1] = math.max(e.layout.size[1], child.layout.size[1])
+                            e.layout.size.y = math.max(e.layout.size.y, child.layout.size.y)
                         }
 
                         case .BottomToTop: fallthrough
                         case .TopToBottom: {
-                            e.layout.size[1] += child.layout.size[1]
+                            e.layout.size.y += child.layout.size.y
                         }
                     }
 
@@ -167,11 +176,13 @@ close_element :: proc(state: ^State, loc := #caller_location) {
             case Grow: { /* Done in the Grow pass */ }
         }
 
-        grow_children(state, curr)
-
         state.current_open_element = e.parent
+
+        return e.layout
     } else {
         log.error("'close_element' has unmatched 'open_element' at", loc)
+
+        return UI_Layout{}
     }
 }
 
@@ -210,7 +221,7 @@ grow_children :: proc(state: ^State, index: int) {
 
     if num_growing.x > 0 || num_growing.y > 0 {
         remaining_size := e.layout.size - children_size
-        to_grow: [2]int 
+        to_grow: [2]int
         to_grow.x = 0 if num_growing.x < 1 else remaining_size.x/num_growing.x
         to_grow.y = 0 if num_growing.y < 1 else remaining_size.y/num_growing.y
 
@@ -239,12 +250,21 @@ grow_children :: proc(state: ^State, index: int) {
                 }
             }
 
+            _, x_growing := child.layout.kind.x.(Grow)
+            _, y_growing := child.layout.kind.y.(Grow)
+
+            if x_growing || y_growing {
+                grow_children(state, child_index.?)
+            }
+
             child_index = child.next
         }
     }
 }
 
 compute_layout_2 :: proc(state: ^State) {
+    grow_children(state, 0)
+
     for i in 0..<state.num_curr {
         e := &state.curr_elements[i]
 
@@ -256,7 +276,8 @@ compute_layout_2 :: proc(state: ^State) {
 
                 switch parent.layout.dir {
                     case .LeftToRight: {
-                        e.layout.pos[0] = prev.layout.pos[0]+prev.layout.size[0] /* TODO: + child_gap */
+                        e.layout.pos.x = prev.layout.pos.x+prev.layout.size.x /* TODO: + child_gap */
+                        e.layout.pos.y = parent.layout.pos.y
                     }
                     case .RightToLeft: {
                         // TODO:
@@ -264,11 +285,32 @@ compute_layout_2 :: proc(state: ^State) {
                     }
 
                     case .TopToBottom: {
-                        e.layout.pos[1] = prev.layout.pos[1]+prev.layout.size[1] /* TODO: + child_gap */
+                        e.layout.pos.x = parent.layout.pos.x
+                        e.layout.pos.y = prev.layout.pos.y+prev.layout.size.y /* TODO: + child_gap */
                     }
                     case .BottomToTop: {
                         // TODO:
                         // e.layout.pos[1] = prev.layout.pos[1]-prev.layout.size[1] /* TODO: - child_gap */
+                    }
+                }
+            } else {
+                switch parent.layout.dir {
+                    case .LeftToRight: {
+                        e.layout.pos.x = parent.layout.pos.x /* TODO: + padding */
+                        e.layout.pos.y = parent.layout.pos.y
+                    }
+                    case .RightToLeft: {
+                        // TODO:
+                        // e.layout.pos[0] = prev.layout.pos[0]-prev.layout.size[0] /* TODO: - padding */
+                    }
+
+                    case .TopToBottom: {
+                        e.layout.pos.x = parent.layout.pos.x
+                        e.layout.pos.y = parent.layout.pos.y /* TODO: + padding */
+                    }
+                    case .BottomToTop: {
+                        // TODO:
+                        // e.layout.pos[1] = prev.layout.pos[1]-prev.layout.size[1] /* TODO: - padding */
                     }
                 }
             }
@@ -304,6 +346,9 @@ new_draw :: proc(state: ^State, core_state: ^core.State) {
             }
             case UI_Element_Kind_Image: {
                 // TODO
+            }
+            case UI_Element_Kind_Custom: {
+                v.fn(core_state, e^, v.user_data) 
             }
         }
     }
