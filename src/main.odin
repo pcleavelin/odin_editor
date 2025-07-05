@@ -330,22 +330,53 @@ draw :: proc(state_with_ui: ^StateWithUi) {
         kind = {ui.Exact(state.screen_width), ui.Exact(state.screen_height)},
     })
     {
-        ui.open_element(new_ui, "Hello, I am a text thingy", {
-            kind = {ui.Grow{}, ui.Grow{}}
-        })
-        ui.close_element(new_ui)
+        // ui.open_element(new_ui, "Hello, I am a text thingy", {
+        //     kind = {ui.Grow{}, ui.Grow{}}
+        // })
+        // ui.close_element(new_ui)
 
-        ui_file_buffer_2(new_ui, core.current_buffer(state_with_ui.state))
+        // ui_file_buffer_2(new_ui, core.current_buffer(state_with_ui.state))
 
-        ui.open_element(new_ui, "I am on the right hopefully", {
-            kind = {nil, ui.Grow{}}
-        })
-        ui.close_element(new_ui)
-        
-        ui.open_element(new_ui, "Number 4", {
-            kind = {nil, ui.Grow{}}
-        })
-        ui.close_element(new_ui)
+        // ui.open_element(new_ui, "I am on the right hopefully", {
+        //     kind = {nil, ui.Grow{}}
+        // })
+        // ui.close_element(new_ui)
+        // 
+        // ui.open_element(new_ui, "Number 4", {
+        //     kind = {nil, ui.Grow{}}
+        // })
+        // ui.close_element(new_ui)
+
+        for panel in state.active_panels {
+            if panel != nil {
+                switch v in panel.? {
+                    case core.LuaPanel: {
+                        ui.open_element(new_ui, nil, {
+                            dir = .TopToBottom,
+                            kind = {ui.Grow{}, ui.Grow{}}
+                        })
+                        {
+                            ui.open_element(new_ui, nil, {
+                                kind = {ui.Grow{}, ui.Grow{}}
+                            })
+                            {
+                                // ui.open_element(new_ui, "TODO: lua api for new ui", {})
+                                // ui.close_element(new_ui)
+                                lua.run_panel_render_new(&state, new_ui, v.index, v.render_ref)
+                            }
+                            ui.close_element(new_ui)
+
+                            ui.open_element(new_ui, v.panel_id.name, {})
+                            ui.close_element(new_ui)
+                        }
+                        ui.close_element(new_ui)
+                    }
+                    case core.LibPanel:
+                        log.warn("LibPanel not supported")
+                }
+            }
+        }
+
     }
     ui.close_element(new_ui)
 
@@ -1356,16 +1387,16 @@ main :: proc() {
             }
         }
 
-        for panel in state.active_panels {
-            if panel != nil {
-                switch v in panel.? {
-                    case core.LuaPanel:
-                        lua.run_panel_render(&state, &ui_context, v.index, v.render_ref)
-                    case core.LibPanel:
-                        log.warn("LibPanel not supported")
-                }
-            }
-        }
+        // for panel in state.active_panels {
+        //     if panel != nil {
+        //         switch v in panel.? {
+        //             case core.LuaPanel:
+        //                 lua.run_panel_render(&state, &ui_context, v.index, v.render_ref)
+        //             case core.LibPanel:
+        //                 log.warn("LibPanel not supported")
+        //         }
+        //     }
+        // }
 
         // TODO: mirror how this is done for Lua
         if state.window != nil && state.window.draw != nil {

@@ -251,6 +251,26 @@ new_state :: proc(_state: ^core.State) {
         }
     }
 
+    get_size_kind :: proc(L: ^lua.State, index: i32) -> ui.UI_Size_Kind {
+        lua.rawgeti(L, index, 1);
+        k := lua.tointeger(L, -1);
+        lua.pop(L, 1);
+
+        lua.rawgeti(L, index, 2);
+        v := lua.tointeger(L, -1);
+        lua.pop(L, 1);
+
+        log.info("k", k, "v", v)
+
+        switch k {
+            case 1: return ui.Exact(v)
+            case 2: return ui.Fit{}
+            case 3: return ui.Grow{}
+        }
+
+        return nil
+    }
+
     push_lua_semantic_size_table :: proc(L: ^lua.State, size: ui.SemanticSize) {
         lua.newtable(L);
         {
@@ -617,6 +637,140 @@ new_state :: proc(_state: ^core.State) {
         }
     };
 
+    ui_lib_new := [?]lua.L_Reg {
+        lua.L_Reg {
+            "Exact",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                value := lua.L_checknumber(L, 1);
+                lua.newtable(L);
+                {
+                    // Size Kind 1 = Exact
+                    lua.pushinteger(L, lua.Integer(1));
+                    lua.rawseti(L, -2, 1);
+
+                    lua.pushinteger(L, lua.Integer(value));
+                    lua.rawseti(L, -2, 2);
+                }
+
+                return 1;
+            }
+        },
+        lua.L_Reg {
+            "close_element",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA))
+                lua.pushvalue(L, 1)
+                ui_state := transmute(^ui.State)lua.touserdata(L, -1)
+                if ui_state == nil { return i32(lua.ERRRUN); }
+
+                ui.close_element(ui_state);
+                return i32(lua.OK);
+            }
+        },
+        lua.L_Reg {
+            "open_element",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx
+
+                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA))
+                lua.pushvalue(L, 1)
+                ui_state := transmute(^ui.State)lua.touserdata(L, -1)
+
+                if ui_state != nil {
+                    label := lua.L_checkstring(L, 2)
+
+                    if !lua.istable(state.L, 3) {
+                        log.error("expected table for element layout");
+
+                        // TODO: maybe call `ui.open_element` anyway to not break everything
+
+                        return i32(lua.ERRRUN);
+                    }
+
+                    dir: ui.UI_Direction
+                    kind: [2]ui.UI_Size_Kind
+
+                    lua.getfield(state.L, 3, "kind");
+                    top := lua.gettop(state.L)
+
+                    if (lua.isnil(state.L, top)) {
+                        lua.pop(state.L, top)
+                    } else if lua.istable(state.L, top) {
+                        kind.x = get_size_kind(state.L, top)
+                        kind.y = get_size_kind(state.L, top)
+                    } else {
+                        log.error("expected table for 'kind' field in element layout")
+                    }
+                    lua.pop(state.L, 1)
+
+                    lua.getfield(state.L, 3, "dir");
+                    if (lua.isnil(state.L, -1)) {
+                        lua.pop(state.L, 1)
+                    } else if lua.isinteger(state.L, -1) {
+                        dir = ui.UI_Direction(lua.tointeger(state.L, -1))
+                        lua.pop(state.L, 1)
+                    } else {
+                        log.error("expected integer for 'dir' field in element layout")
+                        return i32(lua.ERRRUN);
+                    }
+                    lua.pop(state.L, 1)
+
+                    ui.open_element(ui_state, strings.clone(string(label), context.temp_allocator), ui.UI_Layout { dir=dir, kind=kind })
+
+                    return i32(lua.OK)
+                }
+
+                return i32(lua.ERRRUN)
+            }
+        },
+        lua.L_Reg {
+            "buffer",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
+                lua.pushvalue(L, 1);
+                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
+
+                if ui_ctx != nil {
+                    buffer_index := int(lua.L_checkinteger(L, 2));
+
+                    if buffer_index != -2 && (buffer_index < 0 || buffer_index >= len(state.buffers)) {
+                        return i32(lua.ERRRUN);
+                    }
+
+                    ui_file_buffer(ui_ctx, core.buffer_from_index(state, buffer_index));
+
+                    return i32(lua.OK);
+                }
+
+                return i32(lua.ERRRUN);
+            }
+        },
+        lua.L_Reg {
+            "log_buffer",
+            proc "c" (L: ^lua.State) -> i32 {
+                context = state.ctx;
+
+                lua.L_checktype(L, 1, i32(lua.TLIGHTUSERDATA));
+                lua.pushvalue(L, 1);
+                ui_ctx := transmute(^ui.Context)lua.touserdata(L, -1);
+
+                if ui_ctx != nil {
+                    ui_file_buffer(ui_ctx, &state.log_buffer);
+
+                    return i32(lua.OK);
+                }
+
+                return i32(lua.ERRRUN);
+            }
+        }
+    };
+
     // TODO: generate this from the plugin.Key enum
     lua.newtable(state.L);
     {
@@ -689,6 +843,27 @@ new_state :: proc(_state: ^core.State) {
 
         lua.L_setfuncs(state.L, raw_data(&ui_lib), 0);
         lua.setglobal(state.L, "UI");
+    }
+
+    lua.newtable(state.L);
+    {
+        lua.pushinteger(state.L, lua.Integer(ui.UI_Direction.LeftToRight));
+        lua.setfield(state.L, -2, "LeftToRight");
+        // push_lua_semantic_size_table(state.L, { ui.SemanticSizeKind.ChildrenSum, 0 });
+        // lua.setfield(state.L, -2, "ChildrenSum");
+        lua.newtable(state.L);
+        {
+            // Size Kind 1 = Exact
+            lua.pushinteger(state.L, lua.Integer(2));
+            lua.rawseti(state.L, -2, 1);
+
+            lua.pushinteger(state.L, lua.Integer(0));
+            lua.rawseti(state.L, -2, 2);
+        }
+        lua.setfield(state.L, -2, "Fit");
+
+        lua.L_setfuncs(state.L, raw_data(&ui_lib_new), 0);
+        lua.setglobal(state.L, "UI_New");
     }
 }
 
@@ -940,6 +1115,25 @@ run_panel_render :: proc(state: ^core.State, ui_context: ^ui.Context, panel_inde
     }
 }
 
+run_panel_render_new :: proc(state: ^core.State, ui_state: ^ui.State, panel_index: i32, fn_ref: i32) {
+    lua.getglobal(state.L, "__core_panels")
+
+    lua.rawgeti(state.L, lua.REGISTRYINDEX, lua.Integer(fn_ref));
+
+    lua.pushinteger(state.L, lua.Integer(panel_index));
+    lua.gettable(state.L, -3);
+
+    lua.pushlightuserdata(state.L, ui_state);
+    if lua.pcall(state.L, 2, 0, 0) != i32(lua.OK) {
+        err := lua.tostring(state.L, lua.gettop(state.L));
+        lua.pop(state.L, lua.gettop(state.L));
+
+        log.error("[LUA]:", err);
+    } else {
+        lua.pop(state.L, lua.gettop(state.L));
+    }
+}
+
 add_panel :: proc(state: ^core.State, id: core.LuaPanelId) -> (new_panel: core.LuaPanel, ok: bool) {
     lua.getglobal(state.L, "__core_panels")
 
@@ -1009,6 +1203,7 @@ add_panel :: proc(state: ^core.State, id: core.LuaPanelId) -> (new_panel: core.L
     lua.settable(state.L, l_panel_list)
 
     return core.LuaPanel{
+        panel_id = id,
         index = i32(num_panels) + 1,
         render_ref = render_ref
     }, true

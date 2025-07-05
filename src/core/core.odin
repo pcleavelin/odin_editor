@@ -135,6 +135,7 @@ LuaPanelId :: struct {
     name: string,
 }
 LuaPanel :: struct {
+    panel_id: LuaPanelId,
     index: i32,
     render_ref: i32
 }

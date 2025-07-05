@@ -19,9 +19,9 @@ function M.BufferListPanel.new()
 end
 
 function M.BufferListPanel:render(ctx)
-    if UI.button(ctx, "Number of Clicks "..self.num_clicks).clicked then
-        self.num_clicks = self.num_clicks + 1
-    end
+    -- if UI.button(ctx, "Number of Clicks "..self.num_clicks).clicked then
+    --     self.num_clicks = self.num_clicks + 1
+    -- end
 end
 
 function M.SomeOtherPanel.new()
@@ -31,9 +31,17 @@ function M.SomeOtherPanel.new()
 end
 
 function M.SomeOtherPanel:render(ctx)
-    if UI.button(ctx, "Number of Clicks 2 "..self.num_clicks_2).clicked then
-        self.num_clicks_2 = self.num_clicks_2 + 1
-    end
+    UI_New.open_element(ctx, "Number of Clicks", {
+        dir = UI_New.LeftToRight,
+        kind = {UI_New.Exact(128), UI_New.Exact(32)},
+    })
+    UI_New.close_element(ctx)
+
+    UI_New.open_element(ctx, "Whatever man", {
+            dir = UI_New.LeftToRight,
+            kind = {UI_New.Fit, UI_New.Exact(32)},
+        })
+    UI_New.close_element(ctx)
 end
 
 function M.open_file_search_window()
