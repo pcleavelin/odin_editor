@@ -8,6 +8,8 @@ import "core:log"
 import "vendor:sdl2"
 import lua "vendor:lua/5.4"
 
+import "../util"
+
 Mode :: enum {
     Normal,
     Insert,
@@ -48,8 +50,7 @@ State :: struct {
     command_arena: runtime.Allocator,
     command_args: [dynamic]EditorCommandArgument,
 
-    active_panels: [128]Maybe(Panel),
-    panel_catalog: [dynamic]PanelId,
+    panels: util.StaticList(Panel),
 }
 
 EditorCommand :: struct {
@@ -68,16 +69,19 @@ EditorCommandArgument :: union #no_nil {
     i32
 }
 
-PanelId :: union {
-    LibPanelId,
-}
-Panel :: union {
-    LibPanel,
+PanelRenderProc :: proc(state: ^State, panel_state: ^PanelState) -> (ok: bool)
+Panel :: struct {
+    panel_state: PanelState,
+    render_proc: PanelRenderProc,
 }
 
-// TODO
-LibPanelId :: struct {}
-LibPanel :: struct {}
+PanelState :: union {
+    FileBufferPanel
+}
+
+FileBufferPanel :: struct {
+    buffer_index: int,
+}
 
 current_buffer :: proc(state: ^State) -> ^FileBuffer {
     if state.current_buffer == -2 {

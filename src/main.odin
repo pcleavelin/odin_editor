@@ -13,7 +13,9 @@ import "core:slice"
 import "vendor:sdl2"
 import "vendor:sdl2/ttf"
 
+import "util"
 import "core"
+import "panels"
 import "theme"
 import "ui"
 
@@ -263,9 +265,24 @@ draw :: proc(state: ^State) {
     new_ui.max_size.y = state.screen_height
 
     // TODO: use the new panels stuff
-    if file_buffer := core.current_buffer(state); file_buffer != nil {
-        ui_file_buffer(new_ui, file_buffer)
+    // if file_buffer := core.current_buffer(state); file_buffer != nil {
+    //     ui_file_buffer(new_ui, file_buffer)
+    // }
+
+    ui.open_element(new_ui, nil, {
+        dir = .LeftToRight,
+        kind = {ui.Grow{}, ui.Grow{}},
+    })
+    { 
+        for i in 0..<state.panels.len {
+            panel := &state.panels.data[i]
+
+            if panel.render_proc != nil {
+                panel.render_proc(state, &panel.panel_state)
+            }
+        }
     }
+    ui.close_element(new_ui)
 
     ui.compute_layout_2(new_ui)
     ui.draw(new_ui, state)
@@ -398,7 +415,7 @@ main :: proc() {
         commands = make(core.EditorCommandList),
         command_arena = mem.arena_allocator(&_command_arena),
 
-        panel_catalog = make([dynamic]core.PanelId),
+        panels = util.make_static_list(core.Panel, 128),
 
         directory = os.get_current_directory(),
         log_buffer = core.new_virtual_file_buffer(context.allocator),
@@ -516,10 +533,13 @@ main :: proc() {
                 continue;
             }
 
+            util.append_static_list(&state.panels, panels.make_file_buffer_panel(len(state.buffers)))
             runtime.append(&state.buffers, buffer);
         }
     } else {
         buffer := core.new_virtual_file_buffer(context.allocator);
+
+        util.append_static_list(&state.panels, panels.make_file_buffer_panel(len(state.buffers)))
         runtime.append(&state.buffers, buffer);
     }
 
