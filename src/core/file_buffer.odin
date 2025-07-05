@@ -11,7 +11,6 @@ import "base:runtime"
 import "core:strings"
 
 import "../theme"
-import "../plugin"
 
 ScrollDir :: enum {
     Up,
@@ -752,32 +751,6 @@ next_buffer :: proc(state: ^State, prev_buffer: ^int) -> int {
     return index;
 }
 
-into_buffer_info :: proc(state: ^State, buffer: ^FileBuffer) -> plugin.BufferInfo {
-    return plugin.BufferInfo {
-        buffer = buffer,
-        input = plugin.BufferInput {
-            bytes = raw_data(buffer.input_buffer),
-            length = len(buffer.input_buffer),
-        },
-        cursor = plugin.Cursor {
-            col = buffer.cursor.col,
-            line = buffer.cursor.line,
-            index = plugin.BufferIndex {
-                slice_index = buffer.cursor.index.slice_index,
-                content_index = buffer.cursor.index.content_index,
-            }
-        },
-        file_path = strings.clone_to_cstring(buffer.file_path, context.temp_allocator),
-        glyph_buffer_width = buffer.glyph_buffer_width,
-        glyph_buffer_height = buffer.glyph_buffer_height,
-        top_line = buffer.top_line,
-    };
-}
-into_buffer_info_from_index :: proc(state: ^State, buffer_index: int) -> plugin.BufferInfo {
-    buffer := buffer_from_index(state, buffer_index);
-    return into_buffer_info(state, buffer);
-}
-
 free_file_buffer :: proc(buffer: ^FileBuffer) {
     delete(buffer.original_content);
     delete(buffer.added_content);
@@ -876,9 +849,8 @@ update_glyph_buffer :: proc(buffer: ^FileBuffer) {
 
 draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, show_line_numbers: bool = true) {
     update_glyph_buffer(buffer);
-    if highlighter, exists := state.highlighters[buffer.extension]; exists {
-        highlighter(state.plugin_vtable, buffer);
-    }
+
+    // TODO: syntax highlighting
 
     padding := 0;
     if show_line_numbers {

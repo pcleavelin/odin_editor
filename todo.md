@@ -1,14 +1,32 @@
-- Get input maps working with `spawn_floating_window`
+# Bugs
+- Fix crash when cursor is over a new-line
+- Fix jumping forward a word jumping past consecutive brackets
 
-
-
+# Planned Features
+- LSP Integration
+    - [ ] Language Server Configurations
+    - [ ] Diagnostics
+        - [ ] In-line errors
+    - [ ] Go-to Definition/
+    - [ ] Find references
+- Vim-like Macro replays
+- Re-implement lost features from Plugins
+    - [ ] Syntax Highlighting
+        - [ ] Integrate tree-sitter
+    - [ ] Bootleg Telescope
+        - [ ] Grepping Files
+        - [ ] Open Buffer Search
+- Re-write the UI (again)
+    - [x] New UI
+    - [ ] Styling
 - Save/Load files
 - Undo/Redo
-    - Edit History Tree
+    - [ ] Edit History Tree
+    - [ ] Undo history saved to disk
 - Finish selections
     - [x] Guarantee that start and end are always ordered
     - Add in text actions
-        - Yank
+        - [ ] Yank
         - [x] Delete
         - [x] Change
 - Virtual Whitespace
@@ -17,24 +35,6 @@
     - Vim's f and F movement commands
     - Vim's r command
 - Command Search and Execution
+    - Refactor to remove generics added specifically for plugins
     - Palette based UI?
-    - [ ] Registering Plugin Commands that can be run in palette and via other plugins
-        - [x] A way to query these commands by-plugin
-- Re-write the UI (again)
-    - Separate ui components from layout
-- Re-do plugin system
-    - Potentially have a C# plugins system? Use it instead of Lua? (probably not)
-    - Re-do dylib plugin system
-    - Re-do Lua plugin system
-    - Core Events ~Define ultra-core common API~
-        - ~3rd-party core UI modifications must abide by this API (for example, another plugin must be able to open a file and have it be focused)~
-        - e.g. Open File, currently focused UI panel recieves event
-    - Ability to probe core for installed plugins and their version
-    - Plugins can register to be UI components that the user can define where they are laid out
 - Persist end of line cursor position
-- Generate key mappings from the plugin.Key enum
-- Fix jumping forward a word jumping past consecutive brackets
-- Re-do highlighter
-    - Use tree-sitter?
-    - Purely run highlighter on glyph-buffer?
-        - Figure out someway to cache multi-line coloring (ex. quotes)

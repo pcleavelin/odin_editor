@@ -13,6 +13,8 @@ State :: struct {
     num_prev: int,
     curr_elements: []UI_Element,
     prev_elements: []UI_Element,
+
+    max_size: [2]int, 
 }
 
 UI_Element :: struct {
@@ -134,7 +136,11 @@ close_element :: proc(state: ^State, loc := #caller_location) -> UI_Layout {
                     child_index = child.next
                 }
             }
-            case Grow: { /* Done in the Grow pass */ }
+            case Grow: {
+                if _, ok := e.parent.?; !ok {
+                    e.layout.size = state.max_size
+                }
+            }
         }
 
         switch v in e.layout.kind.y {
@@ -187,8 +193,24 @@ close_element :: proc(state: ^State, loc := #caller_location) -> UI_Layout {
 }
 
 @(private)
+non_fit_parent_size :: proc(state: ^State, index: int, axis: int) -> [2]int {
+    if _, ok := state.curr_elements[index].layout.kind[axis].(Fit); ok {
+        if parent_index, ok := state.curr_elements[index].parent.?; ok {
+            return non_fit_parent_size(state, parent_index, axis)
+        } else {
+            return state.max_size
+        }
+    } else {
+        return state.curr_elements[index].layout.size
+    }
+}
+
+@(private)
 grow_children :: proc(state: ^State, index: int) {
     e := &state.curr_elements[index]
+
+    x_e := non_fit_parent_size(state, index, 0);
+    y_e := non_fit_parent_size(state, index, 1);
 
     children_size: [2]int
     num_growing: [2]int
@@ -220,7 +242,7 @@ grow_children :: proc(state: ^State, index: int) {
     }
 
     if num_growing.x > 0 || num_growing.y > 0 {
-        remaining_size := e.layout.size - children_size
+        remaining_size := [2]int{ x_e.x, y_e.y } - children_size
         to_grow: [2]int
         to_grow.x = 0 if num_growing.x < 1 else remaining_size.x/num_growing.x
         to_grow.y = 0 if num_growing.y < 1 else remaining_size.y/num_growing.y
@@ -318,7 +340,7 @@ compute_layout_2 :: proc(state: ^State) {
     }
 }
 
-new_draw :: proc(state: ^State, core_state: ^core.State) {
+draw :: proc(state: ^State, core_state: ^core.State) {
     for i in 0..<state.num_curr {
         e := &state.curr_elements[i]
 

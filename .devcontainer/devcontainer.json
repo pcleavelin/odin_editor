@@ -1,0 +1,15 @@
+{
+    "image": "mcr.microsoft.com/devcontainers/cpp:ubuntu",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "danielgavin.ols"
+            ]
+        }
+    },
+    "features": {
+        "./odin-feature": {
+            "version": "latest"
+        }
+    }
+}
