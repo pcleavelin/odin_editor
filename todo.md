@@ -1,6 +1,7 @@
 # Bugs
 - Fix crash when cursor is over a new-line
 - Fix jumping forward a word jumping past consecutive brackets
+- Odd scrolling behavior on small screen heights
 
 # Planned Features
 - LSP Integration

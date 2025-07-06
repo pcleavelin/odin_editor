@@ -264,11 +264,6 @@ draw :: proc(state: ^State) {
     new_ui.max_size.x = state.screen_width
     new_ui.max_size.y = state.screen_height
 
-    // TODO: use the new panels stuff
-    // if file_buffer := core.current_buffer(state); file_buffer != nil {
-    //     ui_file_buffer(new_ui, file_buffer)
-    // }
-
     ui.open_element(new_ui, nil, {
         dir = .LeftToRight,
         kind = {ui.Grow{}, ui.Grow{}},
@@ -543,6 +538,9 @@ main :: proc() {
         runtime.append(&state.buffers, buffer);
     }
 
+    util.append_static_list(&state.panels, panels.make_grep_panel(&state))
+    state.current_panel = state.panels.len-1
+
     if sdl2.Init({.VIDEO}) < 0 {
         log.error("SDL failed to initialize:", sdl2.GetError());
         return;
@@ -610,6 +608,10 @@ main :: proc() {
 
     control_key_pressed: bool;
     for !state.should_close {
+        if current_panel, ok := util.get(&state.panels, state.current_panel.? or_else -1).?; ok {
+            state.current_input_map = &current_panel.input_map.mode[state.mode]
+        }
+
         {
             // ui_context.last_mouse_left_down = ui_context.mouse_left_down;
             // ui_context.last_mouse_right_down = ui_context.mouse_right_down;
@@ -639,6 +641,36 @@ main :: proc() {
                     }
                 }
 
+                run_key_action := proc(state: ^core.State, control_key_pressed: bool, key: core.Key) -> bool {
+                    if state.current_input_map != nil {
+                        if control_key_pressed {
+                            if action, exists := state.current_input_map.ctrl_key_actions[key]; exists {
+                                switch value in action.action {
+                                    case core.EditorAction:
+                                        value(state);
+                                        return true;
+                                    case core.InputActions:
+                                        state.current_input_map = &(&state.current_input_map.ctrl_key_actions[key]).action.(core.InputActions)
+                                        return true;
+                                }
+                            }
+                        } else {
+                            if action, exists := state.current_input_map.key_actions[key]; exists {
+                                switch value in action.action {
+                                    case core.EditorAction:
+                                        value(state);
+                                        return true;
+                                    case core.InputActions:
+                                        state.current_input_map = &(&state.current_input_map.key_actions[key]).action.(core.InputActions)
+                                        return true;
+                                }
+                            }
+                        }
+                    }
+
+                    return false
+                }
+
                 switch state.mode {
                     case .Visual: fallthrough
                     case .Normal: {
@@ -647,26 +679,8 @@ main :: proc() {
 
                             if key == .LCTRL {
                                 control_key_pressed = true;
-                            } else if state.current_input_map != nil {
-                                if control_key_pressed {
-                                    if action, exists := state.current_input_map.ctrl_key_actions[key]; exists {
-                                        switch value in action.action {
-                                            case core.EditorAction:
-                                                value(&state);
-                                            case core.InputActions:
-                                                state.current_input_map = &(&state.current_input_map.ctrl_key_actions[key]).action.(core.InputActions)
-                                        }
-                                    }
-                                } else {
-                                    if action, exists := state.current_input_map.key_actions[key]; exists {
-                                        switch value in action.action {
-                                            case core.EditorAction:
-                                                value(&state);
-                                            case core.InputActions:
-                                                state.current_input_map = &(&state.current_input_map.key_actions[key]).action.(core.InputActions)
-                                        }
-                                    }
-                                }
+                            } else  {
+                                run_key_action(&state, control_key_pressed, key)
                             }
                         }
                         if sdl_event.type == .KEYUP {
@@ -682,26 +696,29 @@ main :: proc() {
                         if sdl_event.type == .KEYDOWN {
                             key := core.Key(sdl_event.key.keysym.sym);
 
-                            #partial switch key {
-                                case .ESCAPE: {
-                                    state.mode = .Normal;
+                            // TODO: make this work properly
+                            if true || !run_key_action(&state, control_key_pressed, key) {
+                                #partial switch key {
+                                    case .ESCAPE: {
+                                        state.mode = .Normal;
 
-                                    core.insert_content(buffer, buffer.input_buffer[:]);
-                                    runtime.clear(&buffer.input_buffer);
+                                        core.insert_content(buffer, buffer.input_buffer[:]);
+                                        runtime.clear(&buffer.input_buffer);
 
-                                    sdl2.StopTextInput();
-                                }
-                                case .TAB: {
-                                    // TODO: change this to insert a tab character
-                                    for _ in 0..<4 {
-                                        append(&buffer.input_buffer, ' ');
+                                        sdl2.StopTextInput();
                                     }
-                                }
-                                case .BACKSPACE: {
-                                    core.delete_content(buffer, 1);
-                                }
-                                case .ENTER: {
-                                    append(&buffer.input_buffer, '\n');
+                                    case .TAB: {
+                                        // TODO: change this to insert a tab character
+                                        for _ in 0..<4 {
+                                            append(&buffer.input_buffer, ' ');
+                                        }
+                                    }
+                                    case .BACKSPACE: {
+                                        core.delete_content(buffer, 1);
+                                    }
+                                    case .ENTER: {
+                                        append(&buffer.input_buffer, '\n');
+                                    }
                                 }
                             }
                         }

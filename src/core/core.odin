@@ -50,6 +50,7 @@ State :: struct {
     command_arena: runtime.Allocator,
     command_args: [dynamic]EditorCommandArgument,
 
+    current_panel: Maybe(int),
     panels: util.StaticList(Panel),
 }
 
@@ -70,20 +71,45 @@ EditorCommandArgument :: union #no_nil {
 }
 
 PanelRenderProc :: proc(state: ^State, panel_state: ^PanelState) -> (ok: bool)
+PanelBufferProc :: proc(state: ^State, panel_state: ^PanelState) -> (buffer: ^FileBuffer, ok: bool)
 Panel :: struct {
     panel_state: PanelState,
+    input_map: InputMap,
+    buffer_proc: PanelBufferProc,
     render_proc: PanelRenderProc,
 }
 
 PanelState :: union {
-    FileBufferPanel
+    FileBufferPanel,
+    GrepPanel,
 }
 
 FileBufferPanel :: struct {
     buffer_index: int,
 }
 
+GrepPanel :: struct {
+    buffer: int,
+    search_query: string,
+    query_results: []GrepQueryResult,
+    selected_result: int,
+}
+
+GrepQueryResult :: struct {
+    file_path: string,
+    line: int,
+    col: int,
+}
+
 current_buffer :: proc(state: ^State) -> ^FileBuffer {
+    if current_panel, ok := util.get(&state.panels, state.current_panel.? or_else -1).?; ok {
+        if current_panel.buffer_proc != nil {
+            if panel_buffer, ok := current_panel.buffer_proc(state, &current_panel.panel_state); ok && panel_buffer != nil {
+                return panel_buffer
+            }
+        }
+    }
+
     if state.current_buffer == -2 {
         return &state.log_buffer;
     }

@@ -28,3 +28,13 @@ make_static_list :: proc($T: typeid, len: int) -> StaticList(T) {
 }
 
 make :: proc{make_static_list}
+
+get_static_list_elem :: proc(list: ^StaticList($T), index: int) -> Maybe(^T) {
+    if index >= list.len {
+        return nil
+    }
+
+    return &list.data[index]
+}
+
+get :: proc{get_static_list_elem}
