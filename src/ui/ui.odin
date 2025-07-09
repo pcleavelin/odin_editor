@@ -106,7 +106,7 @@ close_element :: proc(state: ^State, loc := #caller_location) -> UI_Layout {
                 switch v in e.kind {
                     case UI_Element_Kind_Text: {
                         // FIXME: properly use font size
-                        e.layout.size.x = len(v) * 9
+                        e.layout.size.x = len(v) * 10
                     }
                     case UI_Element_Kind_Image: {
                         // TODO
@@ -230,11 +230,19 @@ grow_children :: proc(state: ^State, index: int) {
             case .RightToLeft: fallthrough
             case .LeftToRight: {
                 children_size.x += child.layout.size.x
+
+                if children_size.y < child.layout.size.y {
+                    children_size.y = child.layout.size.y
+                }
             }
 
             case .BottomToTop: fallthrough
             case .TopToBottom: {
                 children_size.y += child.layout.size.y
+
+                if children_size.x < child.layout.size.x {
+                    children_size.x = child.layout.size.x
+                }
             }
         }
 

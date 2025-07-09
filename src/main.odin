@@ -19,8 +19,6 @@ import "panels"
 import "theme"
 import "ui"
 
-HardcodedFontPath :: "bin/JetBrainsMono-Regular.ttf";
-
 State :: core.State;
 FileBuffer :: core.FileBuffer;
 
@@ -45,202 +43,6 @@ do_insert_mode :: proc(state: ^State, buffer: ^FileBuffer) {
 }
 
 do_visual_mode :: proc(state: ^State, buffer: ^FileBuffer) {
-}
-
-register_default_leader_actions :: proc(input_map: ^core.InputActions) {
-    core.register_key_action(input_map, .Q, proc(state: ^State) {
-        state.current_input_map = &state.input_map.mode[state.mode];
-    }, "close this help");
-}
-
-register_default_go_actions :: proc(input_map: ^core.InputActions) {
-    core.register_key_action(input_map, .H, proc(state: ^State) {
-        core.move_cursor_start_of_line(core.current_buffer(state));
-        state.current_input_map = &state.input_map.mode[state.mode];
-    }, "move to beginning of line");
-    core.register_key_action(input_map, .L, proc(state: ^State) {
-        core.move_cursor_end_of_line(core.current_buffer(state));
-        state.current_input_map = &state.input_map.mode[state.mode];
-    }, "move to end of line");
-}
-
-register_default_input_actions :: proc(input_map: ^core.InputActions) {
-    // Cursor Movement
-    {
-        core.register_key_action(input_map, .W, proc(state: ^State) {
-            core.move_cursor_forward_start_of_word(core.current_buffer(state));
-        }, "move forward one word");
-        core.register_key_action(input_map, .E, proc(state: ^State) {
-            core.move_cursor_forward_end_of_word(core.current_buffer(state));
-        }, "move forward to end of word");
-
-        core.register_key_action(input_map, .B, proc(state: ^State) {
-            core.move_cursor_backward_start_of_word(core.current_buffer(state));
-        }, "move backward one word");
-
-        core.register_key_action(input_map, .K, proc(state: ^State) {
-            core.move_cursor_up(core.current_buffer(state));
-        }, "move up one line");
-        core.register_key_action(input_map, .J, proc(state: ^State) {
-            core.move_cursor_down(core.current_buffer(state));
-        }, "move down one line");
-        core.register_key_action(input_map, .H, proc(state: ^State) {
-            core.move_cursor_left(core.current_buffer(state));
-        }, "move left one char");
-        core.register_key_action(input_map, .L, proc(state: ^State) {
-            core.move_cursor_right(core.current_buffer(state));
-        }, "move right one char");
-
-        core.register_ctrl_key_action(input_map, .U, proc(state: ^State) {
-            core.scroll_file_buffer(core.current_buffer(state), .Up);
-        }, "scroll buffer up");
-        core.register_ctrl_key_action(input_map, .D, proc(state: ^State) {
-            core.scroll_file_buffer(core.current_buffer(state), .Down);
-        }, "scroll buffer up");
-    }
-
-    // Scale font size
-    {
-        core.register_ctrl_key_action(input_map, .MINUS, proc(state: ^State) {
-            if state.source_font_height > 16 {
-                state.source_font_height -= 2;
-                state.source_font_width = state.source_font_height / 2;
-
-                state.font_atlas = core.gen_font_atlas(state, HardcodedFontPath);
-            }
-            log.debug(state.source_font_height);
-        }, "increase font size");
-        core.register_ctrl_key_action(input_map, .EQUAL, proc(state: ^State) {
-            state.source_font_height += 2;
-            state.source_font_width = state.source_font_height / 2;
-
-            state.font_atlas = core.gen_font_atlas(state, HardcodedFontPath);
-        }, "decrease font size");
-    }
-
-    core.register_key_action(input_map, .SPACE, core.new_input_actions(), "leader commands");
-    register_default_leader_actions(&(&input_map.key_actions[.SPACE]).action.(core.InputActions));
-
-    core.register_key_action(input_map, .G, core.new_input_actions(), "Go commands");
-    register_default_go_actions(&(&input_map.key_actions[.G]).action.(core.InputActions));
-
-    core.register_key_action(&state.input_map.mode[.Normal], .V, proc(state: ^State) {
-        state.mode = .Visual;
-        state.current_input_map = &state.input_map.mode[.Visual];
-
-        core.current_buffer(state).selection = core.new_selection(core.current_buffer(state).cursor);
-    }, "enter visual mode");
-
-}
-
-register_default_visual_actions :: proc(input_map: ^core.InputActions) {
-    core.register_key_action(input_map, .ESCAPE, proc(state: ^State) {
-        state.mode = .Normal;
-        state.current_input_map = &state.input_map.mode[.Normal];
-
-        core.current_buffer(state).selection = nil;
-        core.update_file_buffer_scroll(core.current_buffer(state))
-    }, "exit visual mode");
-
-    // Cursor Movement
-    {
-        core.register_key_action(input_map, .W, proc(state: ^State) {
-            sel_cur := &(core.current_buffer(state).selection.?);
-
-            core.move_cursor_forward_start_of_word(core.current_buffer(state), cursor = &sel_cur.end);
-        }, "move forward one word");
-        core.register_key_action(input_map, .E, proc(state: ^State) {
-            sel_cur := &(core.current_buffer(state).selection.?);
-
-            core.move_cursor_forward_end_of_word(core.current_buffer(state), cursor = &sel_cur.end);
-        }, "move forward to end of word");
-
-        core.register_key_action(input_map, .B, proc(state: ^State) {
-            sel_cur := &(core.current_buffer(state).selection.?);
-
-            core.move_cursor_backward_start_of_word(core.current_buffer(state), cursor = &sel_cur.end);
-        }, "move backward one word");
-
-        core.register_key_action(input_map, .K, proc(state: ^State) {
-            sel_cur := &(core.current_buffer(state).selection.?);
-
-            core.move_cursor_up(core.current_buffer(state), cursor = &sel_cur.end);
-        }, "move up one line");
-        core.register_key_action(input_map, .J, proc(state: ^State) {
-            sel_cur := &(core.current_buffer(state).selection.?);
-
-            core.move_cursor_down(core.current_buffer(state), cursor = &sel_cur.end);
-        }, "move down one line");
-        core.register_key_action(input_map, .H, proc(state: ^State) {
-            sel_cur := &(core.current_buffer(state).selection.?);
-
-            core.move_cursor_left(core.current_buffer(state), cursor = &sel_cur.end);
-        }, "move left one char");
-        core.register_key_action(input_map, .L, proc(state: ^State) {
-            sel_cur := &(core.current_buffer(state).selection.?);
-
-            core.move_cursor_right(core.current_buffer(state), cursor = &sel_cur.end);
-        }, "move right one char");
-
-        core.register_ctrl_key_action(input_map, .U, proc(state: ^State) {
-            sel_cur := &(core.current_buffer(state).selection.?);
-
-            core.scroll_file_buffer(core.current_buffer(state), .Up, cursor = &sel_cur.end);
-        }, "scroll buffer up");
-        core.register_ctrl_key_action(input_map, .D, proc(state: ^State) {
-            sel_cur := &(core.current_buffer(state).selection.?);
-
-            core.scroll_file_buffer(core.current_buffer(state), .Down, cursor = &sel_cur.end);
-        }, "scroll buffer up");
-    }
-
-    // Text Modification
-    {
-        core.register_key_action(input_map, .D, proc(state: ^State) {
-            sel_cur := &(core.current_buffer(state).selection.?);
-
-            core.delete_content(core.current_buffer(state), sel_cur);
-            core.current_buffer(state).selection = nil;
-            core.update_file_buffer_scroll(core.current_buffer(state))
-
-            state.mode = .Normal
-            state.current_input_map = &state.input_map.mode[.Normal];
-        }, "delete selection");
-
-        core.register_key_action(input_map, .C, proc(state: ^State) {
-            sel_cur := &(core.current_buffer(state).selection.?);
-
-            core.delete_content(core.current_buffer(state), sel_cur);
-            core.current_buffer(state).selection = nil;
-            core.update_file_buffer_scroll(core.current_buffer(state))
-
-            state.mode = .Insert
-            state.current_input_map = &state.input_map.mode[.Normal];
-            sdl2.StartTextInput();
-        }, "change selection");
-    }
-}
-
-register_default_text_input_actions :: proc(input_map: ^core.InputActions) {
-    core.register_key_action(input_map, .I, proc(state: ^State) {
-        state.mode = .Insert;
-        sdl2.StartTextInput();
-    }, "enter insert mode");
-    core.register_key_action(input_map, .A, proc(state: ^State) {
-        core.move_cursor_right(core.current_buffer(state), false);
-        state.mode = .Insert;
-        sdl2.StartTextInput();
-    }, "enter insert mode after character (append)");
-
-    // TODO: add shift+o to insert newline above current one
-
-    core.register_key_action(input_map, .O, proc(state: ^State) {
-        core.move_cursor_end_of_line(core.current_buffer(state), false);
-        core.insert_content(core.current_buffer(state), []u8{'\n'});
-        state.mode = .Insert;
-
-        sdl2.StartTextInput();
-    }, "insert mode on newline");
 }
 
 ui_font_width :: proc() -> i32 {
@@ -269,11 +71,11 @@ draw :: proc(state: ^State) {
         kind = {ui.Grow{}, ui.Grow{}},
     })
     { 
-        for i in 0..<state.panels.len {
-            panel := &state.panels.data[i]
-
-            if panel.render_proc != nil {
-                panel.render_proc(state, &panel.panel_state)
+        for i in 0..<len(state.panels.data) {
+            if panel, ok := util.get(&state.panels, i).?; ok {
+                if panel.render_proc != nil {
+                    panel.render_proc(state, &panel.panel_state)
+                }
             }
         }
     }
@@ -282,7 +84,8 @@ draw :: proc(state: ^State) {
     ui.compute_layout_2(new_ui)
     ui.draw(new_ui, state)
 
-    if state.mode != .Insert && state.current_input_map != &state.input_map.mode[state.mode] {
+    // TODO: figure out when to not show the input help menu
+    if state.mode != .Insert { // && state.current_input_map != &state.input_map.mode[state.mode] {
         longest_description := 0;
         for key, action in state.current_input_map.key_actions {
             if len(action.description) > longest_description {
@@ -406,7 +209,6 @@ main :: proc() {
         screen_height = 480,
         source_font_width = 8,
         source_font_height = 16,
-        input_map = core.new_input_map(),
         commands = make(core.EditorCommandList),
         command_arena = mem.arena_allocator(&_command_arena),
 
@@ -429,11 +231,7 @@ main :: proc() {
     mem.scratch_allocator_init(&scratch, 1024*1024);
     scratch_alloc = mem.scratch_allocator(&scratch);
 
-    state.current_input_map = &state.input_map.mode[.Normal];
-    register_default_input_actions(&state.input_map.mode[.Normal]);
-    register_default_visual_actions(&state.input_map.mode[.Visual]);
-
-    register_default_text_input_actions(&state.input_map.mode[.Normal]);
+    core.reset_input_map(&state)
 
     // core.register_editor_command(
     //     &state.commands,
@@ -482,6 +280,7 @@ main :: proc() {
         "Opens a new scratch buffer",
         proc(state: ^State) {
             buffer := core.new_virtual_file_buffer(context.allocator);
+            util.append_static_list(&state.panels, panels.make_file_buffer_panel(len(state.buffers)))
             runtime.append(&state.buffers, buffer);
         }
     )
@@ -500,13 +299,7 @@ main :: proc() {
             if args, ok := core.attempt_read_command_args(Args, state.command_args[:]); ok {
                 log.info("attempting to open file", args.file_path)
 
-                buffer, err := core.new_file_buffer(context.allocator, args.file_path, state.directory);
-                if err.type != .None {
-                    log.error("Failed to create file buffer:", err);
-                    return;
-                }
-
-                runtime.append(&state.buffers, buffer);
+                panels.open_file_buffer_in_new_panel(state, args.file_path)
             }
         }
     )
@@ -522,14 +315,7 @@ main :: proc() {
 
     if len(os.args) > 1 {
         for arg in os.args[1:] {
-            buffer, err := core.new_file_buffer(context.allocator, arg, state.directory);
-            if err.type != .None {
-                log.error("Failed to create file buffer:", err);
-                continue;
-            }
-
-            util.append_static_list(&state.panels, panels.make_file_buffer_panel(len(state.buffers)))
-            runtime.append(&state.buffers, buffer);
+            panels.open_file_buffer_in_new_panel(&state, arg)
         }
     } else {
         buffer := core.new_virtual_file_buffer(context.allocator);
@@ -537,9 +323,6 @@ main :: proc() {
         util.append_static_list(&state.panels, panels.make_file_buffer_panel(len(state.buffers)))
         runtime.append(&state.buffers, buffer);
     }
-
-    util.append_static_list(&state.panels, panels.make_grep_panel(&state))
-    state.current_panel = state.panels.len-1
 
     if sdl2.Init({.VIDEO}) < 0 {
         log.error("SDL failed to initialize:", sdl2.GetError());
@@ -578,7 +361,7 @@ main :: proc() {
         log.error("Failed to create renderer:", sdl2.GetError());
         return;
     }
-    state.font_atlas = core.gen_font_atlas(&state, HardcodedFontPath);
+    state.font_atlas = core.gen_font_atlas(&state, core.HardcodedFontPath);
     defer {
         if state.font_atlas.font != nil {
             ttf.CloseFont(state.font_atlas.font);
@@ -608,10 +391,6 @@ main :: proc() {
 
     control_key_pressed: bool;
     for !state.should_close {
-        if current_panel, ok := util.get(&state.panels, state.current_panel.? or_else -1).?; ok {
-            state.current_input_map = &current_panel.input_map.mode[state.mode]
-        }
-
         {
             // ui_context.last_mouse_left_down = ui_context.mouse_left_down;
             // ui_context.last_mouse_right_down = ui_context.mouse_right_down;
@@ -731,6 +510,12 @@ main :: proc() {
 
                                 if char >= 32 && char <= 125 && len(buffer.input_buffer) < 1024-1 {
                                     append(&buffer.input_buffer, u8(char));
+                                }
+                            }
+
+                            if current_panel, ok := state.current_panel.?; ok {
+                                if panel, ok := util.get(&state.panels, current_panel).?; ok && panel.on_buffer_input_proc != nil {
+                                    panel.on_buffer_input_proc(&state, &panel.panel_state)
                                 }
                             }
                         }

@@ -2,6 +2,7 @@ package core
 
 import "base:runtime"
 import "base:intrinsics"
+import "core:mem"
 import "core:reflect"
 import "core:fmt"
 import "core:log"
@@ -9,6 +10,8 @@ import "vendor:sdl2"
 import lua "vendor:lua/5.4"
 
 import "../util"
+
+HardcodedFontPath :: "bin/JetBrainsMono-Regular.ttf";
 
 Mode :: enum {
     Normal,
@@ -43,7 +46,6 @@ State :: struct {
 
     log_buffer: FileBuffer,
 
-    input_map: InputMap,
     current_input_map: ^InputActions,
 
     commands: EditorCommandList,
@@ -72,11 +74,16 @@ EditorCommandArgument :: union #no_nil {
 
 PanelRenderProc :: proc(state: ^State, panel_state: ^PanelState) -> (ok: bool)
 PanelBufferProc :: proc(state: ^State, panel_state: ^PanelState) -> (buffer: ^FileBuffer, ok: bool)
+PanelBufferInputProc :: proc(state: ^State, panel_state: ^PanelState)
+PanelDropProc :: proc(state: ^State, panel_state: ^PanelState)
 Panel :: struct {
+    is_floating: bool,
     panel_state: PanelState,
     input_map: InputMap,
     buffer_proc: PanelBufferProc,
+    on_buffer_input_proc: PanelBufferInputProc,
     render_proc: PanelRenderProc,
+    drop: PanelDropProc,
 }
 
 PanelState :: union {
@@ -89,13 +96,15 @@ FileBufferPanel :: struct {
 }
 
 GrepPanel :: struct {
+    query_arena: mem.Arena,
     buffer: int,
+    selected_result: int,
     search_query: string,
     query_results: []GrepQueryResult,
-    selected_result: int,
 }
 
 GrepQueryResult :: struct {
+    file_context: string,
     file_path: string,
     line: int,
     col: int,
@@ -120,6 +129,16 @@ current_buffer :: proc(state: ^State) -> ^FileBuffer {
 
     return &state.buffers[state.current_buffer];
 }
+
+reset_input_map_from_state_mode :: proc(state: ^State) {
+    reset_input_map_from_mode(state, state.mode)
+}
+reset_input_map_from_mode :: proc(state: ^State, mode: Mode) {
+    if current_panel, ok := util.get(&state.panels, state.current_panel.? or_else -1).?; ok {
+        state.current_input_map = &current_panel.input_map.mode[mode]
+    }
+}
+reset_input_map :: proc{reset_input_map_from_mode, reset_input_map_from_state_mode}
 
 buffer_from_index :: proc(state: ^State, buffer_index: int) -> ^FileBuffer {
     if buffer_index == -2 {

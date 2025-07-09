@@ -1,0 +1,12 @@
+[package]
+name = "grep"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+grep = "0.3.2"
+termcolor = "1.4.1"
+walkdir = "2.5.0"
