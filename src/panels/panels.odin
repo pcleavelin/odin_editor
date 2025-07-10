@@ -142,6 +142,22 @@ render_file_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileB
         {
             ui.open_element(s, fmt.tprintf("%s", state.mode), {})
             ui.close_element(s)
+
+            ui.open_element(s, nil, { kind = {ui.Grow{}, ui.Grow{}}})
+            ui.close_element(s)
+
+            ui.open_element(
+                s,
+                fmt.tprintf(
+                    "%v:%v - Slice %v:%v",
+                    buffer.cursor.line + 1,
+                    buffer.cursor.col + 1,
+                    buffer.cursor.index.slice_index,
+                    buffer.cursor.index.content_index
+                ),
+                {}
+            )
+            ui.close_element(s)
         }
         ui.close_element(s)
     }

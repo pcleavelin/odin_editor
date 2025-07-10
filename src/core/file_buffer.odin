@@ -401,6 +401,8 @@ update_file_buffer_index_from_cursor :: proc(buffer: ^FileBuffer) {
 
 file_buffer_line_length :: proc(buffer: ^FileBuffer, index: FileBufferIndex) -> int {
     line_length := 0;
+    if len(buffer.content_slices) <= 0 do return line_length
+
     first_character := buffer.content_slices[index.slice_index][index.content_index];
 
     left_it := new_file_buffer_iter_with_cursor(buffer, Cursor { index = index });
@@ -717,7 +719,9 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
         buffer := FileBuffer {
             allocator = allocator,
             directory = dir,
-            file_path = fi.fullpath[4:],
+            file_path = fi.fullpath,
+            // TODO: fix this windows issue
+            // file_path = fi.fullpath[4:],
             extension = extension,
 
             original_content = slice.clone_to_dynamic(original_content),
@@ -731,12 +735,34 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
             input_buffer = make([dynamic]u8, 0, 1024),
         };
 
-        append(&buffer.content_slices, buffer.original_content[:]);
+        if len(buffer.original_content) > 0 {
+            append(&buffer.content_slices, buffer.original_content[:]);
+        } else {
+            append(&buffer.added_content, '\n')
+            append(&buffer.content_slices, buffer.added_content[:])
+        }
 
         return buffer, error();
     } else {
         return FileBuffer{}, error(ErrorType.FileIOError, fmt.aprintf("failed to read from file"));
     }
+}
+
+save_buffer_to_disk :: proc(state: ^State, buffer: ^FileBuffer) -> (error: os.Error) {
+    fd := os.open(buffer.file_path, flags = os.O_RDWR) or_return;
+    defer os.close(fd);
+
+    offset: i64 = 0
+    for content_slice in buffer.content_slices {
+        os.write_at(fd, content_slice, offset) or_return
+        
+        offset += i64(len(content_slice))
+    }
+    os.flush(fd)
+
+    log.infof("written %v bytes", offset)
+    
+    return
 }
 
 next_buffer :: proc(state: ^State, prev_buffer: ^int) -> int {

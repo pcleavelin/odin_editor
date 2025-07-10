@@ -5,7 +5,7 @@
 
 # Planned Features
 - Save/Load files
-    - [ ] Save
+    - [x] Save
     - [ ] Load when changed on disk
 - [ ] Simple File Search (vim /)
 - [ ] Auto-indent

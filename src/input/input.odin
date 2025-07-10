@@ -73,6 +73,13 @@ register_default_input_actions :: proc(input_map: ^core.InputActions) {
         }, "decrease font size");
     }
 
+    // Save file
+    core.register_ctrl_key_action(input_map, .S, proc(state: ^State) {
+        if err := core.save_buffer_to_disk(state, core.current_buffer(state)); err != nil {
+            log.errorf("failed to save buffer to disk: %v", err)
+        }
+    }, "Save file")
+
     core.register_key_action(input_map, .G, core.new_input_actions(), "Go commands");
     register_default_go_actions(&(&input_map.key_actions[.G]).action.(core.InputActions));
 

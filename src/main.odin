@@ -336,7 +336,7 @@ main :: proc() {
     defer ttf.Quit();
 
     sdl_window := sdl2.CreateWindow(
-        "odin_editor - [now with more ui]",
+        "odin_editor - [less plugins more speed]",
         sdl2.WINDOWPOS_UNDEFINED,
         sdl2.WINDOWPOS_UNDEFINED,
         640,
