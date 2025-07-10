@@ -749,12 +749,12 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
 }
 
 save_buffer_to_disk :: proc(state: ^State, buffer: ^FileBuffer) -> (error: os.Error) {
-    fd := os.open(buffer.file_path, flags = os.O_RDWR) or_return;
+    fd := os.open(buffer.file_path, flags = os.O_WRONLY | os.O_TRUNC | os.O_CREATE) or_return;
     defer os.close(fd);
 
     offset: i64 = 0
     for content_slice in buffer.content_slices {
-        os.write_at(fd, content_slice, offset) or_return
+        os.write(fd, content_slice) or_return
         
         offset += i64(len(content_slice))
     }

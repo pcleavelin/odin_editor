@@ -7,7 +7,6 @@ import "core:reflect"
 import "core:fmt"
 import "core:log"
 import "vendor:sdl2"
-import lua "vendor:lua/5.4"
 
 import "../util"
 
@@ -19,11 +18,9 @@ Mode :: enum {
     Visual,
 }
 
-
 EditorCommandList :: map[string][dynamic]EditorCommand;
 State :: struct {
     ctx: runtime.Context,
-    L: ^lua.State,
     sdl_renderer: ^sdl2.Renderer,
     font_atlas: FontAtlas,
     ui: rawptr,
@@ -221,9 +218,9 @@ register_key_action_group :: proc(input_map: ^InputActions, key: Key, input_grou
 }
 
 register_ctrl_key_action_single :: proc(input_map: ^InputActions, key: Key, action: EditorAction, description: string = "") {
-    if ok := key in input_map.key_actions; ok {
+    if ok := key in input_map.ctrl_key_actions; ok {
         // TODO: log that key is already registered
-        log.error("key already registered with single action", key);
+        log.error("key already registered with ctrl + single action", key);
     }
 
     input_map.ctrl_key_actions[key] = Action {
@@ -233,9 +230,9 @@ register_ctrl_key_action_single :: proc(input_map: ^InputActions, key: Key, acti
 }
 
 register_ctrl_key_action_group :: proc(input_map: ^InputActions, key: Key, input_group: InputGroup, description: string = "") {
-    if ok := key in input_map.key_actions; ok {
+    if ok := key in input_map.ctrl_key_actions; ok {
         // TODO: log that key is already registered
-        log.error("key already registered with single action", key);
+        log.error("key already registered with ctrl + single action", key);
     }
 
     input_map.ctrl_key_actions[key] = Action {
