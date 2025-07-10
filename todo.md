@@ -4,6 +4,13 @@
 - Odd scrolling behavior on small screen heights
 
 # Planned Features
+- Save/Load files
+    - [ ] Save
+    - [ ] Load when changed on disk
+- [ ] Simple File Search (vim /)
+- [ ] Auto-indent
+- Testing Harness
+    - [ ] Replay user inputs and assert buffer contents/changes
 - LSP Integration
     - [ ] Language Server Configurations
     - [ ] Diagnostics
@@ -16,11 +23,14 @@
         - [ ] Integrate tree-sitter
     - [ ] Bootleg Telescope
         - [ ] Grepping Files
+            - [x] Query across project
+            - [x] Open file in new buffer
+            - [x] Open file in new buffer at found location
+            - [ ] Preview file with context (instead of just the single matched line)
         - [ ] Open Buffer Search
 - Re-write the UI (again)
     - [x] New UI
     - [ ] Styling
-- Save/Load files
 - Undo/Redo
     - [ ] Edit History Tree
     - [ ] Undo history saved to disk

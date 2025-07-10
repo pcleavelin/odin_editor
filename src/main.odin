@@ -299,7 +299,7 @@ main :: proc() {
             if args, ok := core.attempt_read_command_args(Args, state.command_args[:]); ok {
                 log.info("attempting to open file", args.file_path)
 
-                panels.open_file_buffer_in_new_panel(state, args.file_path)
+                panels.open_file_buffer_in_new_panel(state, args.file_path, 0, 0)
             }
         }
     )
@@ -315,7 +315,7 @@ main :: proc() {
 
     if len(os.args) > 1 {
         for arg in os.args[1:] {
-            panels.open_file_buffer_in_new_panel(&state, arg)
+            panels.open_file_buffer_in_new_panel(&state, arg, 0, 0)
         }
     } else {
         buffer := core.new_virtual_file_buffer(context.allocator);

@@ -47,6 +47,16 @@ get_static_list_elem :: proc(list: ^StaticList($T), index: int) -> Maybe(^T) {
     return nil
 }
 
+get_first_active_index :: proc(list: ^StaticList($T)) -> Maybe(int) {
+    for i in 0..<len(list.data) {
+        if list.data[i].active {
+            return i
+        }
+    }
+
+    return nil
+}
+
 get :: proc{get_static_list_elem}
 
 delete_static_list_elem :: proc(list: ^StaticList($T), index: int) {

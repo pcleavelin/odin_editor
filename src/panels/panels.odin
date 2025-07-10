@@ -46,8 +46,8 @@ rs_grep_as_results :: proc(results: ^RS_GrepResults, allocator := context.alloca
         query_results[i] = core.GrepQueryResult {
             file_context = strings.clone_from_ptr(r.text, int(r.text_len), allocator) or_continue,
             file_path = strings.clone_from_ptr(r.path, int(r.path_len), allocator) or_continue,
-            line = int(r.line_number),
-            col = int(r.column),
+            line = int(r.line_number) - 1,
+            col = int(r.column) - 1,
         }
     }
 
@@ -65,12 +65,16 @@ register_default_leader_actions :: proc(input_map: ^core.InputActions) {
     }, "Grep Workspace")
 }
 
-open :: proc(state: ^core.State, panel: core.Panel, make_active: bool = true) {
+open :: proc(state: ^core.State, panel: core.Panel, make_active: bool = true) -> (panel_id: int, ok: bool) {
     if panel_id, ok := util.append_static_list(&state.panels, panel).?; ok && make_active {
         state.current_panel = panel_id
 
         core.reset_input_map(state)
+
+        return panel_id, true
     }
+
+    return -1, false
 }
 
 close :: proc(state: ^core.State, panel_id: int) {
@@ -81,21 +85,32 @@ close :: proc(state: ^core.State, panel_id: int) {
 
         util.delete(&state.panels, panel_id)
 
+        // TODO: keep track of the last active panel instead of focusing back to the first one
+        state.current_panel = util.get_first_active_index(&state.panels).?
+
         core.reset_input_map(state)
     }
 }
 
-open_file_buffer_in_new_panel :: proc(state: ^core.State, file_path: string) {
+open_file_buffer_in_new_panel :: proc(state: ^core.State, file_path: string, line, col: int) -> (panel_id, buffer_index: int, ok: bool) {
     buffer, err := core.new_file_buffer(context.allocator, file_path, state.directory);
     if err.type != .None {
         log.error("Failed to create file buffer:", err);
         return;
     }
 
-    buffer_index := len(state.buffers)
+    buffer.cursor.line = line
+    buffer.cursor.col = col
+    core.update_file_buffer_index_from_cursor(&buffer)
+
+    buffer_index = len(state.buffers)
     runtime.append(&state.buffers, buffer);
 
-    open(state, make_file_buffer_panel(buffer_index))
+    if panel_id, ok := open(state, make_file_buffer_panel(buffer_index)); ok {
+        return panel_id, buffer_index, true
+    }
+
+    return -1, -1, false
 }
 
 render_file_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileBuffer) {
@@ -211,12 +226,14 @@ make_grep_panel :: proc(state: ^core.State) -> core.Panel {
                 if panel_state.query_results != nil {
                     selected_result := &panel_state.query_results[panel_state.selected_result]
 
-                    open_file_buffer_in_new_panel(state, selected_result.file_path)
+                    if panel_id, buffer, ok := open_file_buffer_in_new_panel(state, selected_result.file_path, selected_result.line, selected_result.col); ok {
+                        close(state, this_panel)
 
-                    mem.arena_free_all(&panel_state.query_arena)
-                    panel_state.query_results = nil
-
-                    close(state, this_panel)
+                        state.current_panel = panel_id
+                        state.current_buffer = buffer
+                    } else {
+                        log.error("failed to open file buffer in new panel")
+                    }
                 }
             }
         }
