@@ -37,9 +37,12 @@
 - Finish selections
     - [x] Guarantee that start and end are always ordered
     - Add in text actions
-        - [ ] Yank
+        - [x] Yank
         - [x] Delete
-        - [x] Change
+        - [ ] Change
+            - [ ] Change
+            - [ ] Change word
+            - [ ] Change inside delimiter
 - Virtual Whitespace
     - Allow any-sized tabs
 - Modify input system to allow for keybinds that take input

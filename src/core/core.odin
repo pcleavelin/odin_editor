@@ -41,6 +41,9 @@ State :: struct {
     current_buffer: int,
     buffers: [dynamic]FileBuffer,
 
+    // TODO: make more than one register to plop stuff into
+    yank_register: Register,
+
     log_buffer: FileBuffer,
 
     current_input_map: ^InputActions,
@@ -51,6 +54,11 @@ State :: struct {
 
     current_panel: Maybe(int),
     panels: util.StaticList(Panel),
+}
+
+Register :: struct {
+    whole_line: bool,
+    data: []u8,
 }
 
 EditorCommand :: struct {
@@ -125,6 +133,63 @@ current_buffer :: proc(state: ^State) -> ^FileBuffer {
     }
 
     return &state.buffers[state.current_buffer];
+}
+
+yank_whole_line :: proc(state: ^State) {
+    if state.yank_register.data != nil {
+        delete(state.yank_register.data)
+        state.yank_register.data = nil
+    }
+
+    if buffer := current_buffer(state); buffer != nil {
+        selection := new_selection(buffer, buffer.cursor)
+        length := selection_length(buffer, selection)
+
+        state.yank_register.whole_line = true
+        state.yank_register.data = make([]u8, length)
+
+        it := new_file_buffer_iter_with_cursor(buffer, selection.start)
+
+        index := 0
+        for !it.hit_end && index < length {
+            state.yank_register.data[index] = get_character_at_iter(it) 
+
+            iterate_file_buffer(&it)
+            index += 1
+        }
+    }
+}
+
+yank_selection :: proc(state: ^State) {
+    if state.yank_register.data != nil {
+        delete(state.yank_register.data)
+        state.yank_register.data = nil
+    }
+
+    if buffer := current_buffer(state); buffer != nil && buffer.selection != nil {
+        selection := swap_selections(buffer.selection.?)
+        length := selection_length(buffer, selection)
+
+        state.yank_register.whole_line = false
+        state.yank_register.data = make([]u8, length)
+
+        it := new_file_buffer_iter_with_cursor(buffer, selection.start)
+
+        index := 0
+        for !it.hit_end && index < length {
+            state.yank_register.data[index] = get_character_at_iter(it) 
+
+            iterate_file_buffer(&it)
+            index += 1
+        }
+    }
+}
+
+paste_register :: proc(state: ^State, register: Register) {
+    if buffer := current_buffer(state); buffer != nil && register.data != nil {
+        insert_content(buffer, register.data)
+        move_cursor_left(buffer)
+    }
 }
 
 reset_input_map_from_state_mode :: proc(state: ^State) {

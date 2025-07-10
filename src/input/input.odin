@@ -179,6 +179,31 @@ register_default_visual_actions :: proc(input_map: ^core.InputActions) {
             sdl2.StartTextInput();
         }, "change selection");
     }
+
+    // Copy-Paste
+    {
+        core.register_key_action(input_map, .Y, proc(state: ^State) {
+            core.yank_selection(state)
+
+            state.mode = .Normal;
+            core.reset_input_map(state)
+
+            core.current_buffer(state).selection = nil;
+            core.update_file_buffer_scroll(core.current_buffer(state))
+        }, "Yank Line");
+
+        core.register_key_action(input_map, .P, proc(state: ^State) {
+            if state.yank_register.whole_line {
+                core.insert_content(core.current_buffer(state), []u8{'\n'});
+                core.paste_register(state, state.yank_register)
+                core.insert_content(core.current_buffer(state), []u8{'\n'});
+            } else {
+                core.paste_register(state, state.yank_register)
+            }
+
+            core.reset_input_map(state)
+        }, "Paste");
+    }
 }
 
 register_default_text_input_actions :: proc(input_map: ^core.InputActions) {
@@ -201,4 +226,31 @@ register_default_text_input_actions :: proc(input_map: ^core.InputActions) {
 
         sdl2.StartTextInput();
     }, "insert mode on newline");
+
+    // Copy-Paste
+    {
+        {
+            yank_actions := core.new_input_actions()
+            defer core.register_key_action(input_map, .Y, yank_actions)
+
+            core.register_key_action(&yank_actions, .Y, proc(state: ^State) {
+                core.yank_whole_line(state)
+
+                core.reset_input_map(state)
+            }, "Yank Line");
+        }
+
+        core.register_key_action(input_map, .P, proc(state: ^State) {
+            if state.yank_register.whole_line {
+                core.move_cursor_end_of_line(core.current_buffer(state), false);
+                core.insert_content(core.current_buffer(state), []u8{'\n'});
+            } else {
+                core.move_cursor_right(core.current_buffer(state))
+            }
+            core.paste_register(state, state.yank_register)
+
+            core.reset_input_map(state)
+        }, "Paste");
+    }
+
 }

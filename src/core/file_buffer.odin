@@ -644,20 +644,52 @@ new_selection_span :: proc(start: Cursor, end: Cursor) -> Selection {
     };
 }
 
-new_selection :: proc{new_selection_zero_length, new_selection_span};
+new_selection_current_line :: proc(buffer: ^FileBuffer, cursor: Cursor) -> Selection {
+    start := cursor
+    end := cursor
+
+    move_cursor_start_of_line(buffer, &start)
+    move_cursor_end_of_line(buffer, true, &end)
+
+    return {
+        start = start,
+        end = end,
+    }
+}
+
+new_selection :: proc{new_selection_zero_length, new_selection_span, new_selection_current_line};
 
 swap_selections :: proc(selection: Selection) -> (swapped: Selection) {
     swapped = selection
 
-    if selection.start.index.slice_index > selection.end.index.slice_index ||
-        (selection.start.index.slice_index == selection.end.index.slice_index
-            && selection.start.index.content_index > selection.end.index.content_index)
-    {
+    if is_selection_inverted(selection) {
         swapped.start = selection.end
         swapped.end = selection.start
     }
 
     return swapped
+}
+
+is_selection_inverted :: proc(selection: Selection) -> bool {
+    return selection.start.index.slice_index > selection.end.index.slice_index ||
+        (selection.start.index.slice_index == selection.end.index.slice_index
+            && selection.start.index.content_index > selection.end.index.content_index)
+}
+
+selection_length :: proc(buffer: ^FileBuffer, selection: Selection) -> int {
+    selection := selection
+    it := new_file_buffer_iter_with_cursor(buffer, selection.start)
+
+    length := 0
+
+    for !it.hit_end && !is_selection_inverted(selection) {
+        iterate_file_buffer(&it);
+
+        selection.start = it.cursor
+        length += 1
+    }
+
+    return length
 }
 
 new_virtual_file_buffer :: proc(allocator: mem.Allocator) -> FileBuffer {

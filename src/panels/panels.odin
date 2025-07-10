@@ -181,14 +181,16 @@ render_file_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileB
             ui.open_element(s, nil, { kind = {ui.Grow{}, ui.Grow{}}})
             ui.close_element(s)
 
+            it := core.new_file_buffer_iter_with_cursor(buffer, buffer.cursor)
             ui.open_element(
                 s,
                 fmt.tprintf(
-                    "%v:%v - Slice %v:%v",
+                    "%v:%v - Slice %v:%v - Char: %v",
                     buffer.cursor.line + 1,
                     buffer.cursor.col + 1,
                     buffer.cursor.index.slice_index,
-                    buffer.cursor.index.content_index
+                    buffer.cursor.index.content_index,
+                    core.get_character_at_iter(it)
                 ),
                 {}
             )
