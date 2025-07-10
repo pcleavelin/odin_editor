@@ -57,6 +57,30 @@ get_first_active_index :: proc(list: ^StaticList($T)) -> Maybe(int) {
     return nil
 }
 
+get_prev :: proc(list: ^StaticList($T), index: int) -> Maybe(int) {
+    if get(list, index) != nil {
+        for i := index-1; i >= 0; i -= 1 {
+            if list.data[i].active {
+                return i
+            }
+        }
+    }
+
+    return nil
+}
+
+get_next :: proc(list: ^StaticList($T), index: int) -> Maybe(int) {
+    if get(list, index) != nil {
+        for i in index+1..<len(list.data) {
+            if list.data[i].active {
+                return i
+            }
+        }
+    }
+
+    return nil
+}
+
 get :: proc{get_static_list_elem}
 
 delete_static_list_elem :: proc(list: ^StaticList($T), index: int) {
