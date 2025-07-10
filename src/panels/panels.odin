@@ -67,6 +67,38 @@ register_default_leader_actions :: proc(input_map: ^core.InputActions) {
     }, "Grep Workspace")
 }
 
+register_default_panel_actions :: proc(input_map: ^core.InputActions) {
+    core.register_key_action(input_map, .H, proc(state: ^core.State) {
+        if current_panel, ok := state.current_panel.?; ok {
+            if prev, ok := util.get_prev(&state.panels, current_panel).?; ok {
+                state.current_panel = prev
+            }
+        }
+
+        core.reset_input_map(state)
+    }, "focus panel to the left");
+    core.register_key_action(input_map, .L, proc(state: ^core.State) {
+        if state.current_buffer < len(state.buffers)-1  {
+            state.current_buffer += 1
+        }
+
+        if current_panel, ok := state.current_panel.?; ok {
+            if next, ok := util.get_next(&state.panels, current_panel).?; ok {
+                state.current_panel = next
+            }
+        }
+
+        core.reset_input_map(state)
+    }, "focus panel to the right");
+
+    core.register_key_action(input_map, .Q, proc(state: ^core.State) {
+        if current_panel, ok := state.current_panel.?; ok {
+            close(state, current_panel) 
+        }
+    }, "close panel")
+}
+
+
 open :: proc(state: ^core.State, panel: core.Panel, make_active: bool = true) -> (panel_id: int, ok: bool) {
     if panel_id, ok := util.append_static_list(&state.panels, panel).?; ok && make_active {
         state.current_panel = panel_id
@@ -104,6 +136,7 @@ open_file_buffer_in_new_panel :: proc(state: ^core.State, file_path: string, lin
     buffer.cursor.line = line
     buffer.cursor.col = col
     core.update_file_buffer_index_from_cursor(&buffer)
+    core.update_file_buffer_scroll(&buffer)
 
     buffer_index = len(state.buffers)
     runtime.append(&state.buffers, buffer);
@@ -190,6 +223,10 @@ make_file_buffer_panel :: proc(buffer_index: int) -> core.Panel {
     leader_actions := core.new_input_actions()
     register_default_leader_actions(&leader_actions);
     core.register_key_action(&input_map.mode[.Normal], .SPACE, leader_actions, "leader commands");
+
+    core.register_ctrl_key_action(&input_map.mode[.Normal], .W, core.new_input_actions(), "Panel Navigation") 
+    register_default_panel_actions(&(&input_map.mode[.Normal].ctrl_key_actions[.W]).action.(core.InputActions))
+
 
     input.register_default_input_actions(&input_map.mode[.Normal]);
     input.register_default_visual_actions(&input_map.mode[.Visual]);

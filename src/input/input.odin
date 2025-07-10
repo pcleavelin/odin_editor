@@ -20,31 +20,6 @@ register_default_go_actions :: proc(input_map: ^core.InputActions) {
     }, "move to end of line");
 }
 
-register_default_panel_actions :: proc(input_map: ^core.InputActions) {
-    core.register_key_action(input_map, .H, proc(state: ^State) {
-        if current_panel, ok := state.current_panel.?; ok {
-            if prev, ok := util.get_prev(&state.panels, current_panel).?; ok {
-                state.current_panel = prev
-            }
-        }
-
-        core.reset_input_map(state)
-    }, "focus panel to the left");
-    core.register_key_action(input_map, .L, proc(state: ^State) {
-        if state.current_buffer < len(state.buffers)-1  {
-            state.current_buffer += 1
-        }
-
-        if current_panel, ok := state.current_panel.?; ok {
-            if next, ok := util.get_next(&state.panels, current_panel).?; ok {
-                state.current_panel = next
-            }
-        }
-
-        core.reset_input_map(state)
-    }, "focus panel to the right");
-}
-
 register_default_input_actions :: proc(input_map: ^core.InputActions) {
     // Cursor Movement
     {
@@ -105,10 +80,6 @@ register_default_input_actions :: proc(input_map: ^core.InputActions) {
             log.errorf("failed to save buffer to disk: %v", err)
         }
     }, "Save file")
-
-    // Panel Navigation
-    core.register_ctrl_key_action(input_map, .W, core.new_input_actions(), "Panel Navigation") 
-    register_default_panel_actions(&(&input_map.ctrl_key_actions[.W]).action.(core.InputActions))
 
     core.register_key_action(input_map, .G, core.new_input_actions(), "Go commands");
     register_default_go_actions(&(&input_map.key_actions[.G]).action.(core.InputActions));
