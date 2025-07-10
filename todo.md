@@ -2,22 +2,27 @@
 - Fix crash when cursor is over a new-line
 - Fix jumping forward a word jumping past consecutive brackets
 - Odd scrolling behavior on small screen heights
+- Closing the only panel crashes
 
 # Planned Features
+- Testing Harness
+    - [x] Replay user inputs and assert buffer contents/changes
+    - [ ] Finish writing tests for all current user actions
+- Vim-like Macro replays
+- [ ] Simple File Search (vim /)
+- [ ] Auto-indent
+- Modify input system to allow for keybinds that take input
+    - Vim's f and F movement commands
+    - Vim's r command
 - Save/Load files
     - [x] Save
     - [ ] Load when changed on disk
-- [ ] Simple File Search (vim /)
-- [ ] Auto-indent
-- Testing Harness
-    - [ ] Replay user inputs and assert buffer contents/changes
 - LSP Integration
     - [ ] Language Server Configurations
     - [ ] Diagnostics
         - [ ] In-line errors
     - [ ] Go-to Definition/
     - [ ] Find references
-- Vim-like Macro replays
 - Re-implement lost features from Plugins
     - [ ] Syntax Highlighting
         - [ ] Integrate tree-sitter
@@ -45,9 +50,6 @@
             - [ ] Change inside delimiter
 - Virtual Whitespace
     - Allow any-sized tabs
-- Modify input system to allow for keybinds that take input
-    - Vim's f and F movement commands
-    - Vim's r command
 - Command Search and Execution
     - Refactor to remove generics added specifically for plugins
     - Palette based UI?

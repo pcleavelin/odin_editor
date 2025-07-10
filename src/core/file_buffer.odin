@@ -1073,7 +1073,7 @@ insert_content :: proc(buffer: ^FileBuffer, to_be_inserted: []u8, append_to_end:
 
     if !append_to_end {
         update_file_buffer_index_from_cursor(buffer);
-        move_cursor_right(buffer, false, amt = len(to_be_inserted));
+        move_cursor_right(buffer, false, amt = len(to_be_inserted) - 1);
     }
 }
 

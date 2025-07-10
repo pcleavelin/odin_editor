@@ -320,7 +320,7 @@ main :: proc() {
     } else {
         buffer := core.new_virtual_file_buffer(context.allocator);
 
-        util.append_static_list(&state.panels, panels.make_file_buffer_panel(len(state.buffers)))
+        panels.open(&state, panels.make_file_buffer_panel(len(state.buffers)))
         runtime.append(&state.buffers, buffer);
     }
 

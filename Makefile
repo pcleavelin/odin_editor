@@ -8,3 +8,6 @@ editor: grep src/**/*.odin
 
 grep:
 	cargo build --manifest-path "src/pkg/grep_lib/Cargo.toml"
+
+test: src/**/*.odin
+	odin test src/tests/ -all-packages -debug -out:bin/test_runner
