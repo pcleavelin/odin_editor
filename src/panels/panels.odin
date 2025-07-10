@@ -38,14 +38,16 @@ RS_GrepResult :: struct {
 
 @(private)
 rs_grep_as_results :: proc(results: ^RS_GrepResults, allocator := context.allocator) -> []core.GrepQueryResult {
+    context.allocator = allocator
+
     query_results := make([]core.GrepQueryResult, results.len)
 
     for i in 0..<results.len {
         r := results.results[i]
 
         query_results[i] = core.GrepQueryResult {
-            file_context = strings.clone_from_ptr(r.text, int(r.text_len), allocator) or_continue,
-            file_path = strings.clone_from_ptr(r.path, int(r.path_len), allocator) or_continue,
+            file_context = strings.clone_from_ptr(r.text, int(r.text_len)) or_continue,
+            file_path = strings.clone_from_ptr(r.path, int(r.path_len)) or_continue,
             line = int(r.line_number) - 1,
             col = int(r.column) - 1,
         }
@@ -215,7 +217,7 @@ make_file_buffer_panel :: proc(buffer_index: int) -> core.Panel {
 
 make_grep_panel :: proc(state: ^core.State) -> core.Panel {
     query_arena: mem.Arena
-    mem.arena_init(&query_arena, make([]u8, 1024*1024))
+    mem.arena_init(&query_arena, make([]u8, 1024*1024, state.ctx.allocator))
 
     input_map := core.new_input_map()
     grep_input_buffer := core.new_virtual_file_buffer(context.allocator)
@@ -225,12 +227,14 @@ make_grep_panel :: proc(state: ^core.State) -> core.Panel {
         mem.arena_free_all(&panel_state.query_arena)
         panel_state.query_results = nil
 
+        context.allocator = mem.arena_allocator(&panel_state.query_arena)
+
         rs_results := grep(
             strings.clone_to_cstring(query, allocator = context.temp_allocator),
             strings.clone_to_cstring(directory, allocator = context.temp_allocator)
         );
 
-        panel_state.query_results = rs_grep_as_results(&rs_results, mem.arena_allocator(&panel_state.query_arena))
+        panel_state.query_results = rs_grep_as_results(&rs_results)
         free_grep_results(rs_results)
     }
 
@@ -310,7 +314,7 @@ make_grep_panel :: proc(state: ^core.State) -> core.Panel {
         },
         drop = proc(state: ^core.State, panel_state: ^core.PanelState) {
             if panel_state, ok := &panel_state.(core.GrepPanel); ok {
-                delete(panel_state.query_arena.data)
+                delete(panel_state.query_arena.data, state.ctx.allocator)
             }
         },
         render_proc = proc(state: ^core.State, panel_state: ^core.PanelState) -> (ok: bool) {
