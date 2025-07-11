@@ -102,10 +102,12 @@ FileBufferPanel :: struct {
 
 GrepPanel :: struct {
     query_arena: mem.Arena,
+    query_region: mem.Arena_Temp_Memory,
     buffer: int,
     selected_result: int,
     search_query: string,
     query_results: []GrepQueryResult,
+    glyphs: GlyphBuffer,
 }
 
 GrepQueryResult :: struct {

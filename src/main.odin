@@ -54,8 +54,8 @@ ui_font_height :: proc() -> i32 {
 
 draw :: proc(state: ^State) {
     if buffer := core.current_buffer(state); buffer != nil {
-        buffer.glyph_buffer_height = math.min(256, int((state.screen_height - state.source_font_height*2) / state.source_font_height)) + 1;
-        buffer.glyph_buffer_width = math.min(256, int((state.screen_width - state.source_font_width) / state.source_font_width));
+        buffer.glyphs.height = math.min(256, int((state.screen_height - state.source_font_height*2) / state.source_font_height)) + 1;
+        buffer.glyphs.width = math.min(256, int((state.screen_width - state.source_font_width) / state.source_font_width));
     }
 
     render_color := theme.get_palette_color(.Background);
@@ -168,8 +168,8 @@ ui_file_buffer :: proc(s: ^ui.State, buffer: ^FileBuffer) {
     draw_func := proc(state: ^State, e: ui.UI_Element, user_data: rawptr) {
         buffer := transmute(^FileBuffer)user_data;
         if buffer != nil {
-            buffer.glyph_buffer_width = e.layout.size.x / state.source_font_width;
-            buffer.glyph_buffer_height = e.layout.size.y / state.source_font_height + 1;
+            buffer.glyphs.width = e.layout.size.x / state.source_font_width;
+            buffer.glyphs.height = e.layout.size.y / state.source_font_height + 1;
 
             core.draw_file_buffer(state, buffer, e.layout.pos.x, e.layout.pos.y);
         }

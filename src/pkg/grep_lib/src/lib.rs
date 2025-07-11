@@ -49,7 +49,8 @@ impl Match {
         let column = value.bytes_range_in_buffer().len() as u64;
 
         Ok(Self {
-            text: line,
+            // TODO: only return N-lines of context instead of the entire freakin' buffer
+            text: value.buffer().to_vec(),
             path: path.unwrap_or_default(),
             line_number: value.line_number(),
             column,

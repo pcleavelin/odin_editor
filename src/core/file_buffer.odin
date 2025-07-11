@@ -43,11 +43,6 @@ Selection :: struct {
     end: Cursor,
 }
 
-Glyph :: struct {
-    codepoint: u8,
-    color: theme.PaletteColor,
-}
-
 FileBuffer :: struct {
     allocator: mem.Allocator,
 
@@ -63,9 +58,7 @@ FileBuffer :: struct {
     added_content: [dynamic]u8,
     content_slices: [dynamic][]u8,
 
-    glyph_buffer_width: int,
-    glyph_buffer_height: int,
-    glyph_buffer: [dynamic]Glyph,
+    glyphs: GlyphBuffer,
 
     input_buffer: [dynamic]u8,
 }
@@ -708,10 +701,7 @@ new_virtual_file_buffer :: proc(allocator: mem.Allocator) -> FileBuffer {
         added_content = make([dynamic]u8, 0, 1024*1024),
         content_slices = make([dynamic][]u8, 0, 1024*1024),
 
-        glyph_buffer_width = width,
-        glyph_buffer_height = height,
-        glyph_buffer = make([dynamic]Glyph, width*height, width*height),
-
+        glyphs = make_glyph_buffer(width, height),
         input_buffer = make([dynamic]u8, 0, 1024),
     };
 
@@ -763,10 +753,7 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
             added_content = make([dynamic]u8, 0, 1024*1024),
             content_slices = make([dynamic][]u8, 0, 1024*1024),
 
-            glyph_buffer_width = width,
-            glyph_buffer_height = height,
-            glyph_buffer = make([dynamic]Glyph, width*height, width*height),
-
+            glyphs = make_glyph_buffer(width, height),
             input_buffer = make([dynamic]u8, 0, 1024),
         };
 
@@ -812,11 +799,12 @@ next_buffer :: proc(state: ^State, prev_buffer: ^int) -> int {
     return index;
 }
 
+// TODO: replace this with arena for the file buffer
 free_file_buffer :: proc(buffer: ^FileBuffer) {
     delete(buffer.original_content);
     delete(buffer.added_content);
     delete(buffer.content_slices);
-    delete(buffer.glyph_buffer);
+    delete(buffer.glyphs.buffer);
     delete(buffer.input_buffer);
 }
 
@@ -830,9 +818,9 @@ color_character :: proc(buffer: ^FileBuffer, start: Cursor, end: Cursor, palette
         start.line -= buffer.top_line;
     }
 
-    if end.line >= buffer.top_line + buffer.glyph_buffer_height {
-        end.line = buffer.glyph_buffer_height - 1;
-        end.col = buffer.glyph_buffer_width - 1;
+    if end.line >= buffer.top_line + buffer.glyphs.height {
+        end.line = buffer.glyphs.height - 1;
+        end.col = buffer.glyphs.width - 1;
     } else {
         end.line -= buffer.top_line;
     }
@@ -842,69 +830,16 @@ color_character :: proc(buffer: ^FileBuffer, start: Cursor, end: Cursor, palette
         end_col := end.col;
         if j > start.line && j < end.line {
             start_col = 0;
-            end_col = buffer.glyph_buffer_width;
+            end_col = buffer.glyphs.width;
         } else if j < end.line {
-            end_col = buffer.glyph_buffer_width;
+            end_col = buffer.glyphs.width;
         } else if j > start.line && j == end.line {
             start_col = 0;
         }
 
-        for i in start_col..<math.min(end_col+1, buffer.glyph_buffer_width) {
-            buffer.glyph_buffer[i + j * buffer.glyph_buffer_width].color = palette_index;
+        for i in start_col..<math.min(end_col+1, buffer.glyphs.width) {
+            buffer.glyphs.buffer[i + j * buffer.glyphs.width].color = palette_index;
         }
-    }
-}
-
-update_glyph_buffer :: proc(buffer: ^FileBuffer) {
-    for &glyph in buffer.glyph_buffer {
-        glyph = Glyph{};
-    }
-
-    begin := buffer.top_line;
-    rendered_col: int;
-    rendered_line: int;
-
-    it := new_file_buffer_iter(buffer);
-    for character in iterate_file_buffer(&it) {
-        if character == '\r' { continue; }
-
-        screen_line := rendered_line - begin;
-        // don't render past the screen
-        if rendered_line >= begin && screen_line >= buffer.glyph_buffer_height { break; }
-
-        // render INSERT mode text into glyph buffer
-        if len(buffer.input_buffer) > 0 && rendered_line == buffer.cursor.line && rendered_col >= buffer.cursor.col && rendered_col < buffer.cursor.col + len(buffer.input_buffer) {
-            for k in 0..<len(buffer.input_buffer) {
-                screen_line = rendered_line - begin;
-
-                if buffer.input_buffer[k] == '\n' {
-                    rendered_col = 0;
-                    rendered_line += 1;
-                    continue;
-                }
-
-                if rendered_line >= begin && rendered_col < buffer.glyph_buffer_width {
-                    buffer.glyph_buffer[rendered_col + screen_line * buffer.glyph_buffer_width].color = .Foreground;
-                    buffer.glyph_buffer[rendered_col + screen_line * buffer.glyph_buffer_width].codepoint = buffer.input_buffer[k];
-
-                    rendered_col += 1;
-                }
-            }
-        }
-
-        screen_line = rendered_line - begin;
-
-        if character == '\n' {
-            rendered_col = 0;
-            rendered_line += 1;
-            continue;
-        }
-
-        if rendered_line >= begin && rendered_col < buffer.glyph_buffer_width {
-            buffer.glyph_buffer[rendered_col + screen_line * buffer.glyph_buffer_width] = Glyph { codepoint = character, color = .Foreground };
-        }
-
-        rendered_col += 1;
     }
 }
 
@@ -964,7 +899,8 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, sho
         draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Blue);
     }
 
-    for j in 0..<buffer.glyph_buffer_height {
+    // TODO: replace with glyph_buffer.draw_glyph_buffer
+    for j in 0..<buffer.glyphs.height {
         text_y := y + state.source_font_height * j;
 
         if show_line_numbers {
@@ -972,9 +908,9 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, sho
         }
 
         line_length := 0;
-        for i in 0..<buffer.glyph_buffer_width {
+        for i in 0..<buffer.glyphs.width {
             text_x := x + padding + i * state.source_font_width;
-            glyph := buffer.glyph_buffer[i + j * buffer.glyph_buffer_width];
+            glyph := buffer.glyphs.buffer[i + j * buffer.glyphs.width];
 
             if glyph.codepoint == 0 { break; }
             line_length += 1;
@@ -1018,14 +954,14 @@ update_file_buffer_scroll :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = 
         cursor = &buffer.cursor;
     }
 
-    if cursor.?.line > (buffer.top_line + buffer.glyph_buffer_height - 5) {
-        buffer.top_line = math.max(cursor.?.line - buffer.glyph_buffer_height + 5, 0);
+    if cursor.?.line > (buffer.top_line + buffer.glyphs.height - 5) {
+        buffer.top_line = math.max(cursor.?.line - buffer.glyphs.height + 5, 0);
     } else if cursor.?.line < (buffer.top_line + 5) {
         buffer.top_line = math.max(cursor.?.line - 5, 0);
     }
 
-    // if buffer.cursor.line > (buffer.top_line + buffer.glyph_buffer_height - 5) {
-    //     buffer.top_line = math.max(buffer.cursor.line - buffer.glyph_buffer_height + 5, 0);
+    // if buffer.cursor.line > (buffer.top_line + buffer.glyphs.height - 5) {
+    //     buffer.top_line = math.max(buffer.cursor.line - buffer.glyphs.height + 5, 0);
     // } else if buffer.cursor.line < (buffer.top_line + 5) {
     //     buffer.top_line = math.max(buffer.cursor.line - 5, 0);
     // }
