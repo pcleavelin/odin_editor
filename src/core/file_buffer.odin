@@ -527,9 +527,12 @@ move_cursor_down :: proc(buffer: ^FileBuffer, amount: int = 1, cursor: Maybe(^Cu
             break;
         }
     }
+    if it.hit_end {
+        return
+    }
 
     line_length := file_buffer_line_length(buffer, it.cursor.index);
-    if it.cursor.col < line_length && it.cursor.col < current_col {
+    if it.cursor.col < line_length-1 && it.cursor.col < current_col {
         for _ in iterate_file_buffer(&it) {
             if it.cursor.col >= line_length-1 || it.cursor.col >= current_col {
                 break;

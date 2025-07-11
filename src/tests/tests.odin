@@ -323,6 +323,49 @@ delete_across_slices :: proc(t: ^testing.T) {
 }
 
 @(test)
+move_down_next_line_has_shorter_length :: proc(t: ^testing.T) {
+    e := new_test_editor()
+    setup_empty_buffer(&e)
+
+    is_ctrl_pressed := false
+
+    buffer := &e.buffers[0]
+
+    run_text_insertion(&e, "012345678\n0")
+
+    // Move up to the first line
+    run_input_multiple(&e, press_key(.K), 1)
+
+    // Move to the end of the line
+    run_inputs(&e, []ArtificialInput{ press_key(.G), press_key(.L)})
+
+    // Move down to the second line
+    run_input_multiple(&e, press_key(.J), 1)
+
+    expect_line_col(t, buffer.cursor, 1, 0)
+    expect_cursor_index(t, buffer.cursor, 0, 10)
+}
+
+@(test)
+move_down_on_last_line :: proc(t: ^testing.T) {
+    e := new_test_editor()
+    setup_empty_buffer(&e)
+
+    is_ctrl_pressed := false
+
+    buffer := &e.buffers[0]
+
+    run_text_insertion(&e, "012345678")
+
+    // Try to move down
+    run_input_multiple(&e, press_key(.J), 1)
+
+    // Cursor should stay where it is
+    expect_line_col(t, buffer.cursor, 0, 8)
+    expect_cursor_index(t, buffer.cursor, 0, 8)
+}
+
+@(test)
 move_left_at_beginning_of_file :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
