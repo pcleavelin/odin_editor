@@ -1,5 +1,6 @@
 package input
 
+import "base:runtime"
 import "core:log"
 
 import "vendor:sdl2"
@@ -220,11 +221,16 @@ register_default_text_input_actions :: proc(input_map: ^core.InputActions) {
     // TODO: add shift+o to insert newline above current one
 
     core.register_key_action(input_map, .O, proc(state: ^State) {
-        core.move_cursor_end_of_line(core.current_buffer(state), false);
-        core.insert_content(core.current_buffer(state), []u8{'\n'});
-        state.mode = .Insert;
+        if buffer := core.current_buffer(state); buffer != nil {
+            core.move_cursor_end_of_line(buffer, false);
+            runtime.clear(&buffer.input_buffer)
 
-        sdl2.StartTextInput();
+            append(&buffer.input_buffer, '\n')
+
+            state.mode = .Insert;
+
+            sdl2.StartTextInput();
+        }
     }, "insert mode on newline");
 
     // Copy-Paste

@@ -322,24 +322,6 @@ delete_across_slices :: proc(t: ^testing.T) {
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
 }
 
-// @(test)
-// insert_line_under_current :: proc(t: ^testing.T) {
-//     e := new_test_editor()
-//     setup_empty_buffer(&e)
-
-//     buffer := &e.buffers[0]
-
-//     inputted_text := "Hello, world!\nThis is a new line"
-//     expected_text := fmt.aprintf("%v\n", inputted_text)
-//     run_text_insertion(&e, inputted_text)
-
-//     expect_line_col(t, buffer.cursor, 1, 17)
-//     expect_cursor_index(t, buffer.cursor, 0, 31)
-
-//     contents := buffer_to_string(core.current_buffer(&e))
-//     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
-// }
-
 @(test)
 move_left_at_beginning_of_file :: proc(t: ^testing.T) {
     e := new_test_editor()
@@ -477,6 +459,42 @@ move_to_beginning_of_line_from_start :: proc(t: ^testing.T) {
     expect_line_col(t, buffer.cursor, 0, 0)
     expect_cursor_index(t, buffer.cursor, 0, 0)
 }
+
+@(test)
+insert_line_under_current :: proc(t: ^testing.T) {
+    e := new_test_editor()
+    setup_empty_buffer(&e)
+
+    buffer := &e.buffers[0]
+
+    initial_text := "Hello, world!\nThis is a new line"
+    run_text_insertion(&e, initial_text)
+
+    expected_text := "Hello, world!\nThis is the second line\nThis is a new line\n"
+    //                -------------                         ---------------------- 
+    //                             -------------------------                      
+    //                0            1                        3                     
+
+    // Move cursor up onto the end of "Hello, world!"
+    run_input_multiple(&e, press_key(.K), 1)
+
+    // Insert line below and enter insert mode
+    run_input_multiple(&e, press_key(.O), 1)
+
+    // Technically the cursor is still on the first line, because the `input_buffer`
+    // has been modified but not the actual contents of the filebuffer
+    expect_line_col(t, buffer.cursor, 0, 13)
+    expect_cursor_index(t, buffer.cursor, 0, 13)
+
+    run_text_insertion(&e, "This is the second line")
+
+    expect_line_col(t, buffer.cursor, 1, 22)
+    expect_cursor_index(t, buffer.cursor, 1, 23)
+
+    contents := buffer_to_string(core.current_buffer(&e))
+    testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
+}
+
 
 run_editor_frame :: proc(state: ^core.State, input: ArtificialInput, is_ctrl_pressed: ^bool) {
     log.infof("running input: %v", input)
