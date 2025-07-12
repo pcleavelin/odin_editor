@@ -32,15 +32,15 @@ buffer_to_string :: proc(buffer: ^core.FileBuffer) -> string {
     }
 
     length := 0
-    for content_slice in buffer.content_slices {
-        length += len(content_slice)
+    for chunk in buffer.piece_table.chunks {
+        length += len(chunk)
     }
 
     buffer_contents := make([]u8, length)
 
     offset := 0
-    for content_slice in buffer.content_slices {
-        for c in content_slice {
+    for chunk in buffer.piece_table.chunks {
+        for c in chunk {
             buffer_contents[offset] = c
             offset += 1
         }
@@ -126,9 +126,9 @@ expect_line_col :: proc(t: ^testing.T, cursor: core.Cursor, line, col: int) {
     testing.expect_value(t, cursor.col, col)
 }
 
-expect_cursor_index :: proc(t: ^testing.T, cursor: core.Cursor, slice_index, content_index: int) {
-    testing.expect_value(t, cursor.index.slice_index, slice_index)
-    testing.expect_value(t, cursor.index.content_index, content_index)
+expect_cursor_index :: proc(t: ^testing.T, cursor: core.Cursor, chunk_index, char_index: int) {
+    testing.expect_value(t, cursor.index.chunk_index, chunk_index)
+    testing.expect_value(t, cursor.index.char_index, char_index)
 }
 
 @(test)
@@ -267,7 +267,7 @@ delete_last_content_slice_beginning_of_file :: proc(t: ^testing.T) {
 
     expect_line_col(t, buffer.cursor, 0, 0)
     expect_cursor_index(t, buffer.cursor, 0, 0)
-    testing.expect(t, len(buffer.content_slices) > 0, "BACKSPACE deleted final content slice in buffer")
+    testing.expect(t, len(buffer.piece_table.chunks) > 0, "BACKSPACE deleted final content slice in buffer")
 
     // "commit" insert mode changes, then re-enter insert mode and try to delete again
     run_input_multiple(&e, press_key(.ESCAPE), 1)
@@ -276,7 +276,7 @@ delete_last_content_slice_beginning_of_file :: proc(t: ^testing.T) {
 
     expect_line_col(t, buffer.cursor, 0, 0)
     expect_cursor_index(t, buffer.cursor, 0, 0)
-    testing.expect(t, len(buffer.content_slices) > 0, "BACKSPACE deleted final content slice in buffer")
+    testing.expect(t, len(buffer.piece_table.chunks) > 0, "BACKSPACE deleted final content slice in buffer")
 }
 
 @(test)

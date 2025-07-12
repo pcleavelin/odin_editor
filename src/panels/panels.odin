@@ -190,8 +190,8 @@ render_file_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileB
                     "%v:%v - Slice %v:%v - Char: %v",
                     buffer.cursor.line + 1,
                     buffer.cursor.col + 1,
-                    buffer.cursor.index.slice_index,
-                    buffer.cursor.index.content_index,
+                    buffer.cursor.index.chunk_index,
+                    buffer.cursor.index.char_index,
                     core.get_character_at_iter(it)
                 ),
                 {}
