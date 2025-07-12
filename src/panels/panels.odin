@@ -137,8 +137,8 @@ open_file_buffer_in_new_panel :: proc(state: ^core.State, file_path: string, lin
 
     buffer.cursor.line = line
     buffer.cursor.col = col
+    buffer.top_line = buffer.cursor.line
     core.update_file_buffer_index_from_cursor(&buffer)
-    core.update_file_buffer_scroll(&buffer)
 
     buffer_index = len(state.buffers)
     runtime.append(&state.buffers, buffer);
@@ -417,12 +417,19 @@ make_grep_panel :: proc(state: ^core.State) -> core.Panel {
                     {
                         if panel_state.query_results != nil {
                             // query results
-                            ui.open_element(s, nil, {
+                            query_result_container := ui.open_element(s, nil, {
                                 dir = .TopToBottom,
                                 kind = {ui.Grow{}, ui.Grow{}}
                             })
                             {
+                                container_height := query_result_container.layout.size.y
+                                max_results := container_height / 16
+
                                 for result, i in panel_state.query_results {
+                                    if i > max_results {
+                                        break
+                                    }
+
                                     ui.open_element(s, nil, {
                                         dir = .LeftToRight,
                                         kind = {ui.Fit{}, ui.Fit{}},
@@ -448,6 +455,12 @@ make_grep_panel :: proc(state: ^core.State) -> core.Panel {
 
                             // file contents
                             selected_result := &panel_state.query_results[panel_state.selected_result]
+
+                            core.update_glyph_buffer_from_bytes(
+                                &panel_state.glyphs,
+                                transmute([]u8)selected_result.file_context,
+                                selected_result.line,
+                            )
                             render_glyph_buffer(state, s, &panel_state.glyphs)
                         }
                     }

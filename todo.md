@@ -5,6 +5,8 @@
 - Closing the only panel crashes
 
 # Planned Features
+- [ ] Highlight which panel is currently active
+- [ ] Persist end of line cursor position
 - Testing Harness
     - [x] Replay user inputs and assert buffer contents/changes
     - [ ] Finish writing tests for all current user actions
@@ -31,7 +33,10 @@
             - [x] Query across project
             - [x] Open file in new buffer
             - [x] Open file in new buffer at found location
-            - [ ] Preview file with context (instead of just the single matched line)
+            - [ ] Preview file with context
+                - [x] Show Context
+                - [ ] Properly show lines numbers
+                - [ ] Don't overlap result list with file preview
         - [ ] Open Buffer Search
 - Re-write the UI (again)
     - [x] New UI
@@ -45,7 +50,7 @@
         - [x] Yank
         - [x] Delete
         - [ ] Change
-            - [ ] Change
+            - [x] Change
             - [ ] Change word
             - [ ] Change inside delimiter
 - Virtual Whitespace
@@ -53,4 +58,3 @@
 - Command Search and Execution
     - Refactor to remove generics added specifically for plugins
     - Palette based UI?
-- Persist end of line cursor position

@@ -66,7 +66,7 @@ UI_Direction :: enum {
     BottomToTop,
 }
 
-open_element :: proc(state: ^State, kind: UI_Element_Kind, layout: UI_Layout) {
+open_element :: proc(state: ^State, kind: UI_Element_Kind, layout: UI_Layout) -> UI_Element {
     e := UI_Element {
         kind = kind,
         layout = layout,
@@ -93,6 +93,8 @@ open_element :: proc(state: ^State, kind: UI_Element_Kind, layout: UI_Layout) {
     state.curr_elements[state.num_curr] = e
     state.current_open_element = state.num_curr
     state.num_curr += 1
+
+    return e
 }
 
 close_element :: proc(state: ^State, loc := #caller_location) -> UI_Layout {
