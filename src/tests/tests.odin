@@ -571,6 +571,32 @@ insert_line_under_current :: proc(t: ^testing.T) {
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
 }
 
+@(test)
+yank_and_paste_whole_line :: proc(t: ^testing.T) {
+    e := new_test_editor()
+    setup_empty_buffer(&e)
+
+    buffer := &e.buffers[0]
+
+    initial_text := "Hello, world!\nThis is a new line"
+    run_text_insertion(&e, initial_text)
+
+    expected_text := "Hello, world!\nThis is a new line\nThis is a new line\n"
+
+    // Copy whole line
+    run_input_multiple(&e, press_key(.Y), 2)
+
+    // Move up to "Hello, world!"
+    run_input_multiple(&e, press_key(.K), 1)
+
+    // Paste it below current one
+    run_input_multiple(&e, press_key(.P), 1)
+
+    expect_line_col(t, buffer.cursor, 1, 0)
+
+    contents := buffer_to_string(core.current_buffer(&e))
+    testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
+}
 
 run_editor_frame :: proc(state: ^core.State, input: ArtificialInput, is_ctrl_pressed: ^bool) {
     log.infof("running input: %v", input)

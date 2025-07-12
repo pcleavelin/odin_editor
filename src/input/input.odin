@@ -250,10 +250,12 @@ register_default_text_input_actions :: proc(input_map: ^core.InputActions) {
             if state.yank_register.whole_line {
                 core.move_cursor_end_of_line(core.current_buffer(state), false);
                 core.insert_content(core.current_buffer(state), []u8{'\n'});
+                core.move_cursor_right(core.current_buffer(state), false);
             } else {
                 core.move_cursor_right(core.current_buffer(state))
             }
             core.paste_register(state, state.yank_register)
+            core.move_cursor_start_of_line(core.current_buffer(state))
 
             core.reset_input_map(state)
         }, "Paste");
