@@ -537,6 +537,28 @@ move_to_beginning_of_line_from_start :: proc(t: ^testing.T) {
 }
 
 @(test)
+append_end_of_line :: proc(t: ^testing.T) {
+    e := new_test_editor()
+    setup_empty_buffer(&e)
+
+    buffer := &e.buffers[0]
+
+    run_text_insertion(&e, "hello")
+
+    run_input_multiple(&e, press_key(.A), 1)
+    run_input_multiple(&e, press_key(.ESCAPE), 1)
+
+    expect_line_col(t, buffer.cursor, 0, 5)
+    expect_cursor_index(t, buffer.cursor, 1, 0)
+
+    run_input_multiple(&e, press_key(.A), 1)
+    run_input_multiple(&e, press_key(.ESCAPE), 1)
+
+    expect_line_col(t, buffer.cursor, 0, 5)
+    expect_cursor_index(t, buffer.cursor, 1, 0)
+}
+
+@(test)
 insert_line_under_current :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)

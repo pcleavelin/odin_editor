@@ -88,15 +88,17 @@ file_buffer_end :: proc(buffer: ^FileBuffer) -> Cursor {
 iterate_file_buffer :: proc(it: ^FileBufferIter) -> (character: u8, idx: PieceTableIndex, cond: bool) {
     character, idx, cond = iterate_piece_table_iter(&it.piter)
 
-    if character == '\n' {
-        it.cursor.col = 0
-        it.cursor.line += 1
-    } else {
-        it.cursor.col += 1
-    }
-
     it.cursor.index = it.piter.index
     it.hit_end = it.piter.hit_end
+
+    if cond && !it.hit_end {
+        if character == '\n' {
+            it.cursor.col = 0
+            it.cursor.line += 1
+        } else {
+            it.cursor.col += 1
+        }
+    }
 
     return
 }
@@ -108,7 +110,7 @@ iterate_file_buffer_reverse :: proc(it: ^FileBufferIter) -> (character: u8, idx:
     it.cursor.index = it.piter.index
     it.hit_end = it.piter.hit_end
 
-    if cond {
+    if cond && !it.hit_end {
         if it.cursor.col > 0 {
             it.cursor.col -= 1
         } else if it.cursor.line > 0 {

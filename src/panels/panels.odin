@@ -301,11 +301,13 @@ make_grep_panel :: proc(state: ^core.State) -> core.Panel {
         free_grep_results(rs_results)
 
         panel_state.selected_result = 0
-        core.update_glyph_buffer_from_bytes(
-            &panel_state.glyphs,
-            transmute([]u8)panel_state.query_results[panel_state.selected_result].file_context,
-            panel_state.query_results[panel_state.selected_result].line,
-        )
+        if len(panel_state.query_results) > 0 {
+            core.update_glyph_buffer_from_bytes(
+                &panel_state.glyphs,
+                transmute([]u8)panel_state.query_results[panel_state.selected_result].file_context,
+                panel_state.query_results[panel_state.selected_result].line,
+            )
+        }
     }
 
     core.register_key_action(&input_map.mode[.Normal], .ENTER, proc(state: ^core.State) {
