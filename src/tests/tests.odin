@@ -247,6 +247,39 @@ insert_before_slice :: proc(t: ^testing.T) {
 }
 
 @(test)
+delete_last_content_slice_beginning_of_file :: proc(t: ^testing.T) {
+    e := new_test_editor()
+    setup_empty_buffer(&e)
+
+    buffer := &e.buffers[0]
+
+    run_text_insertion(&e, "Hello, world!")
+
+    // Delete just the text
+    run_input_multiple(&e, press_key(.I), 1)
+    run_input_multiple(&e, press_key(.BACKSPACE), 13)
+
+    expect_line_col(t, buffer.cursor, 0, 0)
+    expect_cursor_index(t, buffer.cursor, 0, 0)
+
+    // Try to delete when there is no text
+    run_input_multiple(&e, press_key(.BACKSPACE), 1)
+
+    expect_line_col(t, buffer.cursor, 0, 0)
+    expect_cursor_index(t, buffer.cursor, 0, 0)
+    testing.expect(t, len(buffer.content_slices) > 0, "BACKSPACE deleted final content slice in buffer")
+
+    // "commit" insert mode changes, then re-enter insert mode and try to delete again
+    run_input_multiple(&e, press_key(.ESCAPE), 1)
+    run_input_multiple(&e, press_key(.I), 1)
+    run_input_multiple(&e, press_key(.BACKSPACE), 1)
+
+    expect_line_col(t, buffer.cursor, 0, 0)
+    expect_cursor_index(t, buffer.cursor, 0, 0)
+    testing.expect(t, len(buffer.content_slices) > 0, "BACKSPACE deleted final content slice in buffer")
+}
+
+@(test)
 delete_in_slice :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)

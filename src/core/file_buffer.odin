@@ -1081,7 +1081,9 @@ delete_content_from_buffer_cursor :: proc(buffer: ^FileBuffer, amount: int) {
                 iterate_file_buffer_reverse(&it);
 
                 if it.hit_end {
-                    runtime.ordered_remove(&buffer.content_slices, it.cursor.index.slice_index);
+                    if len(buffer.content_slices) > 1 {
+                        runtime.ordered_remove(&buffer.content_slices, it.cursor.index.slice_index);
+                    }
                 } else {
                     runtime.ordered_remove(&buffer.content_slices, it.cursor.index.slice_index+1);
                 }

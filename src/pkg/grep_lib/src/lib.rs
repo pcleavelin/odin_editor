@@ -1,17 +1,12 @@
 use std::{
     error::Error,
-    ffi::{CStr, CString, OsString},
-    path::Path,
-    str::FromStr,
-    sync::mpsc::{Receiver, Sender},
-    thread,
+    ffi::CStr,
 };
 
 use grep::{
     regex::RegexMatcherBuilder,
     searcher::{BinaryDetection, SearcherBuilder, Sink, SinkError},
 };
-use std::sync::mpsc::channel;
 use walkdir::WalkDir;
 
 #[derive(Debug)]
