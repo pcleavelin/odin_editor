@@ -32,14 +32,14 @@ buffer_to_string :: proc(buffer: ^core.FileBuffer) -> string {
     }
 
     length := 0
-    for chunk in buffer.piece_table.chunks {
+    for chunk in core.buffer_piece_table(buffer).chunks {
         length += len(chunk)
     }
 
     buffer_contents := make([]u8, length)
 
     offset := 0
-    for chunk in buffer.piece_table.chunks {
+    for chunk in core.buffer_piece_table(buffer).chunks {
         for c in chunk {
             buffer_contents[offset] = c
             offset += 1
@@ -267,7 +267,7 @@ delete_last_content_slice_beginning_of_file :: proc(t: ^testing.T) {
 
     expect_line_col(t, buffer.cursor, 0, 0)
     expect_cursor_index(t, buffer.cursor, 0, 0)
-    testing.expect(t, len(buffer.piece_table.chunks) > 0, "BACKSPACE deleted final content slice in buffer")
+    testing.expect(t, len(core.buffer_piece_table(buffer).chunks) > 0, "BACKSPACE deleted final content slice in buffer")
 
     // "commit" insert mode changes, then re-enter insert mode and try to delete again
     run_input_multiple(&e, press_key(.ESCAPE), 1)
@@ -276,7 +276,7 @@ delete_last_content_slice_beginning_of_file :: proc(t: ^testing.T) {
 
     expect_line_col(t, buffer.cursor, 0, 0)
     expect_cursor_index(t, buffer.cursor, 0, 0)
-    testing.expect(t, len(buffer.piece_table.chunks) > 0, "BACKSPACE deleted final content slice in buffer")
+    testing.expect(t, len(core.buffer_piece_table(buffer).chunks) > 0, "BACKSPACE deleted final content slice in buffer")
 }
 
 @(test)

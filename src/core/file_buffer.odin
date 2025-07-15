@@ -49,7 +49,7 @@ FileBuffer :: struct {
     cursor: Cursor,
     selection: Maybe(Selection),
 
-    piece_table: PieceTable,
+    history: FileHistory,
     glyphs: GlyphBuffer,
 
     input_buffer: [dynamic]u8,
@@ -62,17 +62,22 @@ FileBufferIter :: struct {
     hit_end: bool,
 }
 
+// TODO: don't make this panic on nil snapshot
+buffer_piece_table :: proc(file_buffer: ^FileBuffer) -> ^PieceTable {
+    return &file_buffer.history.snapshots[file_buffer.history.current].(PieceTable)
+}
+
 new_file_buffer_iter_from_beginning :: proc(file_buffer: ^FileBuffer) -> FileBufferIter {
     return FileBufferIter {
         buffer = file_buffer,
-        piter = new_piece_table_iter(&file_buffer.piece_table)
+        piter = new_piece_table_iter(buffer_piece_table(file_buffer))
     };
 }
 new_file_buffer_iter_with_cursor :: proc(file_buffer: ^FileBuffer, cursor: Cursor) -> FileBufferIter {
     return FileBufferIter {
         buffer = file_buffer,
         cursor = cursor,
-        piter = new_piece_table_iter_from_index(&file_buffer.piece_table, cursor.index)
+        piter = new_piece_table_iter_from_index(buffer_piece_table(file_buffer), cursor.index)
     };
 }
 new_file_buffer_iter :: proc{new_file_buffer_iter_from_beginning, new_file_buffer_iter_with_cursor};
@@ -81,7 +86,7 @@ file_buffer_end :: proc(buffer: ^FileBuffer) -> Cursor {
     return Cursor {
         col = 0,
         line = 0,
-        index = new_piece_table_index_from_end(&buffer.piece_table)
+        index = new_piece_table_index_from_end(buffer_piece_table(buffer))
     };
 }
 
@@ -126,7 +131,7 @@ iterate_file_buffer_reverse :: proc(it: ^FileBufferIter) -> (character: u8, idx:
 }
 
 get_character_at_iter :: proc(it: FileBufferIter) -> u8 {
-    return get_character_at_piece_table_index(&it.buffer.piece_table, it.cursor.index);
+    return get_character_at_piece_table_index(buffer_piece_table(it.buffer), it.cursor.index);
 }
 
 IterProc :: proc(it: ^FileBufferIter) -> (character: u8, idx: PieceTableIndex, cond: bool);
@@ -322,7 +327,7 @@ until_single_quote :: proc(it: ^FileBufferIter, iter_proc: IterProc) -> bool {
 }
 
 until_line_break :: proc(it: ^FileBufferIter, iter_proc: IterProc) -> (cond: bool) {
-    if get_character_at_piece_table_index(&it.buffer.piece_table, it.cursor.index) == '\n' {
+    if get_character_at_piece_table_index(buffer_piece_table(it.buffer), it.cursor.index) == '\n' {
         return false;
     }
 
@@ -362,8 +367,8 @@ file_buffer_line_length :: proc(buffer: ^FileBuffer, index: PieceTableIndex) -> 
     line_length := 0;
     // if len(buffer.content_slices) <= 0 do return line_length
 
-    first_character := get_character_at_piece_table_index(&buffer.piece_table, index);
-    left_it := new_piece_table_iter_from_index(&buffer.piece_table, index);
+    first_character := get_character_at_piece_table_index(buffer_piece_table(buffer), index);
+    left_it := new_piece_table_iter_from_index(buffer_piece_table(buffer), index);
 
     if first_character == '\n' {
         iterate_piece_table_iter_reverse(&left_it);
@@ -377,7 +382,7 @@ file_buffer_line_length :: proc(buffer: ^FileBuffer, index: PieceTableIndex) -> 
         line_length += 1;
     }
 
-    right_it := new_piece_table_iter_from_index(&buffer.piece_table, index);
+    right_it := new_piece_table_iter_from_index(buffer_piece_table(buffer), index);
     first := true;
     for character in iterate_piece_table_iter(&right_it) {
         if character == '\n' {
@@ -664,7 +669,7 @@ new_virtual_file_buffer :: proc(allocator: mem.Allocator) -> FileBuffer {
         allocator = allocator,
         file_path = "virtual_buffer",
 
-        piece_table = make_piece_table(),
+        history = make_history(),
 
         glyphs = make_glyph_buffer(width, height),
         input_buffer = make([dynamic]u8, 0, 1024),
@@ -712,7 +717,7 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
             // file_path = fi.fullpath[4:],
             extension = extension,
 
-            piece_table = make_piece_table(original_content),
+            history = make_history(original_content),
 
             glyphs = make_glyph_buffer(width, height),
             input_buffer = make([dynamic]u8, 0, 1024),
@@ -729,7 +734,7 @@ save_buffer_to_disk :: proc(state: ^State, buffer: ^FileBuffer) -> (error: os.Er
     defer os.close(fd);
 
     offset: i64 = 0
-    for chunk in buffer.piece_table.chunks {
+    for chunk in buffer_piece_table(buffer).chunks {
         os.write(fd, chunk) or_return
         
         offset += i64(len(chunk))
@@ -755,11 +760,9 @@ next_buffer :: proc(state: ^State, prev_buffer: ^int) -> int {
 
 // TODO: replace this with arena for the file buffer
 free_file_buffer :: proc(buffer: ^FileBuffer) {
-    delete(buffer.piece_table.original_content);
-    delete(buffer.piece_table.added_content);
-    delete(buffer.piece_table.chunks);
-    delete(buffer.glyphs.buffer);
-    delete(buffer.input_buffer);
+    free_history(&buffer.history)
+    delete(buffer.glyphs.buffer)
+    delete(buffer.input_buffer)
 }
 
 color_character :: proc(buffer: ^FileBuffer, start: Cursor, end: Cursor, palette_index: theme.PaletteColor) {
@@ -941,9 +944,9 @@ insert_content :: proc(buffer: ^FileBuffer, to_be_inserted: []u8, append_to_end:
         return;
     }
 
-    index := buffer.cursor.index if !append_to_end else new_piece_table_index_from_end(&buffer.piece_table)
+    index := buffer.cursor.index if !append_to_end else new_piece_table_index_from_end(buffer_piece_table(buffer))
 
-    insert_text(&buffer.piece_table, to_be_inserted, buffer.cursor.index)
+    insert_text(buffer_piece_table(buffer), to_be_inserted, buffer.cursor.index)
 
     if !append_to_end {
         update_file_buffer_index_from_cursor(buffer);
@@ -962,7 +965,7 @@ delete_content_from_buffer_cursor :: proc(buffer: ^FileBuffer, amount: int) {
         it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
         iterate_file_buffer_reverse(&it)
 
-        delete_text(&buffer.piece_table, &buffer.cursor.index)
+        delete_text(buffer_piece_table(buffer), &buffer.cursor.index)
 
         buffer.cursor.line = it.cursor.line
         buffer.cursor.col = it.cursor.col
@@ -971,7 +974,7 @@ delete_content_from_buffer_cursor :: proc(buffer: ^FileBuffer, amount: int) {
 
 delete_content_from_selection :: proc(buffer: ^FileBuffer, selection: ^Selection) {
     selection^ = swap_selections(selection^)
-    delete_text_in_span(&buffer.piece_table, &selection.start.index, &selection.end.index)
+    delete_text_in_span(buffer_piece_table(buffer), &selection.start.index, &selection.end.index)
 
     buffer.cursor.index = selection.start.index
 }
