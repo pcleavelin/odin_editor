@@ -142,8 +142,8 @@ insert_from_empty_no_newlines :: proc(t: ^testing.T) {
     expected_text := fmt.aprintf("%v\n", inputted_text)
     run_text_insertion(&e, inputted_text)
 
-    expect_line_col(t, buffer.cursor, 0, 12)
-    expect_cursor_index(t, buffer.cursor, 0, 12)
+    expect_line_col(t, buffer.history.cursor, 0, 12)
+    expect_cursor_index(t, buffer.history.cursor, 0, 12)
 
     contents := buffer_to_string(core.current_buffer(&e))
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
@@ -160,8 +160,8 @@ insert_from_empty_with_newline :: proc(t: ^testing.T) {
     expected_text := fmt.aprintf("%v\n", inputted_text)
     run_text_insertion(&e, inputted_text)
 
-    expect_line_col(t, buffer.cursor, 1, 17)
-    expect_cursor_index(t, buffer.cursor, 0, 31)
+    expect_line_col(t, buffer.history.cursor, 1, 17)
+    expect_cursor_index(t, buffer.history.cursor, 0, 31)
 
     contents := buffer_to_string(core.current_buffer(&e))
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
@@ -184,8 +184,8 @@ insert_in_between_text :: proc(t: ^testing.T) {
 
     run_text_insertion(&e, " beautiful")
 
-    expect_line_col(t, buffer.cursor, 0, 15)
-    expect_cursor_index(t, buffer.cursor, 1, 9)
+    expect_line_col(t, buffer.history.cursor, 0, 15)
+    expect_cursor_index(t, buffer.history.cursor, 1, 9)
 
     contents := buffer_to_string(core.current_buffer(&e))
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
@@ -211,8 +211,8 @@ insert_before_slice_at_beginning_of_file :: proc(t: ^testing.T) {
     run_inputs(&e, []ArtificialInput{ press_key(.G), press_key(.H)})
     run_text_insertion(&e, "Well, ")
 
-    expect_line_col(t, buffer.cursor, 0, 5)
-    expect_cursor_index(t, buffer.cursor, 0, 5)
+    expect_line_col(t, buffer.history.cursor, 0, 5)
+    expect_cursor_index(t, buffer.history.cursor, 0, 5)
 
     contents := buffer_to_string(core.current_buffer(&e))
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
@@ -239,8 +239,8 @@ insert_before_slice :: proc(t: ^testing.T) {
 
     run_text_insertion(&e, " rich")
 
-    expect_line_col(t, buffer.cursor, 0, 20)
-    expect_cursor_index(t, buffer.cursor, 2, 4)
+    expect_line_col(t, buffer.history.cursor, 0, 20)
+    expect_cursor_index(t, buffer.history.cursor, 2, 4)
 
     contents := buffer_to_string(core.current_buffer(&e))
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
@@ -259,14 +259,14 @@ delete_last_content_slice_beginning_of_file :: proc(t: ^testing.T) {
     run_input_multiple(&e, press_key(.I), 1)
     run_input_multiple(&e, press_key(.BACKSPACE), 13)
 
-    expect_line_col(t, buffer.cursor, 0, 0)
-    expect_cursor_index(t, buffer.cursor, 0, 0)
+    expect_line_col(t, buffer.history.cursor, 0, 0)
+    expect_cursor_index(t, buffer.history.cursor, 0, 0)
 
     // Try to delete when there is no text
     run_input_multiple(&e, press_key(.BACKSPACE), 1)
 
-    expect_line_col(t, buffer.cursor, 0, 0)
-    expect_cursor_index(t, buffer.cursor, 0, 0)
+    expect_line_col(t, buffer.history.cursor, 0, 0)
+    expect_cursor_index(t, buffer.history.cursor, 0, 0)
     testing.expect(t, len(core.buffer_piece_table(buffer).chunks) > 0, "BACKSPACE deleted final content slice in buffer")
 
     // "commit" insert mode changes, then re-enter insert mode and try to delete again
@@ -274,8 +274,8 @@ delete_last_content_slice_beginning_of_file :: proc(t: ^testing.T) {
     run_input_multiple(&e, press_key(.I), 1)
     run_input_multiple(&e, press_key(.BACKSPACE), 1)
 
-    expect_line_col(t, buffer.cursor, 0, 0)
-    expect_cursor_index(t, buffer.cursor, 0, 0)
+    expect_line_col(t, buffer.history.cursor, 0, 0)
+    expect_cursor_index(t, buffer.history.cursor, 0, 0)
     testing.expect(t, len(core.buffer_piece_table(buffer).chunks) > 0, "BACKSPACE deleted final content slice in buffer")
 }
 
@@ -306,8 +306,8 @@ delete_in_slice :: proc(t: ^testing.T) {
     run_input_multiple(&e, press_key(.BACKSPACE), 3)
     run_input_multiple(&e, press_key(.ESCAPE), 1)
 
-    expect_line_col(t, buffer.cursor, 0, 17)
-    expect_cursor_index(t, buffer.cursor, 3, 0)
+    expect_line_col(t, buffer.history.cursor, 0, 17)
+    expect_cursor_index(t, buffer.history.cursor, 3, 0)
 
     contents := buffer_to_string(core.current_buffer(&e))
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
@@ -348,8 +348,8 @@ delete_across_slices :: proc(t: ^testing.T) {
     run_input_multiple(&e, press_key(.BACKSPACE), 2)
     run_input_multiple(&e, press_key(.ESCAPE), 1)
 
-    expect_line_col(t, buffer.cursor, 0, 16)
-    expect_cursor_index(t, buffer.cursor, 2, 0)
+    expect_line_col(t, buffer.history.cursor, 0, 16)
+    expect_cursor_index(t, buffer.history.cursor, 2, 0)
 
     contents := buffer_to_string(core.current_buffer(&e))
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
@@ -375,8 +375,8 @@ move_down_next_line_has_shorter_length :: proc(t: ^testing.T) {
     // Move down to the second line
     run_input_multiple(&e, press_key(.J), 1)
 
-    expect_line_col(t, buffer.cursor, 1, 0)
-    expect_cursor_index(t, buffer.cursor, 0, 10)
+    expect_line_col(t, buffer.history.cursor, 1, 0)
+    expect_cursor_index(t, buffer.history.cursor, 0, 10)
 }
 
 @(test)
@@ -394,8 +394,8 @@ move_down_on_last_line :: proc(t: ^testing.T) {
     run_input_multiple(&e, press_key(.J), 1)
 
     // Cursor should stay where it is
-    expect_line_col(t, buffer.cursor, 0, 8)
-    expect_cursor_index(t, buffer.cursor, 0, 8)
+    expect_line_col(t, buffer.history.cursor, 0, 8)
+    expect_cursor_index(t, buffer.history.cursor, 0, 8)
 }
 
 @(test)
@@ -410,15 +410,15 @@ move_left_at_beginning_of_file :: proc(t: ^testing.T) {
     // to ------------------^
     run_input_multiple(&e, press_key(.H), 4)
 
-    expect_line_col(t, buffer.cursor, 0, 0)
-    expect_cursor_index(t, buffer.cursor, 0, 0)
+    expect_line_col(t, buffer.history.cursor, 0, 0)
+    expect_cursor_index(t, buffer.history.cursor, 0, 0)
 
     // Try to move before the beginning of the file
     run_input_multiple(&e, press_key(.H), 1)
 
     // Should stay the same
-    expect_line_col(t, buffer.cursor, 0, 0)
-    expect_cursor_index(t, buffer.cursor, 0, 0)
+    expect_line_col(t, buffer.history.cursor, 0, 0)
+    expect_cursor_index(t, buffer.history.cursor, 0, 0)
 }
 
 @(test)
@@ -432,15 +432,15 @@ move_right_at_end_of_file :: proc(t: ^testing.T) {
 
     run_text_insertion(&e, "01234")
 
-    expect_line_col(t, buffer.cursor, 0, 4)
-    expect_cursor_index(t, buffer.cursor, 0, 4)
+    expect_line_col(t, buffer.history.cursor, 0, 4)
+    expect_cursor_index(t, buffer.history.cursor, 0, 4)
 
     // Try to move after the end of the file
     run_input_multiple(&e, press_key(.L), 1)
 
     // Should stay the same
-    expect_line_col(t, buffer.cursor, 0, 4)
-    expect_cursor_index(t, buffer.cursor, 0, 4)
+    expect_line_col(t, buffer.history.cursor, 0, 4)
+    expect_cursor_index(t, buffer.history.cursor, 0, 4)
 }
 
 @(test)
@@ -460,8 +460,8 @@ move_to_end_of_line_from_end :: proc(t: ^testing.T) {
     // Move to the end of the line
     run_inputs(&e, []ArtificialInput{ press_key(.G), press_key(.L)})
 
-    expect_line_col(t, buffer.cursor, 0, 4)
-    expect_cursor_index(t, buffer.cursor, 0, 4)
+    expect_line_col(t, buffer.history.cursor, 0, 4)
+    expect_cursor_index(t, buffer.history.cursor, 0, 4)
 }
 
 @(test)
@@ -484,8 +484,8 @@ move_to_end_of_line_from_middle :: proc(t: ^testing.T) {
     // Move to the end of the line
     run_inputs(&e, []ArtificialInput{ press_key(.G), press_key(.L)})
 
-    expect_line_col(t, buffer.cursor, 0, 4)
-    expect_cursor_index(t, buffer.cursor, 0, 4)
+    expect_line_col(t, buffer.history.cursor, 0, 4)
+    expect_cursor_index(t, buffer.history.cursor, 0, 4)
 }
 
 @(test)
@@ -508,8 +508,8 @@ move_to_beginning_of_line_from_middle :: proc(t: ^testing.T) {
     // Move to the beginning of the line
     run_inputs(&e, []ArtificialInput{ press_key(.G), press_key(.H)})
 
-    expect_line_col(t, buffer.cursor, 0, 0)
-    expect_cursor_index(t, buffer.cursor, 0, 0)
+    expect_line_col(t, buffer.history.cursor, 0, 0)
+    expect_cursor_index(t, buffer.history.cursor, 0, 0)
 }
 
 @(test)
@@ -532,8 +532,8 @@ move_to_beginning_of_line_from_start :: proc(t: ^testing.T) {
     // Move to the beginning of the line
     run_inputs(&e, []ArtificialInput{ press_key(.G), press_key(.H)})
 
-    expect_line_col(t, buffer.cursor, 0, 0)
-    expect_cursor_index(t, buffer.cursor, 0, 0)
+    expect_line_col(t, buffer.history.cursor, 0, 0)
+    expect_cursor_index(t, buffer.history.cursor, 0, 0)
 }
 
 @(test)
@@ -548,14 +548,14 @@ append_end_of_line :: proc(t: ^testing.T) {
     run_input_multiple(&e, press_key(.A), 1)
     run_input_multiple(&e, press_key(.ESCAPE), 1)
 
-    expect_line_col(t, buffer.cursor, 0, 5)
-    expect_cursor_index(t, buffer.cursor, 1, 0)
+    expect_line_col(t, buffer.history.cursor, 0, 5)
+    expect_cursor_index(t, buffer.history.cursor, 1, 0)
 
     run_input_multiple(&e, press_key(.A), 1)
     run_input_multiple(&e, press_key(.ESCAPE), 1)
 
-    expect_line_col(t, buffer.cursor, 0, 5)
-    expect_cursor_index(t, buffer.cursor, 1, 0)
+    expect_line_col(t, buffer.history.cursor, 0, 5)
+    expect_cursor_index(t, buffer.history.cursor, 1, 0)
 }
 
 @(test)
@@ -581,13 +581,13 @@ insert_line_under_current :: proc(t: ^testing.T) {
 
     // Technically the cursor is still on the first line, because the `input_buffer`
     // has been modified but not the actual contents of the filebuffer
-    expect_line_col(t, buffer.cursor, 0, 13)
-    expect_cursor_index(t, buffer.cursor, 0, 13)
+    expect_line_col(t, buffer.history.cursor, 0, 13)
+    expect_cursor_index(t, buffer.history.cursor, 0, 13)
 
     run_text_insertion(&e, "This is the second line")
 
-    expect_line_col(t, buffer.cursor, 1, 22)
-    expect_cursor_index(t, buffer.cursor, 1, 23)
+    expect_line_col(t, buffer.history.cursor, 1, 22)
+    expect_cursor_index(t, buffer.history.cursor, 1, 23)
 
     contents := buffer_to_string(core.current_buffer(&e))
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
@@ -614,7 +614,7 @@ yank_and_paste_whole_line :: proc(t: ^testing.T) {
     // Paste it below current one
     run_input_multiple(&e, press_key(.P), 1)
 
-    expect_line_col(t, buffer.cursor, 1, 0)
+    expect_line_col(t, buffer.history.cursor, 1, 0)
 
     contents := buffer_to_string(core.current_buffer(&e))
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)

@@ -144,7 +144,7 @@ yank_whole_line :: proc(state: ^State) {
     }
 
     if buffer := current_buffer(state); buffer != nil {
-        selection := new_selection(buffer, buffer.cursor)
+        selection := new_selection(buffer, buffer.history.cursor)
         length := selection_length(buffer, selection)
 
         state.yank_register.whole_line = true

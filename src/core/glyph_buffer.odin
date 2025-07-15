@@ -43,7 +43,7 @@ update_glyph_buffer_from_file_buffer :: proc(buffer: ^FileBuffer) {
         if rendered_line >= begin && screen_line >= buffer.glyphs.height { break; }
 
         // render INSERT mode text into glyph buffer
-        if len(buffer.input_buffer) > 0 && rendered_line == buffer.cursor.line && rendered_col >= buffer.cursor.col && rendered_col < buffer.cursor.col + len(buffer.input_buffer) {
+        if len(buffer.input_buffer) > 0 && rendered_line == buffer.history.cursor.line && rendered_col >= buffer.history.cursor.col && rendered_col < buffer.history.cursor.col + len(buffer.input_buffer) {
             for k in 0..<len(buffer.input_buffer) {
                 screen_line = rendered_line - begin;
 

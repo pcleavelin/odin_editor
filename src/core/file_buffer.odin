@@ -46,7 +46,7 @@ FileBuffer :: struct {
     extension: string,
 
     top_line: int,
-    cursor: Cursor,
+    // cursor: Cursor,
     selection: Maybe(Selection),
 
     history: FileHistory,
@@ -64,7 +64,7 @@ FileBufferIter :: struct {
 
 // TODO: don't make this panic on nil snapshot
 buffer_piece_table :: proc(file_buffer: ^FileBuffer) -> ^PieceTable {
-    return &file_buffer.history.snapshots[file_buffer.history.current].(PieceTable)
+    return &file_buffer.history.piece_table
 }
 
 new_file_buffer_iter_from_beginning :: proc(file_buffer: ^FileBuffer) -> FileBufferIter {
@@ -343,7 +343,7 @@ update_file_buffer_index_from_cursor :: proc(buffer: ^FileBuffer) {
     rendered_line := 0;
 
     for character in iterate_file_buffer(&it) {
-        if line_length == buffer.cursor.col && rendered_line == buffer.cursor.line {
+        if line_length == buffer.history.cursor.col && rendered_line == buffer.history.cursor.line {
             break;
         }
 
@@ -358,7 +358,7 @@ update_file_buffer_index_from_cursor :: proc(buffer: ^FileBuffer) {
     }
 
     // FIXME: just swap cursors
-    buffer.cursor.index = before_it.cursor.index;
+    buffer.history.cursor.index = before_it.cursor.index;
 
     update_file_buffer_scroll(buffer);
 }
@@ -402,7 +402,7 @@ move_cursor_start_of_line :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = 
     cursor := cursor;
 
     if cursor == nil {
-        cursor = &buffer.cursor;
+        cursor = &buffer.history.cursor;
     }
 
     if cursor.?.col > 0 {
@@ -421,7 +421,7 @@ move_cursor_end_of_line :: proc(buffer: ^FileBuffer, stop_at_end: bool = true, c
     cursor := cursor;
 
     if cursor == nil {
-        cursor = &buffer.cursor;
+        cursor = &buffer.history.cursor;
     }
 
     it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
@@ -445,7 +445,7 @@ move_cursor_up :: proc(buffer: ^FileBuffer, amount: int = 1, cursor: Maybe(^Curs
     cursor := cursor;
 
     if cursor == nil {
-        cursor = &buffer.cursor;
+        cursor = &buffer.history.cursor;
     }
 
     if cursor.?.line > 0 {
@@ -479,7 +479,7 @@ move_cursor_down :: proc(buffer: ^FileBuffer, amount: int = 1, cursor: Maybe(^Cu
     cursor := cursor;
 
     if cursor == nil {
-        cursor = &buffer.cursor;
+        cursor = &buffer.history.cursor;
     }
 
     current_line := cursor.?.line;
@@ -512,7 +512,7 @@ move_cursor_left :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = nil) {
     cursor := cursor;
 
     if cursor == nil {
-        cursor = &buffer.cursor;
+        cursor = &buffer.history.cursor;
     }
 
     if cursor.?.col > 0 {
@@ -526,7 +526,7 @@ move_cursor_right :: proc(buffer: ^FileBuffer, stop_at_end: bool = true, amt: in
     cursor := cursor;
 
     if cursor == nil {
-        cursor = &buffer.cursor;
+        cursor = &buffer.history.cursor;
     }
 
     it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
@@ -544,7 +544,7 @@ move_cursor_forward_start_of_word :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cu
     cursor := cursor;
 
     if cursor == nil {
-        cursor = &buffer.cursor;
+        cursor = &buffer.history.cursor;
     }
 
     it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
@@ -558,7 +558,7 @@ move_cursor_forward_end_of_word :: proc(buffer: ^FileBuffer, cursor: Maybe(^Curs
     cursor := cursor;
 
     if cursor == nil {
-        cursor = &buffer.cursor;
+        cursor = &buffer.history.cursor;
     }
 
     it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
@@ -572,7 +572,7 @@ move_cursor_backward_start_of_word :: proc(buffer: ^FileBuffer, cursor: Maybe(^C
     cursor := cursor;
 
     if cursor == nil {
-        cursor = &buffer.cursor;
+        cursor = &buffer.history.cursor;
     }
 
     it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
@@ -587,7 +587,7 @@ move_cursor_backward_end_of_word :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cur
     cursor := cursor;
 
     if cursor == nil {
-        cursor = &buffer.cursor;
+        cursor = &buffer.history.cursor;
     }
 
     it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
@@ -811,8 +811,8 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, sho
     }
 
     begin := buffer.top_line;
-    cursor_x := x + padding + buffer.cursor.col * state.source_font_width;
-    cursor_y := y + buffer.cursor.line * state.source_font_height;
+    cursor_x := x + padding + buffer.history.cursor.col * state.source_font_width;
+    cursor_y := y + buffer.history.cursor.line * state.source_font_height;
 
     cursor_y -= begin * state.source_font_height;
 
@@ -908,7 +908,7 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, sho
 update_file_buffer_scroll :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = nil) {
     cursor := cursor;
     if cursor == nil {
-        cursor = &buffer.cursor;
+        cursor = &buffer.history.cursor;
     }
 
     if cursor.?.line > (buffer.top_line + buffer.glyphs.height - 5) {
@@ -917,10 +917,10 @@ update_file_buffer_scroll :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = 
         buffer.top_line = math.max(cursor.?.line - 5, 0);
     }
 
-    // if buffer.cursor.line > (buffer.top_line + buffer.glyphs.height - 5) {
-    //     buffer.top_line = math.max(buffer.cursor.line - buffer.glyphs.height + 5, 0);
-    // } else if buffer.cursor.line < (buffer.top_line + 5) {
-    //     buffer.top_line = math.max(buffer.cursor.line - 5, 0);
+    // if buffer.history.cursor.line > (buffer.top_line + buffer.glyphs.height - 5) {
+    //     buffer.top_line = math.max(buffer.history.cursor.line - buffer.glyphs.height + 5, 0);
+    // } else if buffer.history.cursor.line < (buffer.top_line + 5) {
+    //     buffer.top_line = math.max(buffer.history.cursor.line - 5, 0);
     // }
 }
 
@@ -944,9 +944,9 @@ insert_content :: proc(buffer: ^FileBuffer, to_be_inserted: []u8, append_to_end:
         return;
     }
 
-    index := buffer.cursor.index if !append_to_end else new_piece_table_index_from_end(buffer_piece_table(buffer))
+    index := buffer.history.cursor.index if !append_to_end else new_piece_table_index_from_end(buffer_piece_table(buffer))
 
-    insert_text(buffer_piece_table(buffer), to_be_inserted, buffer.cursor.index)
+    insert_text(buffer_piece_table(buffer), to_be_inserted, buffer.history.cursor.index)
 
     if !append_to_end {
         update_file_buffer_index_from_cursor(buffer);
@@ -962,13 +962,13 @@ delete_content_from_buffer_cursor :: proc(buffer: ^FileBuffer, amount: int) {
         runtime.clear(&buffer.input_buffer);
 
         // Calculate proper line/col values
-        it := new_file_buffer_iter_with_cursor(buffer, buffer.cursor);
+        it := new_file_buffer_iter_with_cursor(buffer, buffer.history.cursor);
         iterate_file_buffer_reverse(&it)
 
-        delete_text(buffer_piece_table(buffer), &buffer.cursor.index)
+        delete_text(buffer_piece_table(buffer), &buffer.history.cursor.index)
 
-        buffer.cursor.line = it.cursor.line
-        buffer.cursor.col = it.cursor.col
+        buffer.history.cursor.line = it.cursor.line
+        buffer.history.cursor.col = it.cursor.col
     }
 }
 
@@ -976,7 +976,7 @@ delete_content_from_selection :: proc(buffer: ^FileBuffer, selection: ^Selection
     selection^ = swap_selections(selection^)
     delete_text_in_span(buffer_piece_table(buffer), &selection.start.index, &selection.end.index)
 
-    buffer.cursor.index = selection.start.index
+    buffer.history.cursor.index = selection.start.index
 }
 
 delete_content :: proc{delete_content_from_buffer_cursor, delete_content_from_selection};

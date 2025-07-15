@@ -389,6 +389,8 @@ main :: proc() {
 
     sdl2.AddEventWatch(expose_event_watcher, &state);
 
+    core.push_new_snapshot(&core.current_buffer(&state).history)
+
     control_key_pressed: bool;
     for !state.should_close {
         {

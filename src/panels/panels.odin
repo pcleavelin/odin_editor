@@ -135,9 +135,9 @@ open_file_buffer_in_new_panel :: proc(state: ^core.State, file_path: string, lin
         return;
     }
 
-    buffer.cursor.line = line
-    buffer.cursor.col = col
-    buffer.top_line = buffer.cursor.line
+    buffer.history.cursor.line = line
+    buffer.history.cursor.col = col
+    buffer.top_line = buffer.history.cursor.line
     core.update_file_buffer_index_from_cursor(&buffer)
 
     buffer_index = len(state.buffers)
@@ -183,15 +183,15 @@ render_file_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileB
             ui.open_element(s, nil, { kind = {ui.Grow{}, ui.Grow{}}})
             ui.close_element(s)
 
-            it := core.new_file_buffer_iter_with_cursor(buffer, buffer.cursor)
+            it := core.new_file_buffer_iter_with_cursor(buffer, buffer.history.cursor)
             ui.open_element(
                 s,
                 fmt.tprintf(
                     "%v:%v - Slice %v:%v - Char: %v",
-                    buffer.cursor.line + 1,
-                    buffer.cursor.col + 1,
-                    buffer.cursor.index.chunk_index,
-                    buffer.cursor.index.char_index,
+                    buffer.history.cursor.line + 1,
+                    buffer.history.cursor.col + 1,
+                    buffer.history.cursor.index.chunk_index,
+                    buffer.history.cursor.index.char_index,
                     core.get_character_at_iter(it)
                 ),
                 {}

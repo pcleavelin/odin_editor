@@ -89,7 +89,7 @@ register_default_input_actions :: proc(input_map: ^core.InputActions) {
         state.mode = .Visual;
         core.reset_input_map(state)
 
-        core.current_buffer(state).selection = core.new_selection(core.current_buffer(state).cursor);
+        core.current_buffer(state).selection = core.new_selection(core.current_buffer(state).history.cursor);
     }, "enter visual mode");
 
 }
@@ -158,6 +158,8 @@ register_default_visual_actions :: proc(input_map: ^core.InputActions) {
     // Text Modification
     {
         core.register_key_action(input_map, .D, proc(state: ^State) {
+            core.push_new_snapshot(&core.current_buffer(state).history)
+
             sel_cur := &(core.current_buffer(state).selection.?);
 
             core.delete_content(core.current_buffer(state), sel_cur);
@@ -169,6 +171,8 @@ register_default_visual_actions :: proc(input_map: ^core.InputActions) {
         }, "delete selection");
 
         core.register_key_action(input_map, .C, proc(state: ^State) {
+            core.push_new_snapshot(&core.current_buffer(state).history)
+
             sel_cur := &(core.current_buffer(state).selection.?);
 
             core.delete_content(core.current_buffer(state), sel_cur);
@@ -194,6 +198,8 @@ register_default_visual_actions :: proc(input_map: ^core.InputActions) {
         }, "Yank Line");
 
         core.register_key_action(input_map, .P, proc(state: ^State) {
+            core.push_new_snapshot(&core.current_buffer(state).history)
+
             if state.yank_register.whole_line {
                 core.insert_content(core.current_buffer(state), []u8{'\n'});
                 core.paste_register(state, state.yank_register)
@@ -209,18 +215,32 @@ register_default_visual_actions :: proc(input_map: ^core.InputActions) {
 
 register_default_text_input_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .I, proc(state: ^State) {
+        core.push_new_snapshot(&core.current_buffer(state).history)
+
         state.mode = .Insert;
         sdl2.StartTextInput();
     }, "enter insert mode");
     core.register_key_action(input_map, .A, proc(state: ^State) {
+        core.push_new_snapshot(&core.current_buffer(state).history)
+
         core.move_cursor_right(core.current_buffer(state), false);
         state.mode = .Insert;
         sdl2.StartTextInput();
     }, "enter insert mode after character (append)");
 
+    core.register_key_action(input_map, .U, proc(state: ^State) {
+        core.pop_snapshot(&core.current_buffer(state).history, true)
+    }, "Undo");
+
+    core.register_ctrl_key_action(input_map, .R, proc(state: ^State) {
+        core.recover_snapshot(&core.current_buffer(state).history)
+    }, "Redo");
+
     // TODO: add shift+o to insert newline above current one
 
     core.register_key_action(input_map, .O, proc(state: ^State) {
+        core.push_new_snapshot(&core.current_buffer(state).history)
+
         if buffer := core.current_buffer(state); buffer != nil {
             core.move_cursor_end_of_line(buffer, false);
             runtime.clear(&buffer.input_buffer)
@@ -247,6 +267,8 @@ register_default_text_input_actions :: proc(input_map: ^core.InputActions) {
         }
 
         core.register_key_action(input_map, .P, proc(state: ^State) {
+            core.push_new_snapshot(&core.current_buffer(state).history)
+
             if state.yank_register.whole_line {
                 core.move_cursor_end_of_line(core.current_buffer(state), false);
                 core.insert_content(core.current_buffer(state), []u8{'\n'});
