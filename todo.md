@@ -4,6 +4,9 @@
 - Odd scrolling behavior on small screen heights
 - Closing the only panel crashes
 
+# Visual QOL
+- Split grep search results into a table to avoid funky unaligned text
+
 # Planned Features
 - [ ] Highlight which panel is currently active
 - [ ] Persist end of line cursor position
@@ -42,10 +45,13 @@
     - [x] New UI
     - [ ] Styling
 - Undo/Redo
+    - [x] Basic/Naive Undo/Redo
+    - [ ] Interface for undo-able actions
     - [ ] Edit History Tree
     - [ ] Undo history saved to disk
 - Finish selections
     - [x] Guarantee that start and end are always ordered
+    - [ ] Whole Line Selections
     - Add in text actions
         - [x] Yank
         - [x] Delete

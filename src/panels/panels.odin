@@ -63,7 +63,7 @@ register_default_leader_actions :: proc(input_map: ^core.InputActions) {
     }, "close this help");
 
     core.register_key_action(input_map, .R, proc(state: ^core.State) {
-        open(state, make_grep_panel(state))
+        open_grep_panel(state)
     }, "Grep Workspace")
 }
 
@@ -163,19 +163,39 @@ render_file_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileB
 
     relative_file_path, _ := filepath.rel(state.directory, buffer.file_path, context.temp_allocator)
 
-    ui.open_element(s, nil, {
-        dir = .TopToBottom,
-        kind = {ui.Grow{}, ui.Grow{}},
-    })
+    ui.open_element(s, nil,
+        {
+            dir = .TopToBottom,
+            kind = {ui.Grow{}, ui.Grow{}},
+        },
+        style = {
+            border = {.Left, .Right, .Top, .Bottom},
+            border_color = .Background4,
+            background_color = .Background1,
+        }
+    )
     {
-        ui.open_element(s, ui.UI_Element_Kind_Custom{fn = draw_func, user_data = transmute(rawptr)buffer}, {
-            kind = {ui.Grow{}, ui.Grow{}}
-        })
+        ui.open_element(s,
+            ui.UI_Element_Kind_Custom{fn = draw_func, user_data = transmute(rawptr)buffer},
+            {
+                kind = {ui.Grow{}, ui.Grow{}}
+            },
+            style = {
+                border = {.Left, .Right, .Top, .Bottom},
+                border_color = .Background4,
+                background_color = .Background1,
+            }
+        )
         ui.close_element(s)
 
         ui.open_element(s, nil, {
             kind = {ui.Grow{}, ui.Exact(state.source_font_height)}
-        })
+            },
+            style = {
+                border = {.Left, .Right, .Top, .Bottom},
+                border_color = .Background4,
+            }
+        )
         {
             ui.open_element(s, fmt.tprintf("%s", state.mode), {})
             ui.close_element(s)
@@ -272,6 +292,13 @@ make_file_buffer_panel :: proc(buffer_index: int) -> core.Panel {
             return true
         }
     }
+}
+
+open_grep_panel :: proc(state: ^core.State) {
+    open(state, make_grep_panel(state))
+
+    state.mode = .Insert
+    sdl2.StartTextInput()
 }
 
 make_grep_panel :: proc(state: ^core.State) -> core.Panel {
@@ -419,10 +446,16 @@ make_grep_panel :: proc(state: ^core.State) -> core.Panel {
                     {
                         if panel_state.query_results != nil {
                             // query results
-                            query_result_container := ui.open_element(s, nil, {
-                                dir = .TopToBottom,
-                                kind = {ui.Grow{}, ui.Grow{}}
-                            })
+                            query_result_container := ui.open_element(s, nil,
+                                {
+                                    dir = .TopToBottom,
+                                    kind = {ui.Grow{}, ui.Grow{}}
+                                },
+                                style = {
+                                    border = {.Left, .Right, .Top, .Bottom},
+                                    border_color = .Background4
+                                }
+                            )
                             {
                                 container_height := query_result_container.layout.size.y
                                 max_results := container_height / 16
@@ -442,14 +475,15 @@ make_grep_panel :: proc(state: ^core.State) -> core.Panel {
                                         ui.open_element(s, fmt.tprintf("%v:%v: ", result.line, result.col), {})
                                         ui.close_element(s)
 
-                                        // TODO: when styling is implemented, make this look better
+
+                                        style := ui.UI_Style{}
+
                                         if panel_state.selected_result == i {
-                                            ui.open_element(s, fmt.tprintf("%s <--", result.file_path), {})
-                                            ui.close_element(s)
-                                        } else {
-                                            ui.open_element(s, result.file_path, {})
-                                            ui.close_element(s)
+                                            style.background_color = .Background2
                                         }
+
+                                        ui.open_element(s, result.file_path, {}, style)
+                                        ui.close_element(s)
                                     }
                                 }
                             }

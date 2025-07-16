@@ -26,6 +26,7 @@ UI_Element :: struct {
 
     kind: UI_Element_Kind,
     layout: UI_Layout,
+    style: UI_Style,
 }
 
 UI_Element_Kind :: union {
@@ -59,6 +60,15 @@ Exact :: distinct i32
 Grow :: struct {}
 Fit :: struct {}
 
+UI_Style :: struct {
+    border: UI_Border_Set,
+
+    border_color: theme.PaletteColor,
+    background_color: theme.PaletteColor,
+}
+UI_Border_Set :: bit_set[UI_Border]
+UI_Border :: enum{Left, Right, Top, Bottom}
+
 UI_Direction :: enum {
     LeftToRight,
     RightToLeft,
@@ -66,10 +76,11 @@ UI_Direction :: enum {
     BottomToTop,
 }
 
-open_element :: proc(state: ^State, kind: UI_Element_Kind, layout: UI_Layout) -> UI_Element {
+open_element :: proc(state: ^State, kind: UI_Element_Kind, layout: UI_Layout, style: UI_Style = {}) -> UI_Element {
     e := UI_Element {
         kind = kind,
         layout = layout,
+        style = style,
     }
     e.layout.pos = state.curr_elements[state.num_curr].layout.pos
     e.layout.size = state.curr_elements[state.num_curr].layout.size
@@ -108,7 +119,7 @@ close_element :: proc(state: ^State, loc := #caller_location) -> UI_Layout {
                 switch v in e.kind {
                     case UI_Element_Kind_Text: {
                         // FIXME: properly use font size
-                        e.layout.size.x = len(v) * 10
+                        e.layout.size.x = len(v) * 12
                     }
                     case UI_Element_Kind_Image: {
                         // TODO
@@ -354,24 +365,33 @@ draw :: proc(state: ^State, core_state: ^core.State) {
     for i in 0..<state.num_curr {
         e := &state.curr_elements[i]
 
+        core.draw_rect(
+            core_state,
+            e.layout.pos.x,
+            e.layout.pos.y,
+            e.layout.size.x,
+            e.layout.size.y,
+            e.style.background_color,
+        );
+
         switch v in e.kind {
             case nil: {
-                core.draw_rect(
-                    core_state,
-                    e.layout.pos.x,
-                    e.layout.pos.y,
-                    e.layout.size.x,
-                    e.layout.size.y,
-                    .Background1
-                );
-                core.draw_rect_outline(
-                    core_state,
-                    e.layout.pos.x,
-                    e.layout.pos.y,
-                    e.layout.size.x,
-                    e.layout.size.y,
-                    .Background4
-                );
+                // core.draw_rect(
+                //     core_state,
+                //     e.layout.pos.x,
+                //     e.layout.pos.y,
+                //     e.layout.size.x,
+                //     e.layout.size.y,
+                //     e.style.background_color,
+                // );
+                // core.draw_rect_outline(
+                //     core_state,
+                //     e.layout.pos.x,
+                //     e.layout.pos.y,
+                //     e.layout.size.x,
+                //     e.layout.size.y,
+                //     .Background4
+                // );
             }
             case UI_Element_Kind_Text: {
                 core.draw_text(core_state, string(v), e.layout.pos.x, e.layout.pos.y);
@@ -382,6 +402,52 @@ draw :: proc(state: ^State, core_state: ^core.State) {
             case UI_Element_Kind_Custom: {
                 v.fn(core_state, e^, v.user_data) 
             }
+        }
+    }
+
+    // Separate loop done to draw border over elements
+    for i in 0..<state.num_curr {
+        e := &state.curr_elements[i]
+
+        if .Left in e.style.border {
+            core.draw_line(
+                core_state,
+                e.layout.pos.x,
+                e.layout.pos.y,
+                e.layout.pos.x,
+                e.layout.pos.y + e.layout.size.y,
+                e.style.border_color,
+            )
+        }
+        if .Right in e.style.border {
+            core.draw_line(
+                core_state,
+                e.layout.pos.x + e.layout.size.x,
+                e.layout.pos.y,
+                e.layout.pos.x + e.layout.size.x,
+                e.layout.pos.y + e.layout.size.y,
+                e.style.border_color,
+            )
+        }
+        if .Top in e.style.border {
+            core.draw_line(
+                core_state,
+                e.layout.pos.x,
+                e.layout.pos.y,
+                e.layout.pos.x + e.layout.size.x,
+                e.layout.pos.y,
+                e.style.border_color,
+            )
+        }
+        if .Bottom in e.style.border {
+            core.draw_line(
+                core_state,
+                e.layout.pos.x,
+                e.layout.pos.y + e.layout.size.y,
+                e.layout.pos.x + e.layout.size.x,
+                e.layout.pos.y + e.layout.size.y,
+                e.style.border_color,
+            )
         }
     }
 

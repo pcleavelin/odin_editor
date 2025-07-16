@@ -107,6 +107,13 @@ free_font_atlas :: proc(font_atlas: FontAtlas) {
     }
 }
 
+draw_line :: proc(state: ^State, x1,y1,x2,y2: int, color: theme.PaletteColor) {
+    color := theme.get_palette_color(color)
+
+    sdl2.SetRenderDrawColor(state.sdl_renderer, color.r, color.g, color.b, color.a)
+    sdl2.RenderDrawLine(state.sdl_renderer, i32(x1), i32(y1), i32(x2), i32(y2))
+}
+
 draw_rect_outline :: proc(state: ^State, x,y,w,h: int, color: theme.PaletteColor) {
     color := theme.get_palette_color(color);
 
