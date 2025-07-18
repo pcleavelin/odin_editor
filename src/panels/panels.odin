@@ -9,6 +9,7 @@ import "core:log"
 
 import "vendor:sdl2"
 
+import ts "../tree_sitter"
 import "../core"
 import "../input"
 import "../util"
@@ -65,6 +66,15 @@ register_default_leader_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .R, proc(state: ^core.State) {
         open_grep_panel(state)
     }, "Grep Workspace")
+
+    core.register_key_action(input_map, .K, proc(state: ^core.State) {
+        buffer := core.current_buffer(state)
+        ts.update_cursor(&buffer.tree, buffer.history.cursor.line, buffer.history.cursor.col)
+
+        ts.print_node_type(&buffer.tree)
+
+        core.reset_input_map(state)
+    }, "View Symbol")
 }
 
 register_default_panel_actions :: proc(input_map: ^core.InputActions) {
@@ -282,6 +292,11 @@ make_file_buffer_panel :: proc(buffer_index: int) -> core.Panel {
 
             return &state.buffers[panel_state.buffer_index], true
         },
+        drop = proc(state: ^core.State, panel_state: ^core.PanelState) {
+            if panel_state, ok := &panel_state.(core.FileBufferPanel); ok {
+                core.free_file_buffer(&state.buffers[panel_state.buffer_index])
+            }
+        },
         render_proc = proc(state: ^core.State, panel_state: ^core.PanelState) -> (ok: bool) {
             panel_state := panel_state.(core.FileBufferPanel) or_return;
             s := transmute(^ui.State)state.ui
@@ -426,6 +441,7 @@ make_grep_panel :: proc(state: ^core.State) -> core.Panel {
         },
         drop = proc(state: ^core.State, panel_state: ^core.PanelState) {
             if panel_state, ok := &panel_state.(core.GrepPanel); ok {
+                // core.free_file_buffer(&state.buffers[panel_state.buffer])
                 delete(panel_state.query_arena.data, state.ctx.allocator)
             }
         },

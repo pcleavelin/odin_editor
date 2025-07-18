@@ -2,6 +2,7 @@ package core
 
 import "core:fmt"
 
+import ts "../tree_sitter"
 import "../theme"
 
 GlyphBuffer :: struct {
@@ -27,7 +28,21 @@ make_glyph_buffer :: proc(width, height: int, allocator := context.allocator) ->
 
 update_glyph_buffer_from_file_buffer :: proc(buffer: ^FileBuffer) {
     for &glyph in buffer.glyphs.buffer {
-        glyph = Glyph{};
+        glyph = Glyph {}
+        glyph.color = .Foreground
+    }
+
+    outer: for highlight in buffer.tree.highlights {
+        for line in highlight.start.row..=highlight.end.row {
+            if int(line) < buffer.top_line { continue; }
+
+            screen_line := int(line) - buffer.top_line
+            if screen_line >= buffer.glyphs.height { break outer; }
+
+            for col in highlight.start.column..<highlight.end.column {
+                buffer.glyphs.buffer[int(col) + screen_line * buffer.glyphs.width].color = highlight.color;
+            }
+        }
     }
 
     begin := buffer.top_line;
@@ -71,7 +86,7 @@ update_glyph_buffer_from_file_buffer :: proc(buffer: ^FileBuffer) {
         }
 
         if rendered_line >= begin && rendered_col < buffer.glyphs.width {
-            buffer.glyphs.buffer[rendered_col + screen_line * buffer.glyphs.width] = Glyph { codepoint = character, color = .Foreground };
+            buffer.glyphs.buffer[rendered_col + screen_line * buffer.glyphs.width].codepoint = character
         }
 
         rendered_col += 1;

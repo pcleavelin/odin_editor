@@ -18,6 +18,7 @@ import "core"
 import "panels"
 import "theme"
 import "ui"
+import ts "tree_sitter"
 
 State :: core.State;
 FileBuffer :: core.FileBuffer;
@@ -85,7 +86,7 @@ draw :: proc(state: ^State) {
     ui.draw(new_ui, state)
 
     // TODO: figure out when to not show the input help menu
-    if state.mode != .Insert { // && state.current_input_map != &state.input_map.mode[state.mode] {
+    if false && state.mode != .Insert { // && state.current_input_map != &state.input_map.mode[state.mode] {
         longest_description := 0;
         for key, action in state.current_input_map.key_actions {
             if len(action.description) > longest_description {
@@ -200,6 +201,8 @@ ui_file_buffer :: proc(s: ^ui.State, buffer: ^FileBuffer) {
 }
 
 main :: proc() {
+   ts.set_allocator() 
+
     _command_arena: mem.Arena
     mem.arena_init(&_command_arena, make([]u8, 1024*1024));
 

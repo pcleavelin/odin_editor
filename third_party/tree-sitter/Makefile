@@ -57,7 +57,7 @@ override CFLAGS += -Ilib/src -Ilib/src/wasm -Ilib/include
 all: libtree-sitter.a
 
 libtree-sitter.a: $(OBJ)
-	$(AR) $(ARFLAGS) $@ $^ 
+	$(AR) $(ARFLAGS) $@ $^
 
 # libtree-sitter.$(SOEXT): $(OBJ)
 # 	$(CC) $(LDFLAGS) $(LINKSHARED) $^ $(LDLIBS) -o $@

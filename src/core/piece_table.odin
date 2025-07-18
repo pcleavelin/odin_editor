@@ -71,6 +71,28 @@ new_piece_table_iter_from_index :: proc(t: ^PieceTable, index: PieceTableIndex) 
     }
 }
 
+new_piece_table_iter_from_byte_offset :: proc(t: ^PieceTable, byte_offset: int) -> (iter: PieceTableIter, ok: bool) {
+    bytes := 0
+
+    for chunk, chunk_index in t.chunks {
+        if bytes + len(chunk) > byte_offset {
+            char_index := byte_offset - bytes
+
+            return PieceTableIter {
+                t = t,
+                index = PieceTableIndex {
+                    chunk_index = chunk_index,
+                    char_index = char_index,
+                }
+            }, true
+        } else {
+            bytes += len(chunk)
+        }
+    }
+
+    return
+}
+
 new_piece_table_index_from_end :: proc(t: ^PieceTable) -> PieceTableIndex {
     chunk_index := len(t.chunks)-1
     char_index := len(t.chunks[chunk_index])-1

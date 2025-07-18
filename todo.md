@@ -1,13 +1,14 @@
 # Bugs
-- Fix crash when cursor is over a new-line
+- Memory Leak
 - Fix jumping forward a word jumping past consecutive brackets
 - Odd scrolling behavior on small screen heights
-- Closing the only panel crashes
+- Scrolling past end/beginning of results panics
 
 # Visual QOL
 - Split grep search results into a table to avoid funky unaligned text
 
 # Planned Features
+- Use grouped lifetimes exclusively for memory allocation/freeing
 - [ ] Highlight which panel is currently active
 - [ ] Persist end of line cursor position
 - Testing Harness
@@ -29,8 +30,12 @@
     - [ ] Go-to Definition/
     - [ ] Find references
 - Re-implement lost features from Plugins
-    - [ ] Syntax Highlighting
-        - [ ] Integrate tree-sitter
+    - [ ] Integrate tree-sitter
+        - [x] Syntax Highlighting
+        - [ ] Auto Setup Parsers
+            - [ ] Download parser
+            - [ ] Compile/"Install"
+        - [ ] Auto-indent?
     - [ ] Bootleg Telescope
         - [ ] Grepping Files
             - [x] Query across project

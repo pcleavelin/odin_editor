@@ -10,6 +10,7 @@ import "core:slice"
 import "base:runtime"
 import "core:strings"
 
+import ts "../tree_sitter"
 import "../theme"
 
 ScrollDir :: enum {
@@ -46,8 +47,9 @@ FileBuffer :: struct {
     extension: string,
 
     top_line: int,
-    // cursor: Cursor,
     selection: Maybe(Selection),
+
+    tree: ts.State,
 
     history: FileHistory,
     glyphs: GlyphBuffer,
@@ -640,8 +642,8 @@ swap_selections :: proc(selection: Selection) -> (swapped: Selection) {
 // TODO: don't access PieceTableIndex directly
 is_selection_inverted :: proc(selection: Selection) -> bool {
     return selection.start.index.chunk_index > selection.end.index.chunk_index ||
-        (selection.start.index.chunk_index == selection.end.index.chunk_index
-            && selection.start.index.char_index > selection.end.index.char_index)
+        (selection.start.index.chunk_index == selection.end.index.chunk_index &&
+            selection.start.index.char_index > selection.end.index.char_index)
 }
 
 selection_length :: proc(buffer: ^FileBuffer, selection: Selection) -> int {
@@ -707,7 +709,7 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
         width := 256;
         height := 256;
 
-        fmt.eprintln("file path", fi.fullpath[4:]);
+        fmt.eprintln("file path", fi.fullpath[:]);
 
         buffer := FileBuffer {
             allocator = allocator,
@@ -717,15 +719,43 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
             // file_path = fi.fullpath[4:],
             extension = extension,
 
+            // TODO: derive language type from extension
+            tree = ts.make_state(.Odin),
             history = make_history(original_content),
 
             glyphs = make_glyph_buffer(width, height),
             input_buffer = make([dynamic]u8, 0, 1024),
         };
 
+        ts.parse_buffer(&buffer.tree, tree_sitter_file_buffer_input(&buffer))
+
         return buffer, error();
     } else {
         return FileBuffer{}, error(ErrorType.FileIOError, fmt.aprintf("failed to read from file"));
+    }
+}
+
+tree_sitter_file_buffer_input :: proc(buffer: ^FileBuffer) -> ts.Input {
+    read :: proc "c" (payload: rawptr, byte_index: u32, position: ts.Point, bytes_read: ^u32) -> ^u8 {
+        context = runtime.default_context()
+
+        buffer := transmute(^FileBuffer)payload
+
+        if iter, ok := new_piece_table_iter_from_byte_offset(&buffer.history.piece_table, int(byte_index)); ok {
+            bytes := iter.t.chunks[iter.index.chunk_index][iter.index.char_index:]
+            bytes_read^ = u32(len(bytes))
+
+            return raw_data(bytes)
+        } else {
+            bytes_read^ = 0
+            return nil
+        }
+    }
+
+    return ts.Input {
+        payload = buffer,
+        read = read,
+        encoding = .UTF8,
     }
 }
 
@@ -760,6 +790,7 @@ next_buffer :: proc(state: ^State, prev_buffer: ^int) -> int {
 
 // TODO: replace this with arena for the file buffer
 free_file_buffer :: proc(buffer: ^FileBuffer) {
+    ts.delete_state(&buffer.tree)
     free_history(&buffer.history)
     delete(buffer.glyphs.buffer)
     delete(buffer.input_buffer)
