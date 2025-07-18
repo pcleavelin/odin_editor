@@ -26,7 +26,11 @@ make_glyph_buffer :: proc(width, height: int, allocator := context.allocator) ->
     }
 }
 
-update_glyph_buffer_from_file_buffer :: proc(buffer: ^FileBuffer) {
+update_glyph_buffer_from_file_buffer :: proc(buffer: ^FileBuffer, width, height: int) {
+    // TODO: limit to 256
+    buffer.glyphs.width = width
+    buffer.glyphs.height = height
+
     for &glyph in buffer.glyphs.buffer {
         glyph = Glyph {}
         glyph.color = .Foreground

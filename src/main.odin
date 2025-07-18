@@ -54,11 +54,6 @@ ui_font_height :: proc() -> i32 {
 }
 
 draw :: proc(state: ^State) {
-    if buffer := core.current_buffer(state); buffer != nil {
-        buffer.glyphs.height = math.min(256, int((state.screen_height - state.source_font_height*2) / state.source_font_height)) + 1;
-        buffer.glyphs.width = math.min(256, int((state.screen_width - state.source_font_width) / state.source_font_width));
-    }
-
     render_color := theme.get_palette_color(.Background);
     sdl2.SetRenderDrawColor(state.sdl_renderer, render_color.r, render_color.g, render_color.b, render_color.a);
     sdl2.RenderClear(state.sdl_renderer);
@@ -165,41 +160,6 @@ expose_event_watcher :: proc "c" (state: rawptr, event: ^sdl2.Event) -> i32 {
     return 0;
 }
 
-ui_file_buffer :: proc(s: ^ui.State, buffer: ^FileBuffer) {
-    draw_func := proc(state: ^State, e: ui.UI_Element, user_data: rawptr) {
-        buffer := transmute(^FileBuffer)user_data;
-        if buffer != nil {
-            buffer.glyphs.width = e.layout.size.x / state.source_font_width;
-            buffer.glyphs.height = e.layout.size.y / state.source_font_height + 1;
-
-            core.draw_file_buffer(state, buffer, e.layout.pos.x, e.layout.pos.y);
-        }
-    };
-
-    relative_file_path, _ := filepath.rel(state.directory, buffer.file_path, context.temp_allocator)
-
-    ui.open_element(s, nil, {
-        dir = .TopToBottom,
-        kind = {ui.Grow{}, ui.Grow{}},
-    })
-    {
-        ui.open_element(s, ui.UI_Element_Kind_Custom{fn = draw_func, user_data = transmute(rawptr)buffer}, {
-            kind = {ui.Grow{}, ui.Grow{}}
-        })
-        ui.close_element(s)
-
-        ui.open_element(s, nil, {
-            kind = {ui.Grow{}, ui.Exact(state.source_font_height)}
-        })
-        {
-            ui.open_element(s, fmt.tprintf("%s", state.mode), {})
-            ui.close_element(s)
-        }
-        ui.close_element(s)
-    }
-    ui.close_element(s)
-}
-
 main :: proc() {
    ts.set_allocator() 
 
@@ -276,55 +236,55 @@ main :: proc() {
     //     }
     // )
 
-    core.register_editor_command(
-        &state.commands,
-        "nl.spacegirl.editor.core",
-        "New Scratch Buffer",
-        "Opens a new scratch buffer",
-        proc(state: ^State) {
-            buffer := core.new_virtual_file_buffer(context.allocator);
-            util.append_static_list(&state.panels, panels.make_file_buffer_panel(len(state.buffers)))
-            runtime.append(&state.buffers, buffer);
-        }
-    )
-    core.register_editor_command(
-        &state.commands,
-        "nl.spacegirl.editor.core",
-        "Open File",
-        "Opens a file in a new buffer",
-        proc(state: ^State) {
-            log.info("open file args:");
+    // core.register_editor_command(
+    //     &state.commands,
+    //     "nl.spacegirl.editor.core",
+    //     "New Scratch Buffer",
+    //     "Opens a new scratch buffer",
+    //     proc(state: ^State) {
+    //         buffer := core.new_virtual_file_buffer(context.allocator);
+    //         util.append_static_list(&state.panels, panels.make_file_buffer_panel(len(state.buffers)))
+    //         runtime.append(&state.buffers, buffer);
+    //     }
+    // )
+    // core.register_editor_command(
+    //     &state.commands,
+    //     "nl.spacegirl.editor.core",
+    //     "Open File",
+    //     "Opens a file in a new buffer",
+    //     proc(state: ^State) {
+    //         log.info("open file args:");
 
-            Args :: struct {
-                file_path: string
-            }
+    //         Args :: struct {
+    //             file_path: string
+    //         }
 
-            if args, ok := core.attempt_read_command_args(Args, state.command_args[:]); ok {
-                log.info("attempting to open file", args.file_path)
+    //         if args, ok := core.attempt_read_command_args(Args, state.command_args[:]); ok {
+    //             log.info("attempting to open file", args.file_path)
 
-                panels.open_file_buffer_in_new_panel(state, args.file_path, 0, 0)
-            }
-        }
-    )
-    core.register_editor_command(
-        &state.commands,
-        "nl.spacegirl.editor.core",
-        "Quit",
-        "Quits the application",
-        proc(state: ^State) {
-            state.should_close = true
-        }
-    )
+    //             panels.open_file_buffer_in_new_panel(state, args.file_path, 0, 0)
+    //         }
+    //     }
+    // )
+    // core.register_editor_command(
+    //     &state.commands,
+    //     "nl.spacegirl.editor.core",
+    //     "Quit",
+    //     "Quits the application",
+    //     proc(state: ^State) {
+    //         state.should_close = true
+    //     }
+    // )
 
     if len(os.args) > 1 {
         for arg in os.args[1:] {
             panels.open_file_buffer_in_new_panel(&state, arg, 0, 0)
         }
     } else {
-        buffer := core.new_virtual_file_buffer(context.allocator);
+        // buffer := core.new_virtual_file_buffer(context.allocator);
 
-        panels.open(&state, panels.make_file_buffer_panel(len(state.buffers)))
-        runtime.append(&state.buffers, buffer);
+        // panels.open(&state, panels.make_file_buffer_panel(len(state.buffers)))
+        // runtime.append(&state.buffers, buffer);
     }
 
     if sdl2.Init({.VIDEO}) < 0 {
@@ -426,12 +386,14 @@ main :: proc() {
                 }
 
                 run_key_action := proc(state: ^core.State, control_key_pressed: bool, key: core.Key) -> bool {
-                    if state.current_input_map != nil {
+                    if current_panel, ok := state.current_panel.?; ok {
+                        panel := util.get(&state.panels, current_panel).?
+
                         if control_key_pressed {
                             if action, exists := state.current_input_map.ctrl_key_actions[key]; exists {
                                 switch value in action.action {
                                     case core.EditorAction:
-                                        value(state);
+                                        value(state, &panel);
                                         return true;
                                     case core.InputActions:
                                         state.current_input_map = &(&state.current_input_map.ctrl_key_actions[key]).action.(core.InputActions)
@@ -442,7 +404,7 @@ main :: proc() {
                             if action, exists := state.current_input_map.key_actions[key]; exists {
                                 switch value in action.action {
                                     case core.EditorAction:
-                                        value(state);
+                                        value(state, &panel);
                                         return true;
                                     case core.InputActions:
                                         state.current_input_map = &(&state.current_input_map.key_actions[key]).action.(core.InputActions)

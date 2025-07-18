@@ -38,9 +38,6 @@ State :: struct {
     source_font_height: int,
     line_number_padding: int,
 
-    current_buffer: int,
-    buffers: [dynamic]FileBuffer,
-
     // TODO: make more than one register to plop stuff into
     yank_register: Register,
 
@@ -117,81 +114,55 @@ GrepQueryResult :: struct {
     col: int,
 }
 
-current_buffer :: proc(state: ^State) -> ^FileBuffer {
-    if current_panel, ok := util.get(&state.panels, state.current_panel.? or_else -1).?; ok {
-        if current_panel.buffer_proc != nil {
-            if panel_buffer, ok := current_panel.buffer_proc(state, &current_panel.panel_state); ok && panel_buffer != nil {
-                return panel_buffer
-            }
-        }
-    }
-
-    if state.current_buffer == -2 {
-        return &state.log_buffer;
-    }
-
-    if len(state.buffers) < 1 {
-        return nil
-    }
-
-    return &state.buffers[state.current_buffer];
-}
-
-yank_whole_line :: proc(state: ^State) {
+yank_whole_line :: proc(state: ^State, buffer: ^FileBuffer) {
     if state.yank_register.data != nil {
         delete(state.yank_register.data)
         state.yank_register.data = nil
     }
 
-    if buffer := current_buffer(state); buffer != nil {
-        selection := new_selection(buffer, buffer.history.cursor)
-        length := selection_length(buffer, selection)
+    selection := new_selection(buffer, buffer.history.cursor)
+    length := selection_length(buffer, selection)
 
-        state.yank_register.whole_line = true
-        state.yank_register.data = make([]u8, length)
+    state.yank_register.whole_line = true
+    state.yank_register.data = make([]u8, length)
 
-        it := new_file_buffer_iter_with_cursor(buffer, selection.start)
+    it := new_file_buffer_iter_with_cursor(buffer, selection.start)
 
-        index := 0
-        for !it.hit_end && index < length {
-            state.yank_register.data[index] = get_character_at_iter(it) 
+    index := 0
+    for !it.hit_end && index < length {
+        state.yank_register.data[index] = get_character_at_iter(it) 
 
-            iterate_file_buffer(&it)
-            index += 1
-        }
+        iterate_file_buffer(&it)
+        index += 1
     }
 }
 
-yank_selection :: proc(state: ^State) {
+yank_selection :: proc(state: ^State, buffer: ^FileBuffer) {
     if state.yank_register.data != nil {
         delete(state.yank_register.data)
         state.yank_register.data = nil
     }
 
-    if buffer := current_buffer(state); buffer != nil && buffer.selection != nil {
-        selection := swap_selections(buffer.selection.?)
-        length := selection_length(buffer, selection)
+    selection := swap_selections(buffer.selection.?)
+    length := selection_length(buffer, selection)
 
-        state.yank_register.whole_line = false
-        state.yank_register.data = make([]u8, length)
+    state.yank_register.whole_line = false
+    state.yank_register.data = make([]u8, length)
 
-        it := new_file_buffer_iter_with_cursor(buffer, selection.start)
+    it := new_file_buffer_iter_with_cursor(buffer, selection.start)
 
-        index := 0
-        for !it.hit_end && index < length {
-            state.yank_register.data[index] = get_character_at_iter(it) 
+    index := 0
+    for !it.hit_end && index < length {
+        state.yank_register.data[index] = get_character_at_iter(it) 
 
-            iterate_file_buffer(&it)
-            index += 1
-        }
+        iterate_file_buffer(&it)
+        index += 1
     }
 }
 
-paste_register :: proc(state: ^State, register: Register) {
-    if buffer := current_buffer(state); buffer != nil && register.data != nil {
-        insert_content(buffer, register.data)
-        move_cursor_left(buffer)
-    }
+paste_register :: proc(state: ^State, register: Register, buffer: ^FileBuffer) {
+    insert_content(buffer, register.data)
+    move_cursor_left(buffer)
 }
 
 reset_input_map_from_state_mode :: proc(state: ^State) {
@@ -204,26 +175,19 @@ reset_input_map_from_mode :: proc(state: ^State, mode: Mode) {
 }
 reset_input_map :: proc{reset_input_map_from_mode, reset_input_map_from_state_mode}
 
-buffer_from_index :: proc(state: ^State, buffer_index: int) -> ^FileBuffer {
-    if buffer_index == -2 {
-        return &state.log_buffer;
-    }
-
-    return &state.buffers[buffer_index];
-}
-
-EditorAction :: proc(state: ^State);
-InputGroup :: union {EditorAction, InputActions}
-Action :: struct {
-    action: InputGroup,
-    description: string,
-}
 InputMap :: struct {
     mode: map[Mode]InputActions,
 }
+
+InputGroup :: union {EditorAction, InputActions}
+EditorAction :: proc(state: ^State, user_data: rawptr);
 InputActions :: struct {
     key_actions: map[Key]Action,
     ctrl_key_actions: map[Key]Action,
+}
+Action :: struct {
+    action: InputGroup,
+    description: string,
 }
 
 new_input_map :: proc() -> InputMap {
@@ -377,7 +341,8 @@ run_command :: proc(state: ^State, group: string, name: string) {
         for cmd in cmds {
             if cmd.name == name {
                 log.info("Running command", group, name);
-                cmd.action(state);
+                // TODO: rework command system
+                // cmd.action(state);
                 return;
             }
         }

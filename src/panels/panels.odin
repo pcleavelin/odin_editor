@@ -59,18 +59,18 @@ rs_grep_as_results :: proc(results: ^RS_GrepResults, allocator := context.alloca
 
 // NOTE: odd that this is here, but I don't feel like thinking of a better dep-tree to fix it
 register_default_leader_actions :: proc(input_map: ^core.InputActions) {
-    core.register_key_action(input_map, .Q, proc(state: ^core.State) {
+    core.register_key_action(input_map, .Q, proc(state: ^core.State, user_data: rawptr) {
         core.reset_input_map(state)
     }, "close this help");
 
-    core.register_key_action(input_map, .R, proc(state: ^core.State) {
+    core.register_key_action(input_map, .R, proc(state: ^core.State, user_data: rawptr) {
         open_grep_panel(state)
     }, "Grep Workspace")
 
-    core.register_key_action(input_map, .K, proc(state: ^core.State) {
-        buffer := core.current_buffer(state)
-        ts.update_cursor(&buffer.tree, buffer.history.cursor.line, buffer.history.cursor.col)
+    core.register_key_action(input_map, .K, proc(state: ^core.State, user_data: rawptr) {
+        buffer := transmute(^core.FileBuffer)user_data
 
+        ts.update_cursor(&buffer.tree, buffer.history.cursor.line, buffer.history.cursor.col)
         ts.print_node_type(&buffer.tree)
 
         core.reset_input_map(state)
@@ -78,7 +78,7 @@ register_default_leader_actions :: proc(input_map: ^core.InputActions) {
 }
 
 register_default_panel_actions :: proc(input_map: ^core.InputActions) {
-    core.register_key_action(input_map, .H, proc(state: ^core.State) {
+    core.register_key_action(input_map, .H, proc(state: ^core.State, user_data: rawptr) {
         if current_panel, ok := state.current_panel.?; ok {
             if prev, ok := util.get_prev(&state.panels, current_panel).?; ok {
                 state.current_panel = prev
@@ -87,11 +87,7 @@ register_default_panel_actions :: proc(input_map: ^core.InputActions) {
 
         core.reset_input_map(state)
     }, "focus panel to the left");
-    core.register_key_action(input_map, .L, proc(state: ^core.State) {
-        if state.current_buffer < len(state.buffers)-1  {
-            state.current_buffer += 1
-        }
-
+    core.register_key_action(input_map, .L, proc(state: ^core.State, user_data: rawptr) {
         if current_panel, ok := state.current_panel.?; ok {
             if next, ok := util.get_next(&state.panels, current_panel).?; ok {
                 state.current_panel = next
@@ -101,7 +97,7 @@ register_default_panel_actions :: proc(input_map: ^core.InputActions) {
         core.reset_input_map(state)
     }, "focus panel to the right");
 
-    core.register_key_action(input_map, .Q, proc(state: ^core.State) {
+    core.register_key_action(input_map, .Q, proc(state: ^core.State, user_data: rawptr) {
         if current_panel, ok := state.current_panel.?; ok {
             close(state, current_panel) 
         }
@@ -139,6 +135,7 @@ close :: proc(state: ^core.State, panel_id: int) {
 }
 
 open_file_buffer_in_new_panel :: proc(state: ^core.State, file_path: string, line, col: int) -> (panel_id, buffer_index: int, ok: bool) {
+    // FIXME: move into panel
     buffer, err := core.new_file_buffer(context.allocator, file_path, state.directory);
     if err.type != .None {
         log.error("Failed to create file buffer:", err);
@@ -150,8 +147,8 @@ open_file_buffer_in_new_panel :: proc(state: ^core.State, file_path: string, lin
     buffer.top_line = buffer.history.cursor.line
     core.update_file_buffer_index_from_cursor(&buffer)
 
-    buffer_index = len(state.buffers)
-    runtime.append(&state.buffers, buffer);
+    // buffer_index = len(state.buffers)
+    // runtime.append(&state.buffers, buffer);
 
     if panel_id, ok := open(state, make_file_buffer_panel(buffer_index)); ok {
         return panel_id, buffer_index, true
@@ -167,7 +164,7 @@ render_file_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileB
             buffer.glyphs.width = e.layout.size.x / state.source_font_width;
             buffer.glyphs.height = e.layout.size.y / state.source_font_height + 1;
 
-            core.draw_file_buffer(state, buffer, e.layout.pos.x, e.layout.pos.y);
+            core.draw_file_buffer(state, buffer, e.layout.pos.x, e.layout.pos.y, e.layout.size.x, e.layout.size.y);
         }
     };
 
@@ -240,7 +237,7 @@ render_raw_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileBu
             buffer.glyphs.width = e.layout.size.x / state.source_font_width;
             buffer.glyphs.height = e.layout.size.y / state.source_font_height + 1;
 
-            core.draw_file_buffer(state, buffer, e.layout.pos.x, e.layout.pos.y, false);
+            core.draw_file_buffer(state, buffer, e.layout.pos.x, e.layout.pos.y, e.layout.size.x, e.layout.size.y, false);
         }
     };
 
@@ -279,7 +276,6 @@ make_file_buffer_panel :: proc(buffer_index: int) -> core.Panel {
     core.register_ctrl_key_action(&input_map.mode[.Normal], .W, core.new_input_actions(), "Panel Navigation") 
     register_default_panel_actions(&(&input_map.mode[.Normal].ctrl_key_actions[.W]).action.(core.InputActions))
 
-
     input.register_default_input_actions(&input_map.mode[.Normal]);
     input.register_default_visual_actions(&input_map.mode[.Visual]);
     input.register_default_text_input_actions(&input_map.mode[.Normal]);
@@ -287,22 +283,18 @@ make_file_buffer_panel :: proc(buffer_index: int) -> core.Panel {
     return core.Panel {
         panel_state = core.FileBufferPanel { buffer_index = buffer_index },
         input_map = input_map,
-        buffer_proc = proc(state: ^core.State, panel_state: ^core.PanelState) -> (buffer: ^core.FileBuffer, ok: bool) {
-            panel_state := panel_state.(core.FileBufferPanel) or_return;
-
-            return &state.buffers[panel_state.buffer_index], true
-        },
         drop = proc(state: ^core.State, panel_state: ^core.PanelState) {
             if panel_state, ok := &panel_state.(core.FileBufferPanel); ok {
-                core.free_file_buffer(&state.buffers[panel_state.buffer_index])
+                // core.free_file_buffer(&state.buffers[panel_state.buffer_index])
             }
         },
         render_proc = proc(state: ^core.State, panel_state: ^core.PanelState) -> (ok: bool) {
             panel_state := panel_state.(core.FileBufferPanel) or_return;
-            s := transmute(^ui.State)state.ui
-            buffer := &state.buffers[panel_state.buffer_index]
 
-            render_file_buffer(state, s, buffer)
+            // FIXME: use buffer from panel
+            // s := transmute(^ui.State)state.ui
+            // buffer := &state.buffers[panel_state.buffer_index]
+            // render_file_buffer(state, s, buffer)
 
             return true
         }
@@ -323,8 +315,9 @@ make_grep_panel :: proc(state: ^core.State) -> core.Panel {
     glyphs := core.make_glyph_buffer(256,256, allocator = mem.arena_allocator(&query_arena))
 
     input_map := core.new_input_map()
+    // FIXME: add to panel
     grep_input_buffer := core.new_virtual_file_buffer(context.allocator)
-    runtime.append(&state.buffers, grep_input_buffer)
+    // runtime.append(&state.buffers, grep_input_buffer)
 
     run_query :: proc(panel_state: ^core.GrepPanel, query: string, directory: string) {
         if panel_state.query_region.arena != nil {
@@ -352,70 +345,65 @@ make_grep_panel :: proc(state: ^core.State) -> core.Panel {
         }
     }
 
-    core.register_key_action(&input_map.mode[.Normal], .ENTER, proc(state: ^core.State) {
-        if current_panel, ok := util.get(&state.panels, state.current_panel.? or_else -1).?; ok {
-            this_panel := state.current_panel.?
+    core.register_key_action(&input_map.mode[.Normal], .ENTER, proc(state: ^core.State, user_data: rawptr) {
+        this_panel := transmute(^core.Panel)user_data
 
-            if panel_state, ok := &current_panel.panel_state.(core.GrepPanel); ok {
-                if panel_state.query_results != nil {
-                    selected_result := &panel_state.query_results[panel_state.selected_result]
+        if panel_state, ok := &this_panel.panel_state.(core.GrepPanel); ok {
+            if panel_state.query_results != nil {
+                selected_result := &panel_state.query_results[panel_state.selected_result]
 
-                    if panel_id, buffer, ok := open_file_buffer_in_new_panel(state, selected_result.file_path, selected_result.line, selected_result.col); ok {
-                        close(state, this_panel)
+                if panel_id, buffer, ok := open_file_buffer_in_new_panel(state, selected_result.file_path, selected_result.line, selected_result.col); ok {
+                    // FIXME: store panel_id in core.Panel
+                    // close(state, this_panel)
 
-                        state.current_panel = panel_id
-                        state.current_buffer = buffer
-                    } else {
-                        log.error("failed to open file buffer in new panel")
-                    }
+                    state.current_panel = panel_id
+                } else {
+                    log.error("failed to open file buffer in new panel")
                 }
             }
         }
     }, "Open File");
-    core.register_key_action(&input_map.mode[.Normal], .I, proc(state: ^core.State) {
+    core.register_key_action(&input_map.mode[.Normal], .I, proc(state: ^core.State, user_data: rawptr) {
         state.mode = .Insert;
         sdl2.StartTextInput();
     }, "enter insert mode");
-    core.register_key_action(&input_map.mode[.Normal], .K, proc(state: ^core.State) {
-        // NOTE: this is really jank, should probably update the input
-        // action stuff to allow panels to be passed into these handlers
-        if current_panel, ok := util.get(&state.panels, state.current_panel.? or_else -1).?; ok {
-            if panel_state, ok := &current_panel.panel_state.(core.GrepPanel); ok {
-                // TODO: bounds checking
-                panel_state.selected_result -= 1
+    core.register_key_action(&input_map.mode[.Normal], .K, proc(state: ^core.State, user_data: rawptr) {
+        this_panel := transmute(^core.Panel)user_data
 
-                core.update_glyph_buffer_from_bytes(
-                    &panel_state.glyphs,
-                    transmute([]u8)panel_state.query_results[panel_state.selected_result].file_context,
-                    panel_state.query_results[panel_state.selected_result].line,
-                )
-            }
+        if panel_state, ok := &this_panel.panel_state.(core.GrepPanel); ok {
+            // TODO: bounds checking
+            panel_state.selected_result -= 1
+
+            core.update_glyph_buffer_from_bytes(
+                &panel_state.glyphs,
+                transmute([]u8)panel_state.query_results[panel_state.selected_result].file_context,
+                panel_state.query_results[panel_state.selected_result].line,
+            )
         }
     }, "move selection up");
-    core.register_key_action(&input_map.mode[.Normal], .J, proc(state: ^core.State) {
-        // NOTE: this is really jank, should probably update the input
-        // action stuff to allow panels to be passed into these handlers
-        if current_panel, ok := util.get(&state.panels, state.current_panel.? or_else -1).?; ok {
-            if panel_state, ok := &current_panel.panel_state.(core.GrepPanel); ok {
-                // TODO: bounds checking
-                panel_state.selected_result += 1
+    core.register_key_action(&input_map.mode[.Normal], .J, proc(state: ^core.State, user_data: rawptr) {
+        this_panel := transmute(^core.Panel)user_data
 
-                core.update_glyph_buffer_from_bytes(
-                    &panel_state.glyphs,
-                    transmute([]u8)panel_state.query_results[panel_state.selected_result].file_context,
-                    panel_state.query_results[panel_state.selected_result].line,
-                )
-            }
+        if panel_state, ok := &this_panel.panel_state.(core.GrepPanel); ok {
+            // TODO: bounds checking
+            panel_state.selected_result += 1
+
+            core.update_glyph_buffer_from_bytes(
+                &panel_state.glyphs,
+                transmute([]u8)panel_state.query_results[panel_state.selected_result].file_context,
+                panel_state.query_results[panel_state.selected_result].line,
+            )
         }
     }, "move selection down");
 
-    core.register_key_action(&input_map.mode[.Insert], .ESCAPE, proc(state: ^core.State) {
+    core.register_key_action(&input_map.mode[.Insert], .ESCAPE, proc(state: ^core.State, user_data: rawptr) {
         state.mode = .Normal;
         sdl2.StopTextInput();
     }, "exit insert mode");
-    core.register_key_action(&input_map.mode[.Normal], .ESCAPE, proc(state: ^core.State) {
+    core.register_key_action(&input_map.mode[.Normal], .ESCAPE, proc(state: ^core.State, user_data: rawptr) {
         if state.current_panel != nil {
-            close(state, state.current_panel.?)
+            // FIXME; store panel_id in core.Panel
+            // close(state, state.current_panel.?)
         }
     }, "close panel");
 
@@ -423,20 +411,15 @@ make_grep_panel :: proc(state: ^core.State) -> core.Panel {
     return core.Panel {
         panel_state = core.GrepPanel {
             query_arena = query_arena,
-            buffer = len(state.buffers)-1,
+            // buffer = len(state.buffers)-1,
             query_results = nil,
             glyphs = glyphs,
         },
         input_map = input_map,
-        buffer_proc = proc(state: ^core.State, panel_state: ^core.PanelState) -> (buffer: ^core.FileBuffer, ok: bool) {
-            panel_state := panel_state.(core.GrepPanel) or_return;
-
-            return &state.buffers[panel_state.buffer], true
-        },
         on_buffer_input_proc = proc(state: ^core.State, panel_state: ^core.PanelState) {
             if panel_state, ok := &panel_state.(core.GrepPanel); ok {
-                buffer := &state.buffers[panel_state.buffer]
-                run_query(panel_state, string(buffer.input_buffer[:]), state.directory)
+                // buffer := &state.buffers[panel_state.buffer]
+                // run_query(panel_state, string(buffer.input_buffer[:]), state.directory)
             }
         },
         drop = proc(state: ^core.State, panel_state: ^core.PanelState) {
@@ -525,7 +508,7 @@ make_grep_panel :: proc(state: ^core.State) -> core.Panel {
                     { 
                         defer ui.close_element(s)
 
-                        render_raw_buffer(state, s, &state.buffers[panel_state.buffer])
+                        // render_raw_buffer(state, s, &state.buffers[panel_state.buffer])
                     }
                 }
                 ui.close_element(s)

@@ -776,18 +776,6 @@ save_buffer_to_disk :: proc(state: ^State, buffer: ^FileBuffer) -> (error: os.Er
     return
 }
 
-next_buffer :: proc(state: ^State, prev_buffer: ^int) -> int {
-    index := prev_buffer^;
-
-    if prev_buffer^ >= len(state.buffers)-1 {
-        prev_buffer^ = -1;
-    } else {
-        prev_buffer^ += 1;
-    }
-
-    return index;
-}
-
 // TODO: replace this with arena for the file buffer
 free_file_buffer :: proc(buffer: ^FileBuffer) {
     ts.delete_state(&buffer.tree)
@@ -831,10 +819,11 @@ color_character :: proc(buffer: ^FileBuffer, start: Cursor, end: Cursor, palette
     }
 }
 
-draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, show_line_numbers: bool = true) {
-    update_glyph_buffer(buffer);
+draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x, y, w, h: int, show_line_numbers: bool = true, show_cursor: bool = true) {
+    glyph_width := math.min(256, int((w - state.source_font_width) / state.source_font_width));
+    glyph_height := math.min(256, int((h - state.source_font_height*2) / state.source_font_height)) + 1;
 
-    // TODO: syntax highlighting
+    update_glyph_buffer(buffer, glyph_width, glyph_height);
 
     padding := 0;
     if show_line_numbers {
@@ -848,43 +837,44 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, sho
     cursor_y -= begin * state.source_font_height;
 
     // draw cursor
-    if state.mode == .Normal || current_buffer(state) != buffer {
-        draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Background4);
-    } else if state.mode == .Visual {
-        start_sel_x := x + padding + buffer.selection.?.start.col * state.source_font_width;
-        start_sel_y := y + buffer.selection.?.start.line * state.source_font_height;
+    if show_cursor {
+        if state.mode == .Normal {
+            draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Background4);
+        } else if state.mode == .Visual {
+            start_sel_x := x + padding + buffer.selection.?.start.col * state.source_font_width;
+            start_sel_y := y + buffer.selection.?.start.line * state.source_font_height;
 
-        end_sel_x := x + padding + buffer.selection.?.end.col * state.source_font_width;
-        end_sel_y := y + buffer.selection.?.end.line * state.source_font_height;
+            end_sel_x := x + padding + buffer.selection.?.end.col * state.source_font_width;
+            end_sel_y := y + buffer.selection.?.end.line * state.source_font_height;
 
-        start_sel_y -= begin * state.source_font_height;
-        end_sel_y -= begin * state.source_font_height;
+            start_sel_y -= begin * state.source_font_height;
+            end_sel_y -= begin * state.source_font_height;
 
-        draw_rect(state, start_sel_x, start_sel_y, state.source_font_width, state.source_font_height, .Green);
-        draw_rect(state, end_sel_x, end_sel_y, state.source_font_width, state.source_font_height, .Blue);
-    }
-    else if state.mode == .Insert {
-        draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Green);
+            draw_rect(state, start_sel_x, start_sel_y, state.source_font_width, state.source_font_height, .Green);
+            draw_rect(state, end_sel_x, end_sel_y, state.source_font_width, state.source_font_height, .Blue);
+        } else if state.mode == .Insert {
+            draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Green);
 
-        num_line_break := 0;
-        line_length := 0;
-        for c in buffer.input_buffer {
-            if c == '\n' {
-                num_line_break += 1;
-                line_length = 0;
-            } else {
-                line_length += 1;
+            num_line_break := 0;
+            line_length := 0;
+            for c in buffer.input_buffer {
+                if c == '\n' {
+                    num_line_break += 1;
+                    line_length = 0;
+                } else {
+                    line_length += 1;
+                }
             }
-        }
 
-        if num_line_break > 0 {
-            cursor_x = x + padding + line_length * state.source_font_width;
-            cursor_y = cursor_y + num_line_break * state.source_font_height;
-        } else {
-            cursor_x += line_length * state.source_font_width;
-        }
+            if num_line_break > 0 {
+                cursor_x = x + padding + line_length * state.source_font_width;
+                cursor_y = cursor_y + num_line_break * state.source_font_height;
+            } else {
+                cursor_x += line_length * state.source_font_width;
+            }
 
-        draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Blue);
+            draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Blue);
+        }
     }
 
     // TODO: replace with glyph_buffer.draw_glyph_buffer
@@ -908,7 +898,7 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x: int, y: int, sho
 
         // NOTE: this requires transparent background color because it renders after the text
         // and its after the text because the line length needs to be calculated
-        if state.mode == .Visual && current_buffer(state) == buffer {
+        if state.mode == .Visual && buffer.selection != nil {
             selection := swap_selections(buffer.selection.?)
             // selection := buffer.selection.?
 
