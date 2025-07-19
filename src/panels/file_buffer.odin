@@ -433,12 +433,14 @@ file_buffer_text_input_actions :: proc(input_map: ^core.InputActions) {
         buffer := &(&(transmute(^core.Panel)user_data).type.(core.FileBufferPanel)).buffer
 
         core.pop_snapshot(&buffer.history, true)
+        ts.parse_buffer(&buffer.tree, core.tree_sitter_file_buffer_input(buffer))
     }, "Undo");
 
     core.register_ctrl_key_action(input_map, .R, proc(state: ^core.State, user_data: rawptr) {
         buffer := &(&(transmute(^core.Panel)user_data).type.(core.FileBufferPanel)).buffer
 
         core.recover_snapshot(&buffer.history)
+        ts.parse_buffer(&buffer.tree, core.tree_sitter_file_buffer_input(buffer))
     }, "Redo");
 
     // TODO: add shift+o to insert newline above current one

@@ -978,6 +978,8 @@ insert_content :: proc(buffer: ^FileBuffer, to_be_inserted: []u8, append_to_end:
         update_file_buffer_index_from_cursor(buffer);
         move_cursor_right(buffer, false, amt = len(to_be_inserted) - 1);
     }
+
+    ts.parse_buffer(&buffer.tree, tree_sitter_file_buffer_input(buffer))
 }
 
 delete_content_from_buffer_cursor :: proc(buffer: ^FileBuffer, amount: int) {
@@ -996,6 +998,8 @@ delete_content_from_buffer_cursor :: proc(buffer: ^FileBuffer, amount: int) {
         buffer.history.cursor.line = it.cursor.line
         buffer.history.cursor.col = it.cursor.col
     }
+
+    ts.parse_buffer(&buffer.tree, tree_sitter_file_buffer_input(buffer))
 }
 
 delete_content_from_selection :: proc(buffer: ^FileBuffer, selection: ^Selection) {
@@ -1003,6 +1007,8 @@ delete_content_from_selection :: proc(buffer: ^FileBuffer, selection: ^Selection
     delete_text_in_span(buffer_piece_table(buffer), &selection.start.index, &selection.end.index)
 
     buffer.history.cursor.index = selection.start.index
+
+    ts.parse_buffer(&buffer.tree, tree_sitter_file_buffer_input(buffer))
 }
 
 delete_content :: proc{delete_content_from_buffer_cursor, delete_content_from_selection};
