@@ -8,6 +8,7 @@
 - Split grep search results into a table to avoid funky unaligned text
 
 # Planned Features
+- [ ] Jump List
 - Use grouped lifetimes exclusively for memory allocation/freeing
 - [ ] Highlight which panel is currently active
 - [ ] Persist end of line cursor position

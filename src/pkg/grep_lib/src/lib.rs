@@ -139,17 +139,17 @@ impl From<Match> for GrepResult {
             // this won't totally bite me later
             text_len: value.text.len() as u32,
             path_len: value.path.len() as u32,
-            text: Box::leak(value.text.into_boxed_slice()).as_ptr(),
-            path: Box::leak(value.path.into_bytes().into_boxed_slice()).as_ptr(),
+            text: Box::into_raw(value.text.into_boxed_slice()) as _,
+            path: Box::into_raw(value.path.into_bytes().into_boxed_slice()) as _,
         }
     }
 }
 impl From<GrepResult> for Match {
     fn from(value: GrepResult) -> Self {
         unsafe {
-            let text = std::slice::from_raw_parts(value.text, value.text_len as usize).to_vec();
+            let text = Box::from_raw(std::slice::from_raw_parts_mut(value.text as *mut _, value.text_len as usize)).to_vec();
 
-            let path = std::slice::from_raw_parts(value.path, value.path_len as usize).to_vec();
+            let path = Box::from_raw(std::slice::from_raw_parts_mut(value.path as *mut _, value.path_len as usize)).to_vec();
             let path = String::from_utf8_unchecked(path);
 
             Self {
@@ -188,17 +188,26 @@ extern "C" fn grep(
         .into_iter()
         .map(|sink| sink.matches.into_iter())
         .flatten()
-        .map(Into::into)
+        .map(|v| GrepResult::from(v))
         .collect::<Vec<_>>()
         .into_boxed_slice();
 
     let len = boxed.len() as u32;
 
     GrepResults {
-        results: Box::leak(boxed).as_ptr(),
+        results: Box::into_raw(boxed) as _,
         len,
     }
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn free_grep_results(_: GrepResults) { }
+extern "C" fn free_grep_results(results: GrepResults) {
+    unsafe {
+        let mut array = std::slice::from_raw_parts_mut(results.results as *mut GrepResult, results.len as usize);
+        let array = Box::from_raw(array);
+
+        for v in array {
+            let _ = Match::from(v);
+        }
+    }
+}

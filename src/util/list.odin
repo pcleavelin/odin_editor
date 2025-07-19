@@ -11,17 +11,17 @@ StaticListSlot :: struct($T: typeid) {
     data: T,
 }
 
-append_static_list :: proc(list: ^StaticList($T), value: T) -> Maybe(int) {
+append_static_list :: proc(list: ^StaticList($T), value: T) -> (id: int, panel: ^T, ok: bool) {
     for i in 0..<len(list.data) {
         if !list.data[i].active {
             list.data[i].active = true 
             list.data[i].data = value
 
-            return i
+            return i, &list.data[i].data, true
         }
     }
 
-    return nil
+    return
 }
 append :: proc{append_static_list}
 

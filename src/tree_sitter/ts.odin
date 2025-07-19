@@ -223,6 +223,7 @@ make_state :: proc(type: LanguageType, allocator := context.allocator) -> State 
 }
 
 delete_state :: proc(state: ^State) {
+    delete(state.highlights)
     tree_cursor_delete(&state.cursor)
     tree_delete(state.tree)
     parser_delete(state.parser)

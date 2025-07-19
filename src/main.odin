@@ -23,9 +23,6 @@ import ts "tree_sitter"
 State :: core.State;
 FileBuffer :: core.FileBuffer;
 
-// TODO: should probably go into state
-scratch: mem.Scratch;
-scratch_alloc: runtime.Allocator;
 state := core.State {};
 
 do_normal_mode :: proc(state: ^State, buffer: ^FileBuffer) {
@@ -69,8 +66,8 @@ draw :: proc(state: ^State) {
     { 
         for i in 0..<len(state.panels.data) {
             if panel, ok := util.get(&state.panels, i).?; ok {
-                if panel.render_proc != nil {
-                    panel.render_proc(state, &panel.panel_state)
+                if panel.render != nil {
+                    panel->render(state)
                 }
             }
         }
@@ -161,7 +158,14 @@ expose_event_watcher :: proc "c" (state: rawptr, event: ^sdl2.Event) -> i32 {
 }
 
 main :: proc() {
-   ts.set_allocator() 
+    track: mem.Tracking_Allocator
+    mem.tracking_allocator_init(&track, context.allocator)
+    context.allocator = mem.tracking_allocator(&track)
+
+    defer {
+    }
+
+    ts.set_allocator() 
 
     _command_arena: mem.Arena
     mem.arena_init(&_command_arena, make([]u8, 1024*1024));
@@ -189,10 +193,6 @@ main :: proc() {
         curr_elements = make([]ui.UI_Element, 8192),
         prev_elements = make([]ui.UI_Element, 8192),
     }
-
-    // TODO: don't use this
-    mem.scratch_allocator_init(&scratch, 1024*1024);
-    scratch_alloc = mem.scratch_allocator(&scratch);
 
     core.reset_input_map(&state)
 
@@ -278,13 +278,10 @@ main :: proc() {
 
     if len(os.args) > 1 {
         for arg in os.args[1:] {
-            panels.open_file_buffer_in_new_panel(&state, arg, 0, 0)
+            panels.open(&state, panels.make_file_buffer_panel(arg))
         }
     } else {
-        // buffer := core.new_virtual_file_buffer(context.allocator);
-
-        // panels.open(&state, panels.make_file_buffer_panel(len(state.buffers)))
-        // runtime.append(&state.buffers, buffer);
+        panels.open(&state, panels.make_file_buffer_panel(""))
     }
 
     if sdl2.Init({.VIDEO}) < 0 {
@@ -393,7 +390,7 @@ main :: proc() {
                             if action, exists := state.current_input_map.ctrl_key_actions[key]; exists {
                                 switch value in action.action {
                                     case core.EditorAction:
-                                        value(state, &panel);
+                                        value(state, panel);
                                         return true;
                                     case core.InputActions:
                                         state.current_input_map = &(&state.current_input_map.ctrl_key_actions[key]).action.(core.InputActions)
@@ -404,7 +401,7 @@ main :: proc() {
                             if action, exists := state.current_input_map.key_actions[key]; exists {
                                 switch value in action.action {
                                     case core.EditorAction:
-                                        value(state, &panel);
+                                        value(state, panel);
                                         return true;
                                     case core.InputActions:
                                         state.current_input_map = &(&state.current_input_map.key_actions[key]).action.(core.InputActions)
@@ -481,8 +478,8 @@ main :: proc() {
                             }
 
                             if current_panel, ok := state.current_panel.?; ok {
-                                if panel, ok := util.get(&state.panels, current_panel).?; ok && panel.on_buffer_input_proc != nil {
-                                    panel.on_buffer_input_proc(&state, &panel.panel_state)
+                                if panel, ok := util.get(&state.panels, current_panel).?; ok && panel.on_buffer_input != nil {
+                                    panel->on_buffer_input(&state)
                                 }
                             }
                         }
@@ -509,4 +506,12 @@ main :: proc() {
     }
 
     sdl2.Quit();
+
+    if len(track.allocation_map) > 0 {
+        fmt.eprintf("=== %v allocations not freed: ===\n", len(track.allocation_map))
+        for _, entry in track.allocation_map {
+            fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
+        }
+    }
+    mem.tracking_allocator_destroy(&track)
 }

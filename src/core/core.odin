@@ -74,33 +74,43 @@ EditorCommandArgument :: union #no_nil {
     i32
 }
 
-PanelRenderProc :: proc(state: ^State, panel_state: ^PanelState) -> (ok: bool)
-PanelBufferProc :: proc(state: ^State, panel_state: ^PanelState) -> (buffer: ^FileBuffer, ok: bool)
-PanelBufferInputProc :: proc(state: ^State, panel_state: ^PanelState)
-PanelDropProc :: proc(state: ^State, panel_state: ^PanelState)
 Panel :: struct {
-    is_floating: bool,
-    panel_state: PanelState,
+    using vtable: Panel_VTable,
+    arena: mem.Arena,
+    allocator: mem.Allocator,
+
+    id: int,
+    type: PanelType,
     input_map: InputMap,
-    buffer_proc: PanelBufferProc,
-    on_buffer_input_proc: PanelBufferInputProc,
-    render_proc: PanelRenderProc,
-    drop: PanelDropProc,
+    is_floating: bool,
 }
 
-PanelState :: union {
+Panel_VTable :: struct {
+    create:          proc(panel: ^Panel, state: ^State), 
+    drop:            proc(panel: ^Panel, state: ^State),
+
+    on_buffer_input: proc(panel: ^Panel, state: ^State),
+    buffer:          proc(panel: ^Panel, state: ^State) -> (buffer: ^FileBuffer, ok: bool),
+    render:          proc(panel: ^Panel, state: ^State) -> (ok: bool),
+}
+
+PanelType :: union {
     FileBufferPanel,
     GrepPanel,
 }
 
 FileBufferPanel :: struct {
-    buffer_index: int,
+    buffer: FileBuffer,
+
+    // only used for initialization
+    file_path: string,
+    line, col: int,
 }
 
 GrepPanel :: struct {
     query_arena: mem.Arena,
     query_region: mem.Arena_Temp_Memory,
-    buffer: int,
+    buffer: FileBuffer,
     selected_result: int,
     search_query: string,
     query_results: []GrepQueryResult,
@@ -112,6 +122,17 @@ GrepQueryResult :: struct {
     file_path: string,
     line: int,
     col: int,
+}
+
+current_buffer :: proc(state: ^State) -> ^FileBuffer {
+    if current_panel, ok := state.current_panel.?; ok {
+        if panel, ok := util.get(&state.panels, current_panel).?; ok {
+            buffer, _ := panel->buffer(state)
+            return buffer
+        }
+    }
+
+    return nil
 }
 
 yank_whole_line :: proc(state: ^State, buffer: ^FileBuffer) {
@@ -190,7 +211,9 @@ Action :: struct {
     description: string,
 }
 
-new_input_map :: proc() -> InputMap {
+new_input_map :: proc(allocator := context.allocator) -> InputMap {
+    context.allocator = allocator
+
     input_map := InputMap {
         mode = make(map[Mode]InputActions),
     }
@@ -205,7 +228,9 @@ new_input_map :: proc() -> InputMap {
     return input_map;
 }
 
-new_input_actions :: proc() -> InputActions {
+new_input_actions :: proc(allocator := context.allocator) -> InputActions {
+    context.allocator = allocator
+
     input_actions := InputActions {
         key_actions = make(map[Key]Action),
         ctrl_key_actions = make(map[Key]Action),

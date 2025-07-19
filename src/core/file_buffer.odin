@@ -662,7 +662,7 @@ selection_length :: proc(buffer: ^FileBuffer, selection: Selection) -> int {
     return length
 }
 
-new_virtual_file_buffer :: proc(allocator: mem.Allocator) -> FileBuffer {
+new_virtual_file_buffer :: proc(allocator := context.allocator) -> FileBuffer {
     context.allocator = allocator;
     width := 256;
     height := 256;
@@ -706,6 +706,11 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
     extension := filepath.ext(fi.fullpath);
 
     if original_content, success := os.read_entire_file_from_handle(fd); success {
+        defer delete(original_content)
+
+        content := make([]u8, len(original_content))
+        copy_slice(content, original_content)
+
         width := 256;
         height := 256;
 
@@ -721,7 +726,7 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
 
             // TODO: derive language type from extension
             tree = ts.make_state(.Odin),
-            history = make_history(original_content),
+            history = make_history(content),
 
             glyphs = make_glyph_buffer(width, height),
             input_buffer = make([dynamic]u8, 0, 1024),
