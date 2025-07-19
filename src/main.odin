@@ -158,13 +158,6 @@ expose_event_watcher :: proc "c" (state: rawptr, event: ^sdl2.Event) -> i32 {
 }
 
 main :: proc() {
-    track: mem.Tracking_Allocator
-    mem.tracking_allocator_init(&track, context.allocator)
-    context.allocator = mem.tracking_allocator(&track)
-
-    defer {
-    }
-
     ts.set_allocator() 
 
     _command_arena: mem.Arena
@@ -506,12 +499,4 @@ main :: proc() {
     }
 
     sdl2.Quit();
-
-    if len(track.allocation_map) > 0 {
-        fmt.eprintf("=== %v allocations not freed: ===\n", len(track.allocation_map))
-        for _, entry in track.allocation_map {
-            fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
-        }
-    }
-    mem.tracking_allocator_destroy(&track)
 }

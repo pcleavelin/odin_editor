@@ -10,7 +10,6 @@ import "vendor:sdl2"
 
 import ts "../tree_sitter"
 import "../core"
-import "../input"
 import "../util"
 import "../ui"
 
