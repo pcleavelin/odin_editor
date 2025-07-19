@@ -1,5 +1,4 @@
 # Bugs
-- Memory Leak
 - Fix jumping forward a word jumping past consecutive brackets
 - Odd scrolling behavior on small screen heights
 - Scrolling past end/beginning of results panics
@@ -9,7 +8,7 @@
 
 # Planned Features
 - [ ] Jump List
-- Use grouped lifetimes exclusively for memory allocation/freeing
+- [x] Use grouped lifetimes exclusively for memory allocation/freeing
 - [ ] Highlight which panel is currently active
 - [ ] Persist end of line cursor position
 - Testing Harness

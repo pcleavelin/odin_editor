@@ -825,8 +825,8 @@ color_character :: proc(buffer: ^FileBuffer, start: Cursor, end: Cursor, palette
 }
 
 draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x, y, w, h: int, show_line_numbers: bool = true, show_cursor: bool = true) {
-    glyph_width := math.min(256, int((w - state.source_font_width) / state.source_font_width));
-    glyph_height := math.min(256, int((h - state.source_font_height*2) / state.source_font_height)) + 1;
+    glyph_width := math.min(256, int(w / state.source_font_width));
+    glyph_height := math.min(256, int(h / state.source_font_height)) + 1;
 
     update_glyph_buffer(buffer, glyph_width, glyph_height);
 
@@ -845,7 +845,7 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x, y, w, h: int, sh
     if show_cursor {
         if state.mode == .Normal {
             draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Background4);
-        } else if state.mode == .Visual {
+        } else if state.mode == .Visual && buffer.selection != nil {
             start_sel_x := x + padding + buffer.selection.?.start.col * state.source_font_width;
             start_sel_y := y + buffer.selection.?.start.line * state.source_font_height;
 
@@ -937,7 +937,9 @@ update_file_buffer_scroll :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = 
         cursor = &buffer.history.cursor;
     }
 
-    if cursor.?.line > (buffer.top_line + buffer.glyphs.height - 5) {
+    if buffer.glyphs.height < 5 {
+        buffer.top_line = cursor.?.line
+    } else if cursor.?.line > (buffer.top_line + buffer.glyphs.height - 5) {
         buffer.top_line = math.max(cursor.?.line - buffer.glyphs.height + 5, 0);
     } else if cursor.?.line < (buffer.top_line + 5) {
         buffer.top_line = math.max(cursor.?.line - 5, 0);

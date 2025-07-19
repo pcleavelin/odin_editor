@@ -66,7 +66,14 @@ open :: proc(state: ^core.State, panel: core.Panel, make_active: bool = true) ->
         panel.id = panel_id
         state.current_panel = panel_id
 
-        mem.arena_init(&panel.arena, make([]u8, 1024*1024*4))
+        arena_bytes, err := make([]u8, 1024*1024*8)
+        if err != nil {
+            log.errorf("failed to allocate memory for panel: '%v'", err)
+            util.delete(&state.panels, panel_id)
+            return 
+        }
+
+        mem.arena_init(&panel.arena, arena_bytes)
         panel.allocator = mem.arena_allocator(&panel.arena)
 
         panel->create(state)

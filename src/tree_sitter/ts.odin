@@ -230,6 +230,10 @@ delete_state :: proc(state: ^State) {
 }
 
 parse_buffer :: proc(state: ^State, input: Input) {
+    if state.parser == nil {
+        return
+    }
+
     old_tree := state.tree
     if old_tree != nil {
         defer tree_delete(old_tree)

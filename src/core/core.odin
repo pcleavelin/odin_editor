@@ -136,6 +136,8 @@ current_buffer :: proc(state: ^State) -> ^FileBuffer {
 }
 
 yank_whole_line :: proc(state: ^State, buffer: ^FileBuffer) {
+    context.allocator = buffer.allocator
+
     if state.yank_register.data != nil {
         delete(state.yank_register.data)
         state.yank_register.data = nil

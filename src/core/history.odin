@@ -1,8 +1,11 @@
 package core
 
 import "core:log"
+import "core:mem"
 
 FileHistory :: struct {
+    allocator: mem.Allocator,
+
     piece_table: PieceTable,
     cursor: Cursor,
 
@@ -20,6 +23,7 @@ make_history_with_data :: proc(initial_data: []u8, starting_capacity: int = 1024
     context.allocator = allocator
 
     return FileHistory {
+        allocator = allocator,
         piece_table = make_piece_table(initial_data, starting_capacity = starting_capacity),
         snapshots = make([]Snapshot, starting_capacity),
         next = 0,
@@ -31,6 +35,7 @@ make_history_empty :: proc(starting_capacity: int = 1024, allocator := context.a
     context.allocator = allocator
 
     return FileHistory {
+        allocator = allocator,
         piece_table = make_piece_table(starting_capacity = starting_capacity),
         snapshots = make([]Snapshot, starting_capacity),
         next = 0,
@@ -54,6 +59,8 @@ free_history :: proc(history: ^FileHistory) {
 }
 
 push_new_snapshot :: proc(history: ^FileHistory) {
+    context.allocator = history.allocator
+
     if history.snapshots[history.next].chunks != nil {
         delete(history.snapshots[history.next].chunks)
     }
@@ -65,6 +72,8 @@ push_new_snapshot :: proc(history: ^FileHistory) {
 }
 
 pop_snapshot :: proc(history: ^FileHistory, make_new_snapshot: bool = false) {
+    context.allocator = history.allocator
+
     new_next, _ := next_indexes(history, backward = true)
     if new_next == history.next do return
 
@@ -81,6 +90,8 @@ pop_snapshot :: proc(history: ^FileHistory, make_new_snapshot: bool = false) {
 }
 
 recover_snapshot :: proc(history: ^FileHistory) {
+    context.allocator = history.allocator
+
     new_next, _ := next_indexes(history)
     if history.snapshots[new_next].chunks == nil do return
     history.next = new_next

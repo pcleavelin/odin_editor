@@ -84,9 +84,6 @@ render_file_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileB
     draw_func := proc(state: ^core.State, e: ui.UI_Element, user_data: rawptr) {
         buffer := transmute(^core.FileBuffer)user_data;
         if buffer != nil {
-            buffer.glyphs.width = e.layout.size.x / state.source_font_width;
-            buffer.glyphs.height = e.layout.size.y / state.source_font_height + 1;
-
             core.draw_file_buffer(state, buffer, e.layout.pos.x, e.layout.pos.y, e.layout.size.x, e.layout.size.y);
         }
     };

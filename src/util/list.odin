@@ -11,7 +11,7 @@ StaticListSlot :: struct($T: typeid) {
     data: T,
 }
 
-append_static_list :: proc(list: ^StaticList($T), value: T) -> (id: int, panel: ^T, ok: bool) {
+append_static_list :: proc(list: ^StaticList($T), value: T) -> (id: int, item: ^T, ok: bool) {
     for i in 0..<len(list.data) {
         if !list.data[i].active {
             list.data[i].active = true 
@@ -89,4 +89,8 @@ delete_static_list_elem :: proc(list: ^StaticList($T), index: int) {
     }
 }
 
-delete :: proc{delete_static_list_elem}
+delete_static_list :: proc(list: ^StaticList($T)) {
+    runtime.delete(list.data)
+}
+
+delete :: proc{delete_static_list_elem, delete_static_list}

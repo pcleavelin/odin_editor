@@ -58,7 +58,12 @@ make_grep_panel :: proc() -> core.Panel {
 
             panel_state := &panel.type.(core.GrepPanel)
 
-            mem.arena_init(&panel_state.query_arena, make([]u8, 1024*1024*2))
+            arena_bytes, err := make([]u8, 1024*1024*2)
+            if err != nil {
+                log.errorf("failed to allocate arena for grep panel: '%v'", err)
+                return
+            }
+            mem.arena_init(&panel_state.query_arena, arena_bytes)
 
             panel.input_map = core.new_input_map()
             panel_state.glyphs = core.make_glyph_buffer(256,256)
@@ -215,7 +220,7 @@ make_grep_panel :: proc() -> core.Panel {
                     { 
                         defer ui.close_element(s)
 
-                        // render_raw_buffer(state, s, &state.buffers[panel_state.buffer])
+                        render_raw_buffer(state, s, &panel_state.buffer)
                     }
                 }
                 ui.close_element(s)
@@ -275,9 +280,6 @@ render_raw_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileBu
     draw_func := proc(state: ^core.State, e: ui.UI_Element, user_data: rawptr) {
         buffer := transmute(^core.FileBuffer)user_data;
         if buffer != nil {
-            buffer.glyphs.width = e.layout.size.x / state.source_font_width;
-            buffer.glyphs.height = e.layout.size.y / state.source_font_height + 1;
-
             core.draw_file_buffer(state, buffer, e.layout.pos.x, e.layout.pos.y, e.layout.size.x, e.layout.size.y, false);
         }
     };

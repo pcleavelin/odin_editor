@@ -26,6 +26,10 @@ new_test_editor :: proc() -> core.State {
     return state
 }
 
+delete_editor :: proc(e: ^core.State) {
+    util.delete(&e.panels)
+}
+
 buffer_to_string :: proc(buffer: ^core.FileBuffer) -> string {
     if buffer == nil {
         log.error("nil buffer")
@@ -84,9 +88,7 @@ input_text :: proc(text: string) -> ArtificialTextInput {
 }
 
 setup_empty_buffer :: proc(state: ^core.State) {
-    buffer := core.new_virtual_file_buffer(context.allocator);
-    panels.open(state, panels.make_file_buffer_panel(len(state.buffers)))
-    runtime.append(&state.buffers, buffer);
+    panels.open(state, panels.make_file_buffer_panel(""))
 
     core.reset_input_map(state)
 }
@@ -135,8 +137,12 @@ expect_cursor_index :: proc(t: ^testing.T, cursor: core.Cursor, chunk_index, cha
 insert_from_empty_no_newlines :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, 0)
+        delete_editor(&e)
+    }
 
-    buffer := &e.buffers[0]
+    buffer := core.current_buffer(&e)
 
     inputted_text := "Hello, world!"
     expected_text := fmt.aprintf("%v\n", inputted_text)
@@ -146,6 +152,8 @@ insert_from_empty_no_newlines :: proc(t: ^testing.T) {
     expect_cursor_index(t, buffer.history.cursor, 0, 12)
 
     contents := buffer_to_string(core.current_buffer(&e))
+    defer delete(contents)
+
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
 }
 
@@ -153,8 +161,12 @@ insert_from_empty_no_newlines :: proc(t: ^testing.T) {
 insert_from_empty_with_newline :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, 0)
+        delete_editor(&e)
+    }
 
-    buffer := &e.buffers[0]
+    buffer := core.current_buffer(&e)
 
     inputted_text := "Hello, world!\nThis is a new line"
     expected_text := fmt.aprintf("%v\n", inputted_text)
@@ -164,6 +176,8 @@ insert_from_empty_with_newline :: proc(t: ^testing.T) {
     expect_cursor_index(t, buffer.history.cursor, 0, 31)
 
     contents := buffer_to_string(core.current_buffer(&e))
+    defer delete(contents)
+
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
 }
 
@@ -171,8 +185,12 @@ insert_from_empty_with_newline :: proc(t: ^testing.T) {
 insert_in_between_text :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, 0)
+        delete_editor(&e)
+    }
 
-    buffer := &e.buffers[0]
+    buffer := core.current_buffer(&e)
 
     inputted_text := "Hello, world!"
     expected_text := "Hello, beautiful world!\n"
@@ -188,6 +206,8 @@ insert_in_between_text :: proc(t: ^testing.T) {
     expect_cursor_index(t, buffer.history.cursor, 1, 9)
 
     contents := buffer_to_string(core.current_buffer(&e))
+    defer delete(contents)
+
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
 }
 
@@ -195,8 +215,12 @@ insert_in_between_text :: proc(t: ^testing.T) {
 insert_before_slice_at_beginning_of_file :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, 0)
+        delete_editor(&e)
+    }
 
-    buffer := &e.buffers[0]
+    buffer := core.current_buffer(&e)
 
     inputted_text := "Hello, world!"
     expected_text := "Well, Hello, beautiful world!\n"
@@ -215,6 +239,8 @@ insert_before_slice_at_beginning_of_file :: proc(t: ^testing.T) {
     expect_cursor_index(t, buffer.history.cursor, 0, 5)
 
     contents := buffer_to_string(core.current_buffer(&e))
+    defer delete(contents)
+
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
 }
 
@@ -222,8 +248,12 @@ insert_before_slice_at_beginning_of_file :: proc(t: ^testing.T) {
 insert_before_slice :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, 0)
+        delete_editor(&e)
+    }
 
-    buffer := &e.buffers[0]
+    buffer := core.current_buffer(&e)
 
     inputted_text := "Hello, world!"
     expected_text := "Hello, beautiful rich world!\n"
@@ -243,6 +273,8 @@ insert_before_slice :: proc(t: ^testing.T) {
     expect_cursor_index(t, buffer.history.cursor, 2, 4)
 
     contents := buffer_to_string(core.current_buffer(&e))
+    defer delete(contents)
+
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
 }
 
@@ -250,8 +282,12 @@ insert_before_slice :: proc(t: ^testing.T) {
 delete_last_content_slice_beginning_of_file :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, 0)
+        delete_editor(&e)
+    }
 
-    buffer := &e.buffers[0]
+    buffer := core.current_buffer(&e)
 
     run_text_insertion(&e, "Hello, world!")
 
@@ -283,8 +319,12 @@ delete_last_content_slice_beginning_of_file :: proc(t: ^testing.T) {
 delete_in_slice :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, 0)
+        delete_editor(&e)
+    }
 
-    buffer := &e.buffers[0]
+    buffer := core.current_buffer(&e)
 
     inputted_text := "Hello, world!"
     expected_text := "Hello, beautiful h world!\n"
@@ -310,6 +350,8 @@ delete_in_slice :: proc(t: ^testing.T) {
     expect_cursor_index(t, buffer.history.cursor, 3, 0)
 
     contents := buffer_to_string(core.current_buffer(&e))
+    defer delete(contents)
+
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
 }
 
@@ -317,8 +359,12 @@ delete_in_slice :: proc(t: ^testing.T) {
 delete_across_slices :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, 0)
+        delete_editor(&e)
+    }
 
-    buffer := &e.buffers[0]
+    buffer := core.current_buffer(&e)
 
     inputted_text := "Hello, world!"
     expected_text := "Hello, beautiful world!\n"
@@ -352,6 +398,8 @@ delete_across_slices :: proc(t: ^testing.T) {
     expect_cursor_index(t, buffer.history.cursor, 2, 0)
 
     contents := buffer_to_string(core.current_buffer(&e))
+    defer delete(contents)
+
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
 }
 
@@ -359,10 +407,14 @@ delete_across_slices :: proc(t: ^testing.T) {
 move_down_next_line_has_shorter_length :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, 0)
+        delete_editor(&e)
+    }
 
     is_ctrl_pressed := false
 
-    buffer := &e.buffers[0]
+    buffer := core.current_buffer(&e)
 
     run_text_insertion(&e, "012345678\n0")
 
@@ -383,10 +435,14 @@ move_down_next_line_has_shorter_length :: proc(t: ^testing.T) {
 move_down_on_last_line :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, 0)
+        delete_editor(&e)
+    }
 
     is_ctrl_pressed := false
 
-    buffer := &e.buffers[0]
+    buffer := core.current_buffer(&e)
 
     run_text_insertion(&e, "012345678")
 
@@ -402,8 +458,12 @@ move_down_on_last_line :: proc(t: ^testing.T) {
 move_left_at_beginning_of_file :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, 0)
+        delete_editor(&e)
+    }
 
-    buffer := &e.buffers[0]
+    buffer := core.current_buffer(&e)
 
     run_text_insertion(&e, "01234")
     // Move cursor from --------^
@@ -425,10 +485,14 @@ move_left_at_beginning_of_file :: proc(t: ^testing.T) {
 move_right_at_end_of_file :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, 0)
+        delete_editor(&e)
+    }
 
     is_ctrl_pressed := false
 
-    buffer := &e.buffers[0]
+    buffer := core.current_buffer(&e)
 
     run_text_insertion(&e, "01234")
 
@@ -447,10 +511,14 @@ move_right_at_end_of_file :: proc(t: ^testing.T) {
 move_to_end_of_line_from_end :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, 0)
+        delete_editor(&e)
+    }
 
     is_ctrl_pressed := false
 
-    buffer := &e.buffers[0]
+    buffer := core.current_buffer(&e)
 
     run_text_insertion(&e, "01234\n01234")
 
@@ -468,10 +536,14 @@ move_to_end_of_line_from_end :: proc(t: ^testing.T) {
 move_to_end_of_line_from_middle :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, 0)
+        delete_editor(&e)
+    }
 
     is_ctrl_pressed := false
 
-    buffer := &e.buffers[0]
+    buffer := core.current_buffer(&e)
 
     run_text_insertion(&e, "01234\n01234")
 
@@ -492,10 +564,14 @@ move_to_end_of_line_from_middle :: proc(t: ^testing.T) {
 move_to_beginning_of_line_from_middle :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, 0)
+        delete_editor(&e)
+    }
 
     is_ctrl_pressed := false
 
-    buffer := &e.buffers[0]
+    buffer := core.current_buffer(&e)
 
     run_text_insertion(&e, "01234\n01234")
 
@@ -516,10 +592,14 @@ move_to_beginning_of_line_from_middle :: proc(t: ^testing.T) {
 move_to_beginning_of_line_from_start :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, 0)
+        delete_editor(&e)
+    }
 
     is_ctrl_pressed := false
 
-    buffer := &e.buffers[0]
+    buffer := core.current_buffer(&e)
 
     run_text_insertion(&e, "01234\n01234")
 
@@ -540,8 +620,12 @@ move_to_beginning_of_line_from_start :: proc(t: ^testing.T) {
 append_end_of_line :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, 0)
+        delete_editor(&e)
+    }
 
-    buffer := &e.buffers[0]
+    buffer := core.current_buffer(&e)
 
     run_text_insertion(&e, "hello")
 
@@ -562,8 +646,12 @@ append_end_of_line :: proc(t: ^testing.T) {
 insert_line_under_current :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, 0)
+        delete_editor(&e)
+    }
 
-    buffer := &e.buffers[0]
+    buffer := core.current_buffer(&e)
 
     initial_text := "Hello, world!\nThis is a new line"
     run_text_insertion(&e, initial_text)
@@ -590,6 +678,8 @@ insert_line_under_current :: proc(t: ^testing.T) {
     expect_cursor_index(t, buffer.history.cursor, 1, 23)
 
     contents := buffer_to_string(core.current_buffer(&e))
+    defer delete(contents)
+
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
 }
 
@@ -597,8 +687,12 @@ insert_line_under_current :: proc(t: ^testing.T) {
 yank_and_paste_whole_line :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, 0)
+        delete_editor(&e)
+    }
 
-    buffer := &e.buffers[0]
+    buffer := core.current_buffer(&e)
 
     initial_text := "Hello, world!\nThis is a new line"
     run_text_insertion(&e, initial_text)
@@ -617,22 +711,22 @@ yank_and_paste_whole_line :: proc(t: ^testing.T) {
     expect_line_col(t, buffer.history.cursor, 1, 0)
 
     contents := buffer_to_string(core.current_buffer(&e))
+    defer delete(contents)
+
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
 }
 
 run_editor_frame :: proc(state: ^core.State, input: ArtificialInput, is_ctrl_pressed: ^bool) {
-    log.infof("running input: %v", input)
-
     {
         run_key_action := proc(state: ^core.State, control_key_pressed: bool, key: core.Key) -> bool {
-            log.info("key_action")
+            if current_panel, ok := state.current_panel.?; ok {
+                panel := util.get(&state.panels, current_panel).?
 
-            if state.current_input_map != nil {
                 if control_key_pressed {
                     if action, exists := state.current_input_map.ctrl_key_actions[key]; exists {
                         switch value in action.action {
                             case core.EditorAction:
-                                value(state);
+                                value(state, panel);
                                 return true;
                             case core.InputActions:
                                 state.current_input_map = &(&state.current_input_map.ctrl_key_actions[key]).action.(core.InputActions)
@@ -643,7 +737,7 @@ run_editor_frame :: proc(state: ^core.State, input: ArtificialInput, is_ctrl_pre
                     if action, exists := state.current_input_map.key_actions[key]; exists {
                         switch value in action.action {
                             case core.EditorAction:
-                                value(state);
+                                value(state, panel);
                                 return true;
                             case core.InputActions:
                                 state.current_input_map = &(&state.current_input_map.key_actions[key]).action.(core.InputActions)
@@ -651,8 +745,6 @@ run_editor_frame :: proc(state: ^core.State, input: ArtificialInput, is_ctrl_pre
                         }
                     }
                 }
-            } else {
-                log.info("current_input_map is null")
             }
 
             return false
@@ -661,8 +753,6 @@ run_editor_frame :: proc(state: ^core.State, input: ArtificialInput, is_ctrl_pre
         switch state.mode {
             case .Visual: fallthrough
             case .Normal: {
-                log.info("it's normal/visual mode")
-
                 if key, ok := input.(ArtificialKey); ok {
                     if key.is_down {
                         if key.key == .LCTRL {
@@ -678,8 +768,6 @@ run_editor_frame :: proc(state: ^core.State, input: ArtificialInput, is_ctrl_pre
                 }
             }
             case .Insert: {
-                log.info("it's insert mode")
-
                 buffer := core.current_buffer(state);
 
                 if key, ok := input.(ArtificialKey); ok {
@@ -710,24 +798,20 @@ run_editor_frame :: proc(state: ^core.State, input: ArtificialInput, is_ctrl_pre
                     }
                 }
 
-                log.info("before text input")
                 if text_input, ok := input.(ArtificialTextInput); ok {
-                    log.infof("attempting to append '%v' to buffer", text_input)
-
                     for char in text_input.text {
                         if char < 1 {
                             break;
                         }
 
                         if char == '\n' || (char >= 32 && char <= 125 && len(buffer.input_buffer) < 1024-1) {
-                            log.infof("appening '%v' to buffer", char)
                             append(&buffer.input_buffer, u8(char));
                         }
                     }
 
                     if current_panel, ok := state.current_panel.?; ok {
-                        if panel, ok := util.get(&state.panels, current_panel).?; ok && panel.on_buffer_input_proc != nil {
-                            panel.on_buffer_input_proc(state, &panel.panel_state)
+                        if panel, ok := util.get(&state.panels, current_panel).?; ok && panel.on_buffer_input != nil {
+                            panel->on_buffer_input(state)
                         }
                     }
                 }
