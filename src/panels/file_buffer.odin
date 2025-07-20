@@ -37,12 +37,13 @@ make_file_buffer_panel :: proc(file_path: string, line: int = 0, col: int = 0) -
                     log.error("Failed to create file buffer:", err);
                     return;
                 }
-                panel_state.buffer = buffer
 
                 buffer.history.cursor.line = panel_state.line
                 buffer.history.cursor.col = panel_state.col
                 buffer.top_line = buffer.history.cursor.line
                 core.update_file_buffer_index_from_cursor(&buffer)
+
+                panel_state.buffer = buffer
             }
 
             leader_actions := core.new_input_actions()
@@ -70,14 +71,6 @@ make_file_buffer_panel :: proc(file_path: string, line: int = 0, col: int = 0) -
             return true
         }
     }
-}
-
-open_file_buffer_in_new_panel :: proc(state: ^core.State, file_path: string, line, col: int) -> (panel_id: int, ok: bool) {
-    if panel_id, ok := open(state, make_file_buffer_panel(file_path, line, col)); ok {
-        return panel_id, true
-    }
-
-    return -1, false
 }
 
 render_file_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileBuffer) {
@@ -126,6 +119,11 @@ render_file_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileB
         {
             ui.open_element(s, fmt.tprintf("%s", state.mode), {})
             ui.close_element(s)
+
+            if .UnsavedChanges in buffer.flags {
+                ui.open_element(s, "[Unsaved Changes]", {})
+                ui.close_element(s)
+            }
 
             ui.open_element(s, nil, { kind = {ui.Grow{}, ui.Grow{}}})
             ui.close_element(s)

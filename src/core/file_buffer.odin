@@ -46,6 +46,7 @@ FileBuffer :: struct {
     file_path: string,
     extension: string,
 
+    flags: BufferFlagSet,
     top_line: int,
     selection: Maybe(Selection),
 
@@ -55,6 +56,11 @@ FileBuffer :: struct {
     glyphs: GlyphBuffer,
 
     input_buffer: [dynamic]u8,
+}
+
+BufferFlagSet :: bit_set[BufferFlags]
+BufferFlags :: enum {
+    UnsavedChanges,
 }
 
 FileBufferIter :: struct {
@@ -777,6 +783,7 @@ save_buffer_to_disk :: proc(state: ^State, buffer: ^FileBuffer) -> (error: os.Er
     os.flush(fd)
 
     log.infof("written %v bytes", offset)
+    buffer.flags -= { .UnsavedChanges }
     
     return
 }
@@ -905,7 +912,6 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x, y, w, h: int, sh
         // and its after the text because the line length needs to be calculated
         if state.mode == .Visual && buffer.selection != nil {
             selection := swap_selections(buffer.selection.?)
-            // selection := buffer.selection.?
 
             sel_x := x + padding;
             width: int
@@ -944,17 +950,10 @@ update_file_buffer_scroll :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = 
     } else if cursor.?.line < (buffer.top_line + 5) {
         buffer.top_line = math.max(cursor.?.line - 5, 0);
     }
-
-    // if buffer.history.cursor.line > (buffer.top_line + buffer.glyphs.height - 5) {
-    //     buffer.top_line = math.max(buffer.history.cursor.line - buffer.glyphs.height + 5, 0);
-    // } else if buffer.history.cursor.line < (buffer.top_line + 5) {
-    //     buffer.top_line = math.max(buffer.history.cursor.line - 5, 0);
-    // }
 }
 
 // TODO: don't mangle cursor
 scroll_file_buffer :: proc(buffer: ^FileBuffer, dir: ScrollDir, cursor: Maybe(^Cursor) = nil) {
-
     switch dir {
         case .Up:
         {
@@ -971,6 +970,7 @@ insert_content :: proc(buffer: ^FileBuffer, to_be_inserted: []u8, append_to_end:
     if len(to_be_inserted) == 0 {
         return;
     }
+    buffer.flags += { .UnsavedChanges }
 
     index := buffer.history.cursor.index if !append_to_end else new_piece_table_index_from_end(buffer_piece_table(buffer))
 
@@ -988,6 +988,8 @@ delete_content_from_buffer_cursor :: proc(buffer: ^FileBuffer, amount: int) {
     if amount <= len(buffer.input_buffer) {
         runtime.resize(&buffer.input_buffer, len(buffer.input_buffer)-amount);
     } else {
+        buffer.flags += { .UnsavedChanges }
+
         amount := amount - len(buffer.input_buffer);
         runtime.clear(&buffer.input_buffer);
 
@@ -1005,6 +1007,8 @@ delete_content_from_buffer_cursor :: proc(buffer: ^FileBuffer, amount: int) {
 }
 
 delete_content_from_selection :: proc(buffer: ^FileBuffer, selection: ^Selection) {
+    buffer.flags += { .UnsavedChanges }
+
     selection^ = swap_selections(selection^)
     delete_text_in_span(buffer_piece_table(buffer), &selection.start.index, &selection.end.index)
 
