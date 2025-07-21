@@ -67,7 +67,24 @@ draw :: proc(state: ^State) {
         for i in 0..<len(state.panels.data) {
             if panel, ok := util.get(&state.panels, i).?; ok {
                 if panel.render != nil {
-                    panel->render(state)
+
+                    background_color: theme.PaletteColor = .Background1 if panel.id == state.current_panel else .Background2
+
+                    ui.open_element(new_ui, nil,
+                        {
+                            dir = .LeftToRight,
+                            kind = {ui.Grow{}, ui.Grow{}},
+                        },
+                        style = {
+                            border = {.Left, .Right, .Top, .Bottom },
+                            border_color = .Green,
+                            background_color = background_color,
+                        }
+                    )
+                    {
+                        panel->render(state)
+                    }
+                    ui.close_element(new_ui)
                 }
             }
         }

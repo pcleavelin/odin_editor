@@ -48,6 +48,7 @@ make_file_buffer_panel :: proc(file_path: string, line: int = 0, col: int = 0) -
 
             leader_actions := core.new_input_actions()
             register_default_leader_actions(&leader_actions);
+            file_buffer_leader_actions(&leader_actions);
             core.register_key_action(&panel.input_map.mode[.Normal], .SPACE, leader_actions, "leader commands");
 
             core.register_ctrl_key_action(&panel.input_map.mode[.Normal], .W, core.new_input_actions(), "Panel Navigation") 
@@ -88,11 +89,6 @@ render_file_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileB
             dir = .TopToBottom,
             kind = {ui.Grow{}, ui.Grow{}},
         },
-        style = {
-            border = {.Left, .Right, .Top, .Bottom},
-            border_color = .Background4,
-            background_color = .Background1,
-        }
     )
     {
         ui.open_element(s,
@@ -100,11 +96,6 @@ render_file_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileB
             {
                 kind = {ui.Grow{}, ui.Grow{}}
             },
-            style = {
-                border = {.Left, .Right, .Top, .Bottom},
-                border_color = .Background4,
-                background_color = .Background1,
-            }
         )
         ui.close_element(s)
 
@@ -114,6 +105,7 @@ render_file_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileB
             style = {
                 border = {.Left, .Right, .Top, .Bottom},
                 border_color = .Background4,
+                background_color = .Background1,
             }
         )
         {
@@ -132,12 +124,13 @@ render_file_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileB
             ui.open_element(
                 s,
                 fmt.tprintf(
-                    "%v:%v - Slice %v:%v - Char: %v",
+                    "%v:%v - Slice %v:%v - Char: %v - Last Col: %v",
                     buffer.history.cursor.line + 1,
                     buffer.history.cursor.col + 1,
                     buffer.history.cursor.index.chunk_index,
                     buffer.history.cursor.index.char_index,
-                    core.get_character_at_iter(it)
+                    core.get_character_at_iter(it),
+                    buffer.last_col,
                 ),
                 {}
             )
@@ -146,6 +139,17 @@ render_file_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileB
         ui.close_element(s)
     }
     ui.close_element(s)
+}
+
+file_buffer_leader_actions :: proc(input_map: ^core.InputActions) {
+    core.register_key_action(input_map, .K, proc(state: ^core.State, user_data: rawptr) {
+        buffer := &(&(transmute(^core.Panel)user_data).type.(core.FileBufferPanel)).buffer
+
+        ts.update_cursor(&buffer.tree, buffer.history.cursor.line, buffer.history.cursor.col)
+        ts.print_node_type(&buffer.tree)
+
+        core.reset_input_map(state)
+    }, "View Symbol")
 }
 
 file_buffer_go_actions :: proc(input_map: ^core.InputActions) {

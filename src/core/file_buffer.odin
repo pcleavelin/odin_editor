@@ -47,6 +47,7 @@ FileBuffer :: struct {
     extension: string,
 
     flags: BufferFlagSet,
+    last_col: int,
     top_line: int,
     selection: Maybe(Selection),
 
@@ -423,6 +424,8 @@ move_cursor_start_of_line :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = 
 
         cursor.?^ = it.cursor;
     }
+
+    buffer.last_col = cursor.?.col
 }
 
 move_cursor_end_of_line :: proc(buffer: ^FileBuffer, stop_at_end: bool = true, cursor: Maybe(^Cursor) = nil) {
@@ -431,6 +434,8 @@ move_cursor_end_of_line :: proc(buffer: ^FileBuffer, stop_at_end: bool = true, c
     if cursor == nil {
         cursor = &buffer.history.cursor;
     }
+
+    buffer.last_col = cursor.?.col
 
     it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
     line_length := file_buffer_line_length(buffer, it.cursor.index);
@@ -447,6 +452,8 @@ move_cursor_end_of_line :: proc(buffer: ^FileBuffer, stop_at_end: bool = true, c
 
         cursor.?^ = it.cursor;
     }
+
+    buffer.last_col = cursor.?.col
 }
 
 move_cursor_up :: proc(buffer: ^FileBuffer, amount: int = 1, cursor: Maybe(^Cursor) = nil) {
@@ -478,6 +485,12 @@ move_cursor_up :: proc(buffer: ^FileBuffer, amount: int = 1, cursor: Maybe(^Curs
         }
 
         cursor.?^ = it.cursor;
+    }
+
+    if cursor.?.col < buffer.last_col && file_buffer_line_length(buffer, cursor.?.index)-1 >= cursor.?.col {
+        last_col := buffer.last_col
+        move_cursor_right(buffer, amt = buffer.last_col - cursor.?.col, cursor = cursor)
+        buffer.last_col = last_col
     }
 
     update_file_buffer_scroll(buffer, cursor);
@@ -513,6 +526,13 @@ move_cursor_down :: proc(buffer: ^FileBuffer, amount: int = 1, cursor: Maybe(^Cu
     }
 
     cursor.?^ = it.cursor;
+
+    if cursor.?.col < buffer.last_col && file_buffer_line_length(buffer, cursor.?.index)-1 >= cursor.?.col {
+        last_col := buffer.last_col
+        move_cursor_right(buffer, amt = buffer.last_col - cursor.?.col, cursor = cursor)
+        buffer.last_col = last_col
+    }
+
     update_file_buffer_scroll(buffer, cursor);
 }
 
@@ -522,6 +542,8 @@ move_cursor_left :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = nil) {
     if cursor == nil {
         cursor = &buffer.history.cursor;
     }
+
+    buffer.last_col = cursor.?.col
 
     if cursor.?.col > 0 {
         it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
@@ -536,6 +558,8 @@ move_cursor_right :: proc(buffer: ^FileBuffer, stop_at_end: bool = true, amt: in
     if cursor == nil {
         cursor = &buffer.history.cursor;
     }
+
+    buffer.last_col = cursor.?.col
 
     it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
     line_length := file_buffer_line_length(buffer, it.cursor.index);
@@ -559,6 +583,8 @@ move_cursor_forward_start_of_word :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cu
     iterate_file_buffer_until(&it, until_start_of_word);
     cursor.?^ = it.cursor;
 
+    buffer.last_col = cursor.?.col
+
     update_file_buffer_scroll(buffer, cursor);
 }
 
@@ -572,6 +598,8 @@ move_cursor_forward_end_of_word :: proc(buffer: ^FileBuffer, cursor: Maybe(^Curs
     it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
     iterate_file_buffer_until(&it, until_end_of_word);
     cursor.?^ = it.cursor;
+
+    buffer.last_col = cursor.?.col
 
     update_file_buffer_scroll(buffer, cursor);
 }
@@ -588,6 +616,8 @@ move_cursor_backward_start_of_word :: proc(buffer: ^FileBuffer, cursor: Maybe(^C
     //iterate_file_buffer_until(&it, until_non_whitespace);
     cursor.?^ = it.cursor;
 
+    buffer.last_col = cursor.?.col
+
     update_file_buffer_scroll(buffer, cursor);
 }
 
@@ -601,6 +631,8 @@ move_cursor_backward_end_of_word :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cur
     it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
     iterate_file_buffer_until_reverse(&it, until_start_of_word);
     cursor.?^ = it.cursor;
+
+    buffer.last_col = cursor.?.col
 
     update_file_buffer_scroll(buffer, cursor);
 }

@@ -69,6 +69,9 @@ make_grep_panel :: proc() -> core.Panel {
             panel_state.glyphs = core.make_glyph_buffer(256,256)
             panel_state.buffer = core.new_virtual_file_buffer()
 
+            core.register_ctrl_key_action(&panel.input_map.mode[.Normal], .W, core.new_input_actions(), "Panel Navigation") 
+            register_default_panel_actions(&(&panel.input_map.mode[.Normal].ctrl_key_actions[.W]).action.(core.InputActions))
+
             core.register_key_action(&panel.input_map.mode[.Normal], .ENTER, proc(state: ^core.State, user_data: rawptr) {
                 this_panel := transmute(^core.Panel)user_data
 
@@ -163,7 +166,7 @@ make_grep_panel :: proc() -> core.Panel {
                                     kind = {ui.Grow{}, ui.Grow{}}
                                 },
                                 style = {
-                                    border = {.Left, .Right, .Top, .Bottom},
+                                    border = {.Right},
                                     border_color = .Background4
                                 }
                             )

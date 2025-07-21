@@ -13,7 +13,6 @@ import "../core"
 import "../util"
 import "../ui"
 
-// NOTE: odd that this is here, but I don't feel like thinking of a better dep-tree to fix it
 register_default_leader_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .Q, proc(state: ^core.State, user_data: rawptr) {
         core.reset_input_map(state)
@@ -22,15 +21,6 @@ register_default_leader_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .R, proc(state: ^core.State, user_data: rawptr) {
         open_grep_panel(state)
     }, "Grep Workspace")
-
-    core.register_key_action(input_map, .K, proc(state: ^core.State, user_data: rawptr) {
-        buffer := transmute(^core.FileBuffer)user_data
-
-        ts.update_cursor(&buffer.tree, buffer.history.cursor.line, buffer.history.cursor.col)
-        ts.print_node_type(&buffer.tree)
-
-        core.reset_input_map(state)
-    }, "View Symbol")
 }
 
 register_default_panel_actions :: proc(input_map: ^core.InputActions) {

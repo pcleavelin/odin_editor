@@ -1,6 +1,7 @@
 package theme
 
 PaletteColor :: enum {
+    None,
     Background,
     Foreground,
 
@@ -33,6 +34,7 @@ PaletteColor :: enum {
 
 // Its the gruvbox dark theme <https://github.com/morhetz/gruvbox>
 palette := []u32 {
+    0x00000000,
     0x282828ff,
     0xebdbb2ff,
 
@@ -65,6 +67,7 @@ palette := []u32 {
 
 
 light_palette := []u32 {
+    0x00000000,
     0xfbf1c7ff,
     0x3c3836ff,
 

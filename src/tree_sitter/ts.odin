@@ -251,7 +251,9 @@ parse_buffer :: proc(state: ^State, input: Input) {
 }
 
 update_cursor :: proc(state: ^State, line: int, col: int) {
-    assert(state.tree != nil)
+    if state.tree == nil {
+        return
+    }
 
     root_node := tree_root_node(state.tree)
     tree_cursor_reset(&state.cursor, root_node)
@@ -274,6 +276,7 @@ load_highlights :: proc(state: ^State) {
     capture_to_color := make(map[string]theme.PaletteColor, allocator = context.temp_allocator)
     capture_to_color["include"] = .Red
     capture_to_color["keyword.function"] = .Red
+    capture_to_color["keyword.return"] = .Red
     capture_to_color["storageclass"] = .Red
 
     capture_to_color["keyword.operator"] = .Purple
@@ -347,6 +350,10 @@ load_highlights :: proc(state: ^State) {
 }
 
 print_node_type :: proc(state: ^State) {
+    if state.tree == nil {
+        return
+    }
+
     current_node := tree_cursor_current_node(&state.cursor)
     if node_is_null(current_node) {
         log.error("Current node is null after goto_first_child")
