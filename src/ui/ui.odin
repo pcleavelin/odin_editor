@@ -48,6 +48,8 @@ UI_Layout :: struct {
     kind: [2]UI_Size_Kind,
     size: [2]int,
     pos: [2]int,
+
+    floating: bool,
 }
 
 UI_Size_Kind :: union {
@@ -82,8 +84,11 @@ open_element :: proc(state: ^State, kind: UI_Element_Kind, layout: UI_Layout, st
         layout = layout,
         style = style,
     }
-    e.layout.pos = state.curr_elements[state.num_curr].layout.pos
-    e.layout.size = state.curr_elements[state.num_curr].layout.size
+    
+    if !e.layout.floating {
+        e.layout.pos = state.curr_elements[state.num_curr].layout.pos
+        e.layout.size = state.curr_elements[state.num_curr].layout.size
+    }
 
     if parent, ok := state.current_open_element.?; ok {
         e.parent = parent
@@ -130,9 +135,9 @@ close_element :: proc(state: ^State, loc := #caller_location) -> UI_Layout {
 
             case Exact: { e.layout.size.x = int(v) }
             case Fit: {
-                child_index := e.first
-                for child_index != nil {
-                    child := &state.curr_elements[child_index.?]
+                it := e.first
+                for child in iterate_siblings(state, &it) {
+                    if child.layout.floating { continue }
 
                     switch e.layout.dir {
                         case .RightToLeft: fallthrough
@@ -145,8 +150,6 @@ close_element :: proc(state: ^State, loc := #caller_location) -> UI_Layout {
                             e.layout.size.x = math.max(e.layout.size.x, child.layout.size.x)
                         }
                     }
-
-                    child_index = child.next
                 }
             }
             case Grow: {
@@ -173,9 +176,9 @@ close_element :: proc(state: ^State, loc := #caller_location) -> UI_Layout {
 
             case Exact: { e.layout.size.y = int(v) }
             case Fit: {
-                child_index := e.first
-                for child_index != nil {
-                    child := &state.curr_elements[child_index.?]
+                it := e.first
+                for child in iterate_siblings(state, &it) {
+                    if child.layout.floating { continue }
 
                     switch e.layout.dir {
                         case .RightToLeft: fallthrough
@@ -188,8 +191,6 @@ close_element :: proc(state: ^State, loc := #caller_location) -> UI_Layout {
                             e.layout.size.y += child.layout.size.y
                         }
                     }
-
-                    child_index = child.next
                 }
             }
             case Grow: { /* Done in the Grow pass */ }
@@ -206,16 +207,62 @@ close_element :: proc(state: ^State, loc := #caller_location) -> UI_Layout {
 }
 
 @(private)
-non_fit_parent_size :: proc(state: ^State, index: int, axis: int) -> [2]int {
+iterate_siblings :: proc(state: ^State, sibling: ^Maybe(int)) -> (e: ^UI_Element, index: int, cond: bool) {
+    if sibling == nil || sibling^ == nil {
+        cond = false
+        return
+    }
+
+    e = &state.curr_elements[sibling.?]
+    index = sibling.?
+    cond = true
+
+    sibling^ = e.next
+    
+    return
+}
+
+@(private)
+iterate_siblings_reverse :: proc(state: ^State, sibling: ^Maybe(int)) -> (e: ^UI_Element, index: int, cond: bool) {
+    if sibling == nil || sibling^ == nil {
+        cond = false
+        return
+    }
+
+    e = &state.curr_elements[sibling.?]
+    index = sibling.?
+    cond = true
+
+    sibling^ = e.prev
+    
+    return
+}
+
+@(private)
+non_fit_parent_size :: proc(state: ^State, index: int, axis: int) -> int {
     if _, ok := state.curr_elements[index].layout.kind[axis].(Fit); ok {
-        if parent_index, ok := state.curr_elements[index].parent.?; ok {
+        if parent_index, ok := state.curr_elements[index].parent.?; ok && !state.curr_elements[index].layout.floating {
             return non_fit_parent_size(state, parent_index, axis)
         } else {
-            return state.max_size
+            return state.max_size[axis]
         }
+    } else if state.curr_elements[index].layout.floating {
+        return state.max_size[axis]
     } else {
-        return state.curr_elements[index].layout.size
+        return state.curr_elements[index].layout.size[axis]
     }
+}
+
+@(private)
+prev_non_floating :: proc(state: ^State, index: Maybe(int)) -> Maybe(int) {
+    it := index
+    for sibling, index in iterate_siblings_reverse(state, &it) {
+        if sibling.layout.floating { continue }
+
+        return index
+    }
+
+    return nil
 }
 
 @(private)
@@ -228,9 +275,14 @@ grow_children :: proc(state: ^State, index: int) {
     children_size: [2]int
     num_growing: [2]int
 
-    child_index := e.first
-    for child_index != nil {
-        child := &state.curr_elements[child_index.?]
+    has_floating := false
+
+    it := e.first
+    for child in iterate_siblings(state, &it) {
+        if child.layout.floating {
+            has_floating = true
+            continue
+        }
 
         if _, ok := child.layout.kind.x.(Grow); ok {
             num_growing.x += 1
@@ -258,37 +310,33 @@ grow_children :: proc(state: ^State, index: int) {
                 }
             }
         }
-
-        child_index = child.next
     }
 
     if num_growing.x > 0 || num_growing.y > 0 {
-        remaining_size := [2]int{ x_e.x, y_e.y } - children_size
+        remaining_size := [2]int{ x_e, y_e } - children_size
         to_grow: [2]int
         to_grow.x = 0 if num_growing.x < 1 else remaining_size.x/num_growing.x
         to_grow.y = 0 if num_growing.y < 1 else remaining_size.y/num_growing.y
 
-        child_index := e.first
-        for child_index != nil {
-            child := &state.curr_elements[child_index.?]
-
+        it := e.first
+        for child, child_index in iterate_siblings(state, &it) {
             switch e.layout.dir {
                 case .RightToLeft: fallthrough
                 case .LeftToRight: {
                     if _, ok := child.layout.kind.x.(Grow); ok {
-                        child.layout.size.x = to_grow.x
+                        child.layout.size.x = state.max_size.x if child.layout.floating else to_grow.x
                     }
                     if _, ok := child.layout.kind.y.(Grow); ok {
-                        child.layout.size.y = remaining_size.y
+                        child.layout.size.y = state.max_size.y if child.layout.floating else y_e
                     }
                 }
                 case .BottomToTop: fallthrough
                 case .TopToBottom: {
                     if _, ok := child.layout.kind.x.(Grow); ok {
-                        child.layout.size.x = remaining_size.x
+                        child.layout.size.x = state.max_size.x if child.layout.floating else x_e
                     }
                     if _, ok := child.layout.kind.y.(Grow); ok {
-                        child.layout.size.y = to_grow.y
+                        child.layout.size.y = state.max_size.y if child.layout.floating else to_grow.y
                     }
                 }
             }
@@ -296,25 +344,23 @@ grow_children :: proc(state: ^State, index: int) {
             _, x_growing := child.layout.kind.x.(Grow)
             _, y_growing := child.layout.kind.y.(Grow)
 
-            if x_growing || y_growing {
-                grow_children(state, child_index.?)
+            if x_growing || y_growing || child.layout.floating {
+                grow_children(state, child_index)
             }
-
-            child_index = child.next
         }
     }
 }
 
-compute_layout_2 :: proc(state: ^State) {
+compute_layout :: proc(state: ^State) {
     grow_children(state, 0)
 
     for i in 0..<state.num_curr {
         e := &state.curr_elements[i]
 
-        if parent_index, ok := e.parent.?; ok {
+        if parent_index, ok := e.parent.?; ok && !e.layout.floating {
             parent := &state.curr_elements[parent_index]
 
-            if prev_index, ok := e.prev.?; ok {
+            if prev_index, ok := prev_non_floating(state, e.prev).?; ok {
                 prev := &state.curr_elements[prev_index]
 
                 switch parent.layout.dir {

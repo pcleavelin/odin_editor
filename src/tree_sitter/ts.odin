@@ -349,15 +349,15 @@ load_highlights :: proc(state: ^State) {
     }
 }
 
-print_node_type :: proc(state: ^State) {
+print_node_type :: proc(state: ^State) -> Maybe(string) {
     if state.tree == nil {
-        return
+        return nil
     }
 
     current_node := tree_cursor_current_node(&state.cursor)
     if node_is_null(current_node) {
         log.error("Current node is null after goto_first_child")
-        return
+        return nil
     }
 
     node_type_str := node_type(current_node)
@@ -376,4 +376,6 @@ print_node_type :: proc(state: ^State) {
     log.infof("Node position: (%d:%d) to (%d:%d)", 
         start_point.row+1, start_point.column+1, 
         end_point.row+1, end_point.column+1)
+
+    return string(node_type_str)
 }

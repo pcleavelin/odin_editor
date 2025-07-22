@@ -101,6 +101,7 @@ PanelType :: union {
 
 FileBufferPanel :: struct {
     buffer: FileBuffer,
+    viewed_symbol: Maybe(string),
 
     // only used for initialization
     file_path: string,

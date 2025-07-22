@@ -59,39 +59,45 @@ draw :: proc(state: ^State) {
     new_ui.max_size.x = state.screen_width
     new_ui.max_size.y = state.screen_height
 
-    ui.open_element(new_ui, nil, {
-        dir = .LeftToRight,
-        kind = {ui.Grow{}, ui.Grow{}},
-    })
+    ui.open_element(new_ui, nil,
+        {
+            dir = .LeftToRight,
+            kind = {ui.Grow{}, ui.Grow{}},
+        },
+        style = {
+            background_color = .Background1
+        }
+    )
     { 
+        floating_panels := [16]int{}
+        num_floating := 0
+
         for i in 0..<len(state.panels.data) {
             if panel, ok := util.get(&state.panels, i).?; ok {
                 if panel.render != nil {
-
-                    background_color: theme.PaletteColor = .Background1 if panel.id == state.current_panel else .Background2
-
-                    ui.open_element(new_ui, nil,
-                        {
-                            dir = .LeftToRight,
-                            kind = {ui.Grow{}, ui.Grow{}},
-                        },
-                        style = {
-                            border = {.Left, .Right, .Top, .Bottom },
-                            border_color = .Green,
-                            background_color = background_color,
+                    if panel.is_floating {
+                        if num_floating < len(floating_panels) {
+                            floating_panels[num_floating] = i
+                            num_floating += 1
                         }
-                    )
-                    {
+                    } else {
                         panel->render(state)
                     }
-                    ui.close_element(new_ui)
                 }
+            }
+        }
+
+        for i in 0..<num_floating {
+            panel_id := floating_panels[i]
+
+            if panel, ok := util.get(&state.panels, panel_id).?; ok {
+                panel->render(state)
             }
         }
     }
     ui.close_element(new_ui)
 
-    ui.compute_layout_2(new_ui)
+    ui.compute_layout(new_ui)
     ui.draw(new_ui, state)
 
     // TODO: figure out when to not show the input help menu

@@ -48,6 +48,7 @@ make_grep_panel :: proc() -> core.Panel {
 
     return core.Panel {
         type = core.GrepPanel {},
+        is_floating = true,
         drop = proc(panel: ^core.Panel, state: ^core.State) {
             panel_state := &panel.type.(core.GrepPanel)
 
@@ -147,10 +148,16 @@ make_grep_panel :: proc() -> core.Panel {
             if panel_state, ok := &panel.type.(core.GrepPanel); ok {
                 s := transmute(^ui.State)state.ui
 
-                ui.open_element(s, nil, {
-                    dir = .TopToBottom,
-                    kind = {ui.Grow{}, ui.Grow{}}
-                })
+                ui.open_element(s, nil,
+                    {
+                        dir = .TopToBottom,
+                        kind = {ui.Grow{}, ui.Grow{}},
+                        floating = true, 
+                    },
+                    style = {
+                        background_color = .Background1,
+                    },
+                )
                 {
                     // query results and file contents side-by-side
                     ui.open_element(s, nil, {
@@ -196,7 +203,7 @@ make_grep_panel :: proc() -> core.Panel {
                                             style.background_color = .Background2
                                         }
 
-                                        ui.open_element(s, result.file_path, {}, style)
+                                        ui.open_element(s, result.file_path[len(state.directory):], {}, style)
                                         ui.close_element(s)
                                     }
                                 }
@@ -217,9 +224,14 @@ make_grep_panel :: proc() -> core.Panel {
                     ui.close_element(s)
 
                     // text input
-                    ui.open_element(s, nil, {
-                        kind = {ui.Grow{}, ui.Exact(state.source_font_height)}
-                    })
+                    ui.open_element(s, nil,
+                        {
+                            kind = {ui.Grow{}, ui.Exact(state.source_font_height)}
+                        },
+                        style = {
+                            background_color = .Background2
+                        }
+                    )
                     { 
                         defer ui.close_element(s)
 

@@ -69,6 +69,24 @@ make_file_buffer_panel :: proc(file_path: string, line: int = 0, col: int = 0) -
             s := transmute(^ui.State)state.ui
             render_file_buffer(state, s, &panel_state.buffer)
 
+            if viewed_symbol, ok := panel_state.viewed_symbol.?; ok {
+                ui.open_element(s, nil,
+                    {
+                        dir = .TopToBottom,
+                        kind = {ui.Fit{}, ui.Fit{}},
+                        floating = true, 
+                    },
+                    style = {
+                        background_color = .Background2,
+                    },
+                )
+                {
+                    ui.open_element(s, viewed_symbol, {})
+                    ui.close_element(s)
+                }
+                ui.close_element(s)
+            }
+
             return true
         }
     }
@@ -143,10 +161,12 @@ render_file_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileB
 
 file_buffer_leader_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .K, proc(state: ^core.State, user_data: rawptr) {
-        buffer := &(&(transmute(^core.Panel)user_data).type.(core.FileBufferPanel)).buffer
+        panel := transmute(^core.Panel)user_data
+        panel_state := &panel.type.(core.FileBufferPanel)
+        buffer := &panel_state.buffer
 
         ts.update_cursor(&buffer.tree, buffer.history.cursor.line, buffer.history.cursor.col)
-        ts.print_node_type(&buffer.tree)
+        panel_state.viewed_symbol = ts.print_node_type(&buffer.tree)
 
         core.reset_input_map(state)
     }, "View Symbol")
@@ -260,6 +280,13 @@ file_buffer_input_actions :: proc(input_map: ^core.InputActions) {
         buffer.selection = core.new_selection(buffer.history.cursor);
     }, "enter visual mode");
 
+    core.register_key_action(input_map, .ESCAPE, proc(state: ^core.State, user_data: rawptr) {
+        panel := transmute(^core.Panel)user_data
+        panel_state := &panel.type.(core.FileBufferPanel)
+        buffer := &panel_state.buffer
+
+        panel_state.viewed_symbol = nil
+    });
 }
 
 file_buffer_visual_actions :: proc(input_map: ^core.InputActions) {
