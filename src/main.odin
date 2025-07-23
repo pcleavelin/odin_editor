@@ -94,60 +94,43 @@ draw :: proc(state: ^State) {
                 panel->render(state)
             }
         }
+
+        {
+            if state.mode != .Insert && state.current_input_map.show_help {
+                @(thread_local)
+                layout: ui.UI_Layout
+
+                ui.open_element(new_ui, nil,
+                    {
+                        dir = .TopToBottom,
+                        kind = {ui.Fit{}, ui.Fit{}},
+                        pos = {state.screen_width - layout.size.x - state.source_font_width, state.screen_height - layout.size.y - state.source_font_height},
+                        floating = true,
+                    },
+                    style = {
+                        border = {.Left, .Right, .Top, .Bottom},
+                        border_color = .Background4,
+                        background_color = .Background3
+                    }
+                )
+                {
+                    for key, action in state.current_input_map.key_actions {
+                        ui.open_element(new_ui, fmt.tprintf("%s - %s", key, action.description), {})
+                        ui.close_element(new_ui)
+                    }
+                    for key, action in state.current_input_map.ctrl_key_actions {
+                        ui.open_element(new_ui, fmt.tprintf("<C>-%s - %s", key, action.description), {})
+                        ui.close_element(new_ui)
+                    }
+                }
+                layout = ui.close_element(new_ui)
+            }
+        }
     }
     ui.close_element(new_ui)
 
     ui.compute_layout(new_ui)
     ui.draw(new_ui, state)
-
-    if state.mode != .Insert && state.current_input_map.show_help {
-        longest_description := 0;
-        for key, action in state.current_input_map.key_actions {
-            if len(action.description) > longest_description {
-                longest_description = len(action.description);
-            }
-        }
-        for key, action in state.current_input_map.ctrl_key_actions {
-            if len(action.description) > longest_description {
-                longest_description = len(action.description);
-            }
-        }
-        longest_description += 8;
-
-        helper_height := state.source_font_height * (len(state.current_input_map.key_actions) + len(state.current_input_map.ctrl_key_actions));
-        offset_from_bottom := state.source_font_height * 2;
-
-        core.draw_rect(
-            state,
-            state.screen_width - longest_description * state.source_font_width,
-            state.screen_height - helper_height - offset_from_bottom,
-            longest_description*state.source_font_width,
-            helper_height,
-            .Background2
-        );
-
-        index := 0;
-        for key, action in state.current_input_map.key_actions {
-            core.draw_text(
-                state,
-                fmt.tprintf("%s - %s", key, action.description),
-                state.screen_width - longest_description * state.source_font_width,
-                state.screen_height - helper_height + index * state.source_font_height - offset_from_bottom
-            );
-
-            index += 1;
-        }
-        for key, action in state.current_input_map.ctrl_key_actions {
-            core.draw_text(
-                state,
-                fmt.tprintf("<C>-%s - %s", key, action.description),
-                state.screen_width - longest_description * state.source_font_width,
-                state.screen_height - helper_height + index * state.source_font_height - offset_from_bottom
-            );
-
-            index += 1;
-        }
-    }
 
     sdl2.RenderPresent(state.sdl_renderer);
 }

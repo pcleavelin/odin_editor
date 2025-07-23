@@ -269,8 +269,9 @@ file_buffer_input_actions :: proc(input_map: ^core.InputActions) {
         }
     }, "Save file")
 
-    core.register_key_action(input_map, .G, core.new_input_actions(), "Go commands");
-    file_buffer_go_actions(&(&input_map.key_actions[.G]).action.(core.InputActions));
+    go_actions := core.new_input_actions(show_help = true)
+    file_buffer_go_actions(&go_actions);
+    core.register_key_action(input_map, .G, go_actions, "Go commands");
 
     core.register_key_action(input_map, .V, proc(state: ^core.State, user_data: rawptr) {
         buffer := &(&(transmute(^core.Panel)user_data).type.(core.FileBufferPanel)).buffer
@@ -492,7 +493,7 @@ file_buffer_text_input_actions :: proc(input_map: ^core.InputActions) {
     // Copy-Paste
     {
         {
-            yank_actions := core.new_input_actions()
+            yank_actions := core.new_input_actions(show_help = true)
             defer core.register_key_action(input_map, .Y, yank_actions)
 
             core.register_key_action(&yank_actions, .Y, proc(state: ^core.State, user_data: rawptr) {

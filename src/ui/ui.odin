@@ -193,7 +193,11 @@ close_element :: proc(state: ^State, loc := #caller_location) -> UI_Layout {
                     }
                 }
             }
-            case Grow: { /* Done in the Grow pass */ }
+            case Grow: {
+                if _, ok := e.parent.?; !ok {
+                    e.layout.size = state.max_size
+                }
+            }
         }
 
         state.current_open_element = e.parent
@@ -422,22 +426,6 @@ draw :: proc(state: ^State, core_state: ^core.State) {
 
         switch v in e.kind {
             case nil: {
-                // core.draw_rect(
-                //     core_state,
-                //     e.layout.pos.x,
-                //     e.layout.pos.y,
-                //     e.layout.size.x,
-                //     e.layout.size.y,
-                //     e.style.background_color,
-                // );
-                // core.draw_rect_outline(
-                //     core_state,
-                //     e.layout.pos.x,
-                //     e.layout.pos.y,
-                //     e.layout.size.x,
-                //     e.layout.size.y,
-                //     .Background4
-                // );
             }
             case UI_Element_Kind_Text: {
                 core.draw_text(core_state, string(v), e.layout.pos.x, e.layout.pos.y);
@@ -449,11 +437,6 @@ draw :: proc(state: ^State, core_state: ^core.State) {
                 v.fn(core_state, e^, v.user_data) 
             }
         }
-    }
-
-    // Separate loop done to draw border over elements
-    for i in 0..<state.num_curr {
-        e := &state.curr_elements[i]
 
         if .Left in e.style.border {
             core.draw_line(
