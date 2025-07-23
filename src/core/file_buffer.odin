@@ -746,6 +746,8 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
     file_type: ts.LanguageType = .None
     if extension == ".odin" {
         file_type = .Odin
+    } else if extension == ".rs" {
+        file_type = .Rust
     } else if extension == ".json" {
         file_type = .Json
     }

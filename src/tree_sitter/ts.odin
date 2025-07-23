@@ -97,6 +97,11 @@ foreign ts_odin {
     tree_sitter_odin :: proc "c" () -> Language ---
 }
 
+foreign import ts_rust "../../bin/libtree-sitter-rust.a"
+foreign ts_rust {
+    tree_sitter_rust :: proc "c" () -> Language ---
+}
+
 foreign import ts_json "../../bin/libtree-sitter-json.a"
 foreign ts_json {
     tree_sitter_json :: proc "c" () -> Language ---
@@ -123,6 +128,7 @@ LanguageType :: enum {
     None,
     Json,
     Odin,
+    Rust,
 }
 
 TestStuff :: struct {
@@ -211,6 +217,7 @@ make_state :: proc(type: LanguageType, allocator := context.allocator) -> State 
     switch (type) {
         case .None: {}
         case .Odin: language = tree_sitter_odin()
+        case .Rust: language = tree_sitter_rust()
         case .Json: language = tree_sitter_json()
     }
 
@@ -234,7 +241,7 @@ delete_state :: proc(state: ^State) {
 }
 
 parse_buffer :: proc(state: ^State, input: Input) {
-    if state.parser == nil {
+    if state.parser == nil || state.language_type == .None {
         return
     }
 
@@ -315,6 +322,27 @@ load_highlights :: proc(state: ^State) {
             capture_to_color["comment"] = .Gray
 
         }
+        case .Rust: {
+            capture_to_color["string"] = .Green
+            capture_to_color["comment"] = .Gray
+
+            capture_to_color["type"] = .BrightBlue
+
+            capture_to_color["type.builtin"] = .Aqua
+
+            capture_to_color["label"] = .Red
+            capture_to_color["variable.builtin"] = .Red
+
+            capture_to_color["keyword"] = .Blue
+            capture_to_color["function"] = .Blue
+            capture_to_color["function.method"] = .Blue
+
+            capture_to_color["property"] = .BrightYellow
+            capture_to_color["constructor"] = .Yellow
+            capture_to_color["attribute"] = .BrightGray
+
+            capture_to_color["constant.builtin"] = .Purple
+        }
     }
 
     path: string
@@ -326,6 +354,9 @@ load_highlights :: proc(state: ^State) {
         }
         case .Odin: {
             path = "../tree-sitter-odin/queries/highlights.scm"
+        }
+        case .Rust: {
+            path = "../tree-sitter-rust/queries/highlights.scm"
         }
     }
 
