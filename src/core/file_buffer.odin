@@ -743,6 +743,13 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
 
     extension := filepath.ext(fi.fullpath);
 
+    file_type: ts.LanguageType = .None
+    if extension == ".odin" {
+        file_type = .Odin
+    } else if extension == ".json" {
+        file_type = .Json
+    }
+
     if original_content, success := os.read_entire_file_from_handle(fd); success {
         defer delete(original_content)
 
@@ -763,7 +770,7 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
             extension = extension,
 
             // TODO: derive language type from extension
-            tree = ts.make_state(.Odin),
+            tree = ts.make_state(file_type),
             history = make_history(content),
 
             glyphs = make_glyph_buffer(width, height),

@@ -42,7 +42,7 @@ foreign ts {
     node_is_null :: proc(self: Node) -> bool ---
     node_string :: proc(self: Node) -> cstring ---
 
-    query_new :: proc(language: Language, source: []u8, source_len: u32, error_offset: ^u32, error_type: ^QueryError) -> Query ---
+    query_new :: proc(language: Language, source: ^u8, source_len: u32, error_offset: ^u32, error_type: ^QueryError) -> Query ---
     query_delete :: proc(query: Query) ---
     query_cursor_new :: proc() -> QueryCursor ---
     query_cursor_exec :: proc(cursor: QueryCursor, query: Query, node: Node) ---
@@ -105,6 +105,7 @@ foreign ts_json {
 State :: struct {
     parser: Parser,
     language: Language,
+    language_type: LanguageType,
 
     tree: Tree,
     cursor: TreeCursor,
@@ -119,6 +120,7 @@ Highlight :: struct {
 }
 
 LanguageType :: enum {
+    None,
     Json,
     Odin,
 }
@@ -207,18 +209,20 @@ make_state :: proc(type: LanguageType, allocator := context.allocator) -> State 
     language: Language
 
     switch (type) {
+        case .None: {}
         case .Odin: language = tree_sitter_odin()
         case .Json: language = tree_sitter_json()
     }
 
-    if !parser_set_language(parser, language) {
+    if language != nil && !parser_set_language(parser, language) {
         log.errorf("failed to set language to '%v'", type)
         return State {}
     }
 
     return State {
         parser = parser,
-        language = language
+        language = language,
+        language_type = type,
     }
 }
 
@@ -247,7 +251,10 @@ parse_buffer :: proc(state: ^State, input: Input) {
     }
 
     state.cursor = tree_cursor_new(tree_root_node(state.tree))
-    load_highlights(state)
+
+    if state.language_type != .None {
+        load_highlights(state)
+    }
 }
 
 update_cursor :: proc(state: ^State, line: int, col: int) {
@@ -274,29 +281,55 @@ update_cursor :: proc(state: ^State, line: int, col: int) {
 load_highlights :: proc(state: ^State) {
     // TODO: have this be language specific
     capture_to_color := make(map[string]theme.PaletteColor, allocator = context.temp_allocator)
-    capture_to_color["include"] = .Red
-    capture_to_color["keyword.function"] = .Red
-    capture_to_color["keyword.return"] = .Red
-    capture_to_color["storageclass"] = .Red
 
-    capture_to_color["keyword.operator"] = .Purple
+    switch state.language_type {
+        case .None: {}
 
-    capture_to_color["keyword"] = .Blue
-    capture_to_color["repeat"] = .Blue
-    capture_to_color["conditional"] = .Blue
-    capture_to_color["function"] = .Blue
+        case .Json: {
+            capture_to_color["string"] = .Green
+            capture_to_color["constant.builtin"] = .Yellow
+            capture_to_color["field"] = .Blue
+            capture_to_color["number"] = .Foreground
+        }
+        case .Odin: {
+            capture_to_color["include"] = .Red
+            capture_to_color["keyword.function"] = .Red
+            capture_to_color["keyword.return"] = .Red
+            capture_to_color["storageclass"] = .Red
 
-    capture_to_color["type.decl"] = .BrightBlue
-    capture_to_color["field"] = .BrightYellow
+            capture_to_color["keyword.operator"] = .Purple
 
-    capture_to_color["type.builtin"] = .Aqua
+            capture_to_color["keyword"] = .Blue
+            capture_to_color["repeat"] = .Blue
+            capture_to_color["conditional"] = .Blue
+            capture_to_color["function"] = .Blue
 
-    capture_to_color["function.call"] = .Green
-    capture_to_color["string"] = .Green
+            capture_to_color["type.decl"] = .BrightBlue
+            capture_to_color["field"] = .BrightYellow
 
-    capture_to_color["comment"] = .Gray
+            capture_to_color["type.builtin"] = .Aqua
 
-    fd, err := os.open("../tree-sitter-odin/queries/highlights.scm")
+            capture_to_color["function.call"] = .Green
+            capture_to_color["string"] = .Green
+
+            capture_to_color["comment"] = .Gray
+
+        }
+    }
+
+    path: string
+    switch state.language_type {
+        case .None: {}
+
+        case .Json: {
+            path = "../tree-sitter-json/queries/highlights.scm"
+        }
+        case .Odin: {
+            path = "../tree-sitter-odin/queries/highlights.scm"
+        }
+    }
+
+    fd, err := os.open(path)
     if err != nil {
         log.errorf("failed to open file: errno=%x", err)
         return
@@ -304,10 +337,10 @@ load_highlights :: proc(state: ^State) {
     defer os.close(fd);
 
     if highlight_query, success := os.read_entire_file_from_handle(fd); success {
-        error_offset: u32
-        error_type: QueryError
+        error_offset: u32 = 0
+        error_type: QueryError = .None
 
-        query := query_new(state.language, highlight_query, u32(len(highlight_query)), &error_offset, &error_type)
+        query := query_new(state.language, raw_data(highlight_query), u32(len(highlight_query)), &error_offset, &error_type)
         defer query_delete(query)
 
         if error_type != .None {
