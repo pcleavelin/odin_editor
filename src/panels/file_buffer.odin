@@ -46,13 +46,14 @@ make_file_buffer_panel :: proc(file_path: string, line: int = 0, col: int = 0) -
                 panel_state.buffer = buffer
             }
 
-            leader_actions := core.new_input_actions()
+            leader_actions := core.new_input_actions(show_help = true)
             register_default_leader_actions(&leader_actions);
             file_buffer_leader_actions(&leader_actions);
             core.register_key_action(&panel.input_map.mode[.Normal], .SPACE, leader_actions, "leader commands");
 
-            core.register_ctrl_key_action(&panel.input_map.mode[.Normal], .W, core.new_input_actions(), "Panel Navigation") 
-            register_default_panel_actions(&(&panel.input_map.mode[.Normal].ctrl_key_actions[.W]).action.(core.InputActions))
+            panel_actions := core.new_input_actions(show_help = true)
+            register_default_panel_actions(&panel_actions)
+            core.register_ctrl_key_action(&panel.input_map.mode[.Normal], .W, panel_actions, "Panel Navigation") 
 
             file_buffer_input_actions(&panel.input_map.mode[.Normal]);
             file_buffer_visual_actions(&panel.input_map.mode[.Visual]);

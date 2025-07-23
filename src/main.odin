@@ -100,8 +100,7 @@ draw :: proc(state: ^State) {
     ui.compute_layout(new_ui)
     ui.draw(new_ui, state)
 
-    // TODO: figure out when to not show the input help menu
-    if false && state.mode != .Insert { // && state.current_input_map != &state.input_map.mode[state.mode] {
+    if state.mode != .Insert && state.current_input_map.show_help {
         longest_description := 0;
         for key, action in state.current_input_map.key_actions {
             if len(action.description) > longest_description {

@@ -66,12 +66,13 @@ make_grep_panel :: proc() -> core.Panel {
             }
             mem.arena_init(&panel_state.query_arena, arena_bytes)
 
-            panel.input_map = core.new_input_map()
+            panel.input_map = core.new_input_map(show_help = true)
             panel_state.glyphs = core.make_glyph_buffer(256,256)
             panel_state.buffer = core.new_virtual_file_buffer()
 
-            core.register_ctrl_key_action(&panel.input_map.mode[.Normal], .W, core.new_input_actions(), "Panel Navigation") 
-            register_default_panel_actions(&(&panel.input_map.mode[.Normal].ctrl_key_actions[.W]).action.(core.InputActions))
+            panel_actions := core.new_input_actions(show_help = true)
+            register_default_panel_actions(&panel_actions)
+            core.register_ctrl_key_action(&panel.input_map.mode[.Normal], .W, panel_actions, "Panel Navigation") 
 
             core.register_key_action(&panel.input_map.mode[.Normal], .ENTER, proc(state: ^core.State, user_data: rawptr) {
                 this_panel := transmute(^core.Panel)user_data

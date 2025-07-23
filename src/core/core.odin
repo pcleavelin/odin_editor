@@ -208,13 +208,14 @@ EditorAction :: proc(state: ^State, user_data: rawptr);
 InputActions :: struct {
     key_actions: map[Key]Action,
     ctrl_key_actions: map[Key]Action,
+    show_help: bool,
 }
 Action :: struct {
     action: InputGroup,
     description: string,
 }
 
-new_input_map :: proc(allocator := context.allocator) -> InputMap {
+new_input_map :: proc(show_help: bool = false, allocator := context.allocator) -> InputMap {
     context.allocator = allocator
 
     input_map := InputMap {
@@ -228,15 +229,19 @@ new_input_map :: proc(allocator := context.allocator) -> InputMap {
         }
     }
 
+    normal_actions := &input_map.mode[.Normal]
+    normal_actions.show_help = show_help
+
     return input_map;
 }
 
-new_input_actions :: proc(allocator := context.allocator) -> InputActions {
+new_input_actions :: proc(show_help: bool = false, allocator := context.allocator) -> InputActions {
     context.allocator = allocator
 
     input_actions := InputActions {
         key_actions = make(map[Key]Action),
         ctrl_key_actions = make(map[Key]Action),
+        show_help = show_help,
     }
 
     return input_actions;
