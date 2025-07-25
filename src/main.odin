@@ -286,6 +286,9 @@ main :: proc() {
         log.error("SDL failed to initialize:", sdl2.GetError());
         return;
     }
+    defer {
+        sdl2.Quit();
+    }
 
     if ttf.Init() < 0 {
         log.error("SDL_TTF failed to initialize:", ttf.GetError());
@@ -502,6 +505,4 @@ main :: proc() {
 
         runtime.free_all(context.temp_allocator);
     }
-
-    sdl2.Quit();
 }
