@@ -1053,7 +1053,14 @@ delete_content_from_selection :: proc(buffer: ^FileBuffer, selection: ^Selection
     selection^ = swap_selections(selection^)
     delete_text_in_span(buffer_piece_table(buffer), &selection.start.index, &selection.end.index)
 
+    buffer.history.cursor.line = selection.start.line
+    buffer.history.cursor.col = selection.start.col
+
     buffer.history.cursor.index = selection.start.index
+
+    if get_character_at_piece_table_index(buffer_piece_table(buffer), selection.start.index) == '\n' {
+        move_cursor_left(buffer)
+    }
 
     ts.parse_buffer(&buffer.tree, tree_sitter_file_buffer_input(buffer))
 }

@@ -716,6 +716,41 @@ yank_and_paste_whole_line :: proc(t: ^testing.T) {
     testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
 }
 
+@(test)
+select_and_delete_half_of_line_backwards :: proc(t: ^testing.T) {
+    e := new_test_editor()
+    setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, 0)
+        delete_editor(&e)
+    }
+
+    buffer := core.current_buffer(&e)
+
+    initial_text := "Hello, world!\nThis is a new line"
+    run_text_insertion(&e, initial_text)
+
+    expected_text := "Hello\nThis is a new line\n"
+
+    // Move up to "Hello, world!"
+    run_input_multiple(&e, press_key(.K), 1)
+
+    // Move to end of line
+    run_inputs(&e, []ArtificialInput{ press_key(.G), press_key(.L)})
+
+    // Move to the end of 'Hello' and delete selection
+    run_input_multiple(&e, press_key(.V), 1)
+    run_input_multiple(&e, press_key(.H), 7)
+    run_input_multiple(&e, press_key(.D), 1)
+
+    expect_line_col(t, buffer.history.cursor, 0, 4)
+
+    contents := buffer_to_string(core.current_buffer(&e))
+    defer delete(contents)
+
+    testing.expectf(t, contents == expected_text, "got '%v', expected '%v'", contents, expected_text)
+}
+
 run_editor_frame :: proc(state: ^core.State, input: ArtificialInput, is_ctrl_pressed: ^bool) {
     {
         run_key_action := proc(state: ^core.State, control_key_pressed: bool, key: core.Key) -> bool {
