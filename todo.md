@@ -1,12 +1,13 @@
 # Bugs
 - Fix jumping forward a word jumping past consecutive brackets
-- Odd scrolling behavior on small screen heights
-- Scrolling past end/beginning of results panics
+- Scrolling past end/beginning of grep results panics
+- "change selection" not pushing snapshot
+- Don't allow panel navigation in grep panel
 
 # Visual QOL
 - Split grep search results into a table to avoid funky unaligned text
 
-# Planned Features
+# TODO
 - [ ] Jump List
 - [x] Use grouped lifetimes exclusively for memory allocation/freeing
 - [ ] Highlight which panel is currently active
@@ -16,7 +17,6 @@
     - [ ] Finish writing tests for all current user actions
 - Vim-like Macro replays
 - [ ] Simple File Search (vim /)
-- [ ] Auto-indent
 - Modify input system to allow for keybinds that take input
     - Vim's f and F movement commands
     - Vim's r command
@@ -29,26 +29,34 @@
         - [ ] In-line errors
     - [ ] Go-to Definition/
     - [ ] Find references
-- Re-implement lost features from Plugins
-    - [ ] Integrate tree-sitter
-        - [x] Syntax Highlighting
-        - [ ] Auto Setup Parsers
-            - [ ] Download parser
-            - [ ] Compile/"Install"
-        - [ ] Auto-indent?
-    - [ ] Bootleg Telescope
-        - [ ] Grepping Files
-            - [x] Query across project
-            - [x] Open file in new buffer
-            - [x] Open file in new buffer at found location
-            - [ ] Preview file with context
-                - [x] Show Context
-                - [ ] Properly show lines numbers
-                - [ ] Don't overlap result list with file preview
-        - [ ] Open Buffer Search
+- [ ] Integrate tree-sitter
+    - [x] Syntax Highlighting
+    - [ ] Auto Setup Parsers
+        - [ ] Download parser
+        - [ ] Compile/"Install"
+    - [ ] Auto-indent
+        - [x] Infer indent with similar lines
+        - [x] Infer indent with C-style scopes (languages using '{')
+        - [ ] Infer indent inside multi-line function calls (again C-style)
+        - [ ] Somehow use tree-sitter to be language agnostic (not sure this is even possible with TS)
+- [ ] Bootleg Telescope
+    - [ ] Grepping Files
+        - [x] Query across project
+        - [x] Open file in new buffer
+        - [x] Open file in new buffer at found location
+        - [ ] Preview file with context
+            - [x] Show Context
+            - [ ] Properly show lines numbers
+            - [ ] Don't overlap result list with file preview
+    - [ ] Open Buffer Search
+    - [ ] Workspace file search
 - Re-write the UI (again)
     - [x] New UI
     - [ ] Styling
+        - [x] Background colors
+        - [x] Borders + Border Color
+        - [ ] Rounded corners?
+        - [ ] Gradients?
 - Undo/Redo
     - [x] Basic/Naive Undo/Redo
     - [ ] Interface for undo-able actions

@@ -200,7 +200,7 @@ file_buffer_delete_actions :: proc(input_map: ^core.InputActions) {
         core.move_cursor_start_of_line(buffer, cursor = &sel_cur.start);
         core.move_cursor_end_of_line(buffer, cursor = &sel_cur.end, stop_at_end = false);
 
-        core.delete_content_from_selection(buffer, sel_cur)
+        core.delete_content_from_selection(buffer, sel_cur, reparse_buffer = true)
 
         buffer.selection = nil;
         core.reset_input_map(state)
@@ -451,7 +451,7 @@ file_buffer_visual_actions :: proc(input_map: ^core.InputActions) {
             if state.yank_register.whole_line {
                 core.insert_content(buffer, []u8{'\n'});
                 core.paste_register(state, state.yank_register, buffer)
-                core.insert_content(buffer, []u8{'\n'});
+                core.insert_content(buffer, []u8{'\n'}, reparse_buffer = true);
             } else {
                 core.paste_register(state, state.yank_register, buffer)
             }

@@ -431,6 +431,8 @@ main :: proc() {
                                         core.move_cursor_left(buffer)
 
                                         sdl2.StopTextInput();
+
+                                        ts.parse_buffer(&buffer.tree, core.tree_sitter_file_buffer_input(buffer))
                                     }
                                     case .TAB: {
                                         // TODO: change this to insert a tab character

@@ -188,7 +188,7 @@ yank_selection :: proc(state: ^State, buffer: ^FileBuffer) {
 }
 
 paste_register :: proc(state: ^State, register: Register, buffer: ^FileBuffer) {
-    insert_content(buffer, register.data)
+    insert_content(buffer, register.data, reparse_buffer = true)
     move_cursor_left(buffer)
 }
 

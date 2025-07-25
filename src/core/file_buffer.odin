@@ -982,7 +982,7 @@ scroll_file_buffer :: proc(buffer: ^FileBuffer, dir: ScrollDir, cursor: Maybe(^C
     }
 }
 
-insert_content :: proc(buffer: ^FileBuffer, to_be_inserted: []u8) {
+insert_content :: proc(buffer: ^FileBuffer, to_be_inserted: []u8, reparse_buffer: bool = false) {
     if len(to_be_inserted) == 0 {
         return;
     }
@@ -995,10 +995,12 @@ insert_content :: proc(buffer: ^FileBuffer, to_be_inserted: []u8) {
     update_file_buffer_index_from_cursor(buffer);
     move_cursor_right(buffer, false, amt = len(to_be_inserted));
 
-    ts.parse_buffer(&buffer.tree, tree_sitter_file_buffer_input(buffer))
+    if reparse_buffer {
+        ts.parse_buffer(&buffer.tree, tree_sitter_file_buffer_input(buffer))
+    }
 }
 
-delete_content_from_buffer_cursor :: proc(buffer: ^FileBuffer, amount: int) {
+delete_content_from_buffer_cursor :: proc(buffer: ^FileBuffer, amount: int, reparse_buffer: bool = false) {
     buffer.flags += { .UnsavedChanges }
 
     // Calculate proper line/col values
@@ -1010,10 +1012,12 @@ delete_content_from_buffer_cursor :: proc(buffer: ^FileBuffer, amount: int) {
     buffer.history.cursor.line = it.cursor.line
     buffer.history.cursor.col = it.cursor.col
 
-    ts.parse_buffer(&buffer.tree, tree_sitter_file_buffer_input(buffer))
+    if reparse_buffer {
+        ts.parse_buffer(&buffer.tree, tree_sitter_file_buffer_input(buffer))
+    }
 }
 
-delete_content_from_selection :: proc(buffer: ^FileBuffer, selection: ^Selection) {
+delete_content_from_selection :: proc(buffer: ^FileBuffer, selection: ^Selection, reparse_buffer: bool = false) {
     buffer.flags += { .UnsavedChanges }
 
     selection^ = swap_selections(selection^)
@@ -1028,7 +1032,9 @@ delete_content_from_selection :: proc(buffer: ^FileBuffer, selection: ^Selection
         move_cursor_left(buffer)
     }
 
-    ts.parse_buffer(&buffer.tree, tree_sitter_file_buffer_input(buffer))
+    if reparse_buffer {
+        ts.parse_buffer(&buffer.tree, tree_sitter_file_buffer_input(buffer))
+    }
 }
 
 delete_content :: proc{delete_content_from_buffer_cursor, delete_content_from_selection};
@@ -1043,10 +1049,11 @@ get_buffer_indent :: proc(buffer: ^FileBuffer, cursor: Maybe(Cursor) = nil) -> i
     ptr_cursor := &cursor.?
 
     move_cursor_start_of_line(buffer, ptr_cursor)
-    move_cursor_forward_end_of_word(buffer, ptr_cursor)
-    move_cursor_backward_start_of_word(buffer, ptr_cursor)
 
-    return cursor.?.col
+    it := new_file_buffer_iter_with_cursor(buffer, ptr_cursor^);
+    iterate_file_buffer_until(&it, until_non_whitespace)
+
+    return it.cursor.col
 }
 
 buffer_to_string :: proc(buffer: ^FileBuffer, allocator := context.allocator) -> string {

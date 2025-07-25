@@ -183,7 +183,7 @@ make_grep_panel :: proc() -> core.Panel {
                                 max_results := container_height / 16
 
                                 for result, i in panel_state.query_results {
-                                    if i > max_results {
+                                    if i >= max_results {
                                         break
                                     }
 
@@ -204,8 +204,14 @@ make_grep_panel :: proc() -> core.Panel {
                                             style.background_color = .Background2
                                         }
 
-                                        ui.open_element(s, result.file_path[len(state.directory):], {}, style)
-                                        ui.close_element(s)
+                                        if len(result.file_path) > 0 {
+                                            ui.open_element(s, result.file_path[len(state.directory):], {}, style)
+                                            ui.close_element(s)
+                                        } else {
+                                            style.background_color = .BrightRed
+                                            ui.open_element(s, "BAD FILE DIRECTORY", {}, style)
+                                            ui.close_element(s)
+                                        }
                                     }
                                 }
                             }
