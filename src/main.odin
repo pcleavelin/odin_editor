@@ -286,9 +286,7 @@ main :: proc() {
         log.error("SDL failed to initialize:", sdl2.GetError());
         return;
     }
-    defer {
-        sdl2.Quit();
-    }
+    defer sdl2.Quit()
 
     if ttf.Init() < 0 {
         log.error("SDL_TTF failed to initialize:", ttf.GetError());

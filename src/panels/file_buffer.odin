@@ -188,6 +188,25 @@ file_buffer_go_actions :: proc(input_map: ^core.InputActions) {
     }, "move to end of line");
 }
 
+file_buffer_delete_actions :: proc(input_map: ^core.InputActions) {
+    core.register_key_action(input_map, .D, proc(state: ^core.State, user_data: rawptr) {
+        buffer := &(&(transmute(^core.Panel)user_data).type.(core.FileBufferPanel)).buffer
+
+        core.push_new_snapshot(&buffer.history)
+
+        buffer.selection = core.new_selection(buffer.history.cursor);
+        sel_cur := &(buffer.selection.?);
+
+        core.move_cursor_start_of_line(buffer, cursor = &sel_cur.start);
+        core.move_cursor_end_of_line(buffer, cursor = &sel_cur.end, stop_at_end = false);
+
+        core.delete_content_from_selection(buffer, sel_cur)
+
+        buffer.selection = nil;
+        core.reset_input_map(state)
+    }, "delete whole line");
+}
+
 file_buffer_input_actions :: proc(input_map: ^core.InputActions) {
     // Cursor Movement
     {
@@ -272,6 +291,10 @@ file_buffer_input_actions :: proc(input_map: ^core.InputActions) {
     go_actions := core.new_input_actions(show_help = true)
     file_buffer_go_actions(&go_actions);
     core.register_key_action(input_map, .G, go_actions, "Go commands");
+
+    delete_actions := core.new_input_actions(show_help = true)
+    file_buffer_delete_actions(&delete_actions);
+    core.register_key_action(input_map, .D, delete_actions, "Delete commands");
 
     core.register_key_action(input_map, .V, proc(state: ^core.State, user_data: rawptr) {
         buffer := &(&(transmute(^core.Panel)user_data).type.(core.FileBufferPanel)).buffer
