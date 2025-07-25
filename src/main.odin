@@ -25,24 +25,6 @@ FileBuffer :: core.FileBuffer;
 
 state := core.State {};
 
-do_normal_mode :: proc(state: ^State, buffer: ^FileBuffer) {
-}
-
-do_insert_mode :: proc(state: ^State, buffer: ^FileBuffer) {
-    key := 0;
-
-    for key > 0 {
-        if key >= 32 && key <= 125 && len(buffer.input_buffer) < 1024-1 {
-            append(&buffer.input_buffer, u8(key));
-        }
-
-        key = 0;
-    }
-}
-
-do_visual_mode :: proc(state: ^State, buffer: ^FileBuffer) {
-}
-
 ui_font_width :: proc() -> i32 {
     return i32(state.source_font_width);
 }
@@ -444,22 +426,47 @@ main :: proc() {
                                     case .ESCAPE: {
                                         state.mode = .Normal;
 
-                                        core.insert_content(buffer, buffer.input_buffer[:]);
-                                        runtime.clear(&buffer.input_buffer);
+                                        // core.insert_content(buffer, buffer.input_buffer[:]);
+                                        // runtime.clear(&buffer.input_buffer);
+                                        core.move_cursor_left(buffer)
 
                                         sdl2.StopTextInput();
                                     }
                                     case .TAB: {
                                         // TODO: change this to insert a tab character
-                                        for _ in 0..<4 {
-                                            append(&buffer.input_buffer, ' ');
+                                        // for _ in 0..<4 {
+                                        //     append(&buffer.input_buffer, ' ');
+                                        // }
+                                        core.insert_content(buffer, transmute([]u8)string("    "))
+
+                                        if current_panel, ok := state.current_panel.?; ok {
+                                            if panel, ok := util.get(&state.panels, current_panel).?; ok && panel.on_buffer_input != nil {
+                                                panel->on_buffer_input(&state)
+                                            }
                                         }
                                     }
                                     case .BACKSPACE: {
                                         core.delete_content(buffer, 1);
+
+                                        if current_panel, ok := state.current_panel.?; ok {
+                                            if panel, ok := util.get(&state.panels, current_panel).?; ok && panel.on_buffer_input != nil {
+                                                panel->on_buffer_input(&state)
+                                            }
+                                        }
                                     }
                                     case .ENTER: {
-                                        append(&buffer.input_buffer, '\n');
+                                        indent := core.get_buffer_indent(buffer)
+                                        core.insert_content(buffer, []u8{'\n'})
+
+                                        for i in 0..<indent {
+                                            core.insert_content(buffer, []u8{' '})
+                                        }
+
+                                        if current_panel, ok := state.current_panel.?; ok {
+                                            if panel, ok := util.get(&state.panels, current_panel).?; ok && panel.on_buffer_input != nil {
+                                                panel->on_buffer_input(&state)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -471,8 +478,9 @@ main :: proc() {
                                     break;
                                 }
 
-                                if char >= 32 && char <= 125 && len(buffer.input_buffer) < 1024-1 {
-                                    append(&buffer.input_buffer, u8(char));
+                                if char >= 32 && char <= 125 {
+                                    // append(&buffer.input_buffer, u8(char));
+                                    core.insert_content(buffer, []u8{char})
                                 }
                             }
 
@@ -488,18 +496,6 @@ main :: proc() {
         }
 
         draw(&state);
-
-        switch state.mode {
-            case .Normal:
-                buffer := core.current_buffer(&state);
-                do_normal_mode(&state, buffer);
-            case .Insert:
-                buffer := core.current_buffer(&state);
-                do_insert_mode(&state, buffer);
-            case .Visual:
-                buffer := core.current_buffer(&state);
-                do_visual_mode(&state, buffer);
-        }
 
         runtime.free_all(context.temp_allocator);
     }

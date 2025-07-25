@@ -55,8 +55,6 @@ FileBuffer :: struct {
 
     history: FileHistory,
     glyphs: GlyphBuffer,
-
-    input_buffer: [dynamic]u8,
 }
 
 BufferFlagSet :: bit_set[BufferFlags]
@@ -712,7 +710,6 @@ new_virtual_file_buffer :: proc(allocator := context.allocator) -> FileBuffer {
         history = make_history(),
 
         glyphs = make_glyph_buffer(width, height),
-        input_buffer = make([dynamic]u8, 0, 1024),
     };
 
     return buffer;
@@ -776,7 +773,6 @@ new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: s
             history = make_history(content),
 
             glyphs = make_glyph_buffer(width, height),
-            input_buffer = make([dynamic]u8, 0, 1024),
         };
 
         ts.parse_buffer(&buffer.tree, tree_sitter_file_buffer_input(&buffer))
@@ -834,7 +830,6 @@ free_file_buffer :: proc(buffer: ^FileBuffer) {
     ts.delete_state(&buffer.tree)
     free_history(&buffer.history)
     delete(buffer.glyphs.buffer)
-    delete(buffer.input_buffer)
 }
 
 color_character :: proc(buffer: ^FileBuffer, start: Cursor, end: Cursor, palette_index: theme.PaletteColor) {
@@ -906,26 +901,6 @@ draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x, y, w, h: int, sh
             draw_rect(state, start_sel_x, start_sel_y, state.source_font_width, state.source_font_height, .Green);
             draw_rect(state, end_sel_x, end_sel_y, state.source_font_width, state.source_font_height, .Blue);
         } else if state.mode == .Insert {
-            draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Green);
-
-            num_line_break := 0;
-            line_length := 0;
-            for c in buffer.input_buffer {
-                if c == '\n' {
-                    num_line_break += 1;
-                    line_length = 0;
-                } else {
-                    line_length += 1;
-                }
-            }
-
-            if num_line_break > 0 {
-                cursor_x = x + padding + line_length * state.source_font_width;
-                cursor_y = cursor_y + num_line_break * state.source_font_height;
-            } else {
-                cursor_x += line_length * state.source_font_width;
-            }
-
             draw_rect(state, cursor_x, cursor_y, state.source_font_width, state.source_font_height, .Blue);
         }
     }
@@ -1007,42 +982,33 @@ scroll_file_buffer :: proc(buffer: ^FileBuffer, dir: ScrollDir, cursor: Maybe(^C
     }
 }
 
-insert_content :: proc(buffer: ^FileBuffer, to_be_inserted: []u8, append_to_end: bool = false) {
+insert_content :: proc(buffer: ^FileBuffer, to_be_inserted: []u8) {
     if len(to_be_inserted) == 0 {
         return;
     }
     buffer.flags += { .UnsavedChanges }
 
-    index := buffer.history.cursor.index if !append_to_end else new_piece_table_index_from_end(buffer_piece_table(buffer))
+    index := buffer.history.cursor.index
 
     insert_text(buffer_piece_table(buffer), to_be_inserted, buffer.history.cursor.index)
 
-    if !append_to_end {
-        update_file_buffer_index_from_cursor(buffer);
-        move_cursor_right(buffer, false, amt = len(to_be_inserted) - 1);
-    }
+    update_file_buffer_index_from_cursor(buffer);
+    move_cursor_right(buffer, false, amt = len(to_be_inserted));
 
     ts.parse_buffer(&buffer.tree, tree_sitter_file_buffer_input(buffer))
 }
 
 delete_content_from_buffer_cursor :: proc(buffer: ^FileBuffer, amount: int) {
-    if amount <= len(buffer.input_buffer) {
-        runtime.resize(&buffer.input_buffer, len(buffer.input_buffer)-amount);
-    } else {
-        buffer.flags += { .UnsavedChanges }
+    buffer.flags += { .UnsavedChanges }
 
-        amount := amount - len(buffer.input_buffer);
-        runtime.clear(&buffer.input_buffer);
+    // Calculate proper line/col values
+    it := new_file_buffer_iter_with_cursor(buffer, buffer.history.cursor);
+    iterate_file_buffer_reverse(&it)
 
-        // Calculate proper line/col values
-        it := new_file_buffer_iter_with_cursor(buffer, buffer.history.cursor);
-        iterate_file_buffer_reverse(&it)
+    delete_text(buffer_piece_table(buffer), &buffer.history.cursor.index)
 
-        delete_text(buffer_piece_table(buffer), &buffer.history.cursor.index)
-
-        buffer.history.cursor.line = it.cursor.line
-        buffer.history.cursor.col = it.cursor.col
-    }
+    buffer.history.cursor.line = it.cursor.line
+    buffer.history.cursor.col = it.cursor.col
 
     ts.parse_buffer(&buffer.tree, tree_sitter_file_buffer_input(buffer))
 }
@@ -1067,3 +1033,43 @@ delete_content_from_selection :: proc(buffer: ^FileBuffer, selection: ^Selection
 
 delete_content :: proc{delete_content_from_buffer_cursor, delete_content_from_selection};
 
+get_buffer_indent :: proc(buffer: ^FileBuffer, cursor: Maybe(Cursor) = nil) -> int {
+    cursor := cursor;
+
+    if cursor == nil {
+        cursor = buffer.history.cursor;
+    }
+
+    ptr_cursor := &cursor.?
+
+    move_cursor_start_of_line(buffer, ptr_cursor)
+    move_cursor_forward_end_of_word(buffer, ptr_cursor)
+    move_cursor_backward_start_of_word(buffer, ptr_cursor)
+
+    return cursor.?.col
+}
+
+buffer_to_string :: proc(buffer: ^FileBuffer, allocator := context.allocator) -> string {
+    context.allocator = allocator
+
+    length := 0
+    for chunk in buffer_piece_table(buffer).chunks {
+        length += len(chunk)
+    }
+
+    buffer_contents := make([]u8, length)
+
+    offset := 0
+    for chunk in buffer_piece_table(buffer).chunks {
+        for c in chunk {
+            buffer_contents[offset] = c
+            offset += 1
+        }
+    }
+
+    return string(buffer_contents[:len(buffer_contents)-1])
+}
+
+buffer_append_new_line :: proc(buffer: ^FileBuffer) {
+
+}

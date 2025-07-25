@@ -61,25 +61,26 @@ update_glyph_buffer_from_file_buffer :: proc(buffer: ^FileBuffer, width, height:
         // don't render past the screen
         if rendered_line >= begin && screen_line >= buffer.glyphs.height { break; }
 
-        // render INSERT mode text into glyph buffer
-        if len(buffer.input_buffer) > 0 && rendered_line == buffer.history.cursor.line && rendered_col >= buffer.history.cursor.col && rendered_col < buffer.history.cursor.col + len(buffer.input_buffer) {
-            for k in 0..<len(buffer.input_buffer) {
-                screen_line = rendered_line - begin;
+        // NOTE: `input_buffer` doesn't exist anymore, but this is a nice reference for just inserting text within the glyph buffer
+        //
+        // if len(buffer.input_buffer) > 0 && rendered_line == buffer.history.cursor.line && rendered_col >= buffer.history.cursor.col && rendered_col < buffer.history.cursor.col + len(buffer.input_buffer) {
+        //     for k in 0..<len(buffer.input_buffer) {
+        //         screen_line = rendered_line - begin;
 
-                if buffer.input_buffer[k] == '\n' {
-                    rendered_col = 0;
-                    rendered_line += 1;
-                    continue;
-                }
+        //         if buffer.input_buffer[k] == '\n' {
+        //             rendered_col = 0;
+        //             rendered_line += 1;
+        //             continue;
+        //         }
 
-                if rendered_line >= begin && rendered_col < buffer.glyphs.width {
-                    buffer.glyphs.buffer[rendered_col + screen_line * buffer.glyphs.width].color = .Foreground;
-                    buffer.glyphs.buffer[rendered_col + screen_line * buffer.glyphs.width].codepoint = buffer.input_buffer[k];
+        //         if rendered_line >= begin && rendered_col < buffer.glyphs.width {
+        //             buffer.glyphs.buffer[rendered_col + screen_line * buffer.glyphs.width].color = .Foreground;
+        //             buffer.glyphs.buffer[rendered_col + screen_line * buffer.glyphs.width].codepoint = buffer.input_buffer[k];
 
-                    rendered_col += 1;
-                }
-            }
-        }
+        //             rendered_col += 1;
+        //         }
+        //     }
+        // }
 
         screen_line = rendered_line - begin;
 

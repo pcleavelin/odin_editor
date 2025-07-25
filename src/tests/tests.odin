@@ -270,7 +270,6 @@ insert_before_slice :: proc(t: ^testing.T) {
     run_text_insertion(&e, " rich")
 
     expect_line_col(t, buffer.history.cursor, 0, 20)
-    expect_cursor_index(t, buffer.history.cursor, 2, 4)
 
     contents := buffer_to_string(core.current_buffer(&e))
     defer delete(contents)
@@ -346,8 +345,7 @@ delete_in_slice :: proc(t: ^testing.T) {
     run_input_multiple(&e, press_key(.BACKSPACE), 3)
     run_input_multiple(&e, press_key(.ESCAPE), 1)
 
-    expect_line_col(t, buffer.history.cursor, 0, 17)
-    expect_cursor_index(t, buffer.history.cursor, 3, 0)
+    expect_line_col(t, buffer.history.cursor, 0, 16)
 
     contents := buffer_to_string(core.current_buffer(&e))
     defer delete(contents)
@@ -387,15 +385,14 @@ delete_across_slices :: proc(t: ^testing.T) {
     run_input_multiple(&e, press_key(.ESCAPE), 1)
 
     // Move right, passed the 'h' on to the space before 'world!'
-    run_input_multiple(&e, press_key(.L), 1)
+    run_input_multiple(&e, press_key(.L), 2)
 
     // Remove the ' h', which consists of two content slices
     run_input_multiple(&e, press_key(.I), 1)
     run_input_multiple(&e, press_key(.BACKSPACE), 2)
     run_input_multiple(&e, press_key(.ESCAPE), 1)
 
-    expect_line_col(t, buffer.history.cursor, 0, 16)
-    expect_cursor_index(t, buffer.history.cursor, 2, 0)
+    expect_line_col(t, buffer.history.cursor, 0, 15)
 
     contents := buffer_to_string(core.current_buffer(&e))
     defer delete(contents)
@@ -632,14 +629,12 @@ append_end_of_line :: proc(t: ^testing.T) {
     run_input_multiple(&e, press_key(.A), 1)
     run_input_multiple(&e, press_key(.ESCAPE), 1)
 
-    expect_line_col(t, buffer.history.cursor, 0, 5)
-    expect_cursor_index(t, buffer.history.cursor, 1, 0)
+    expect_line_col(t, buffer.history.cursor, 0, 4)
 
     run_input_multiple(&e, press_key(.A), 1)
     run_input_multiple(&e, press_key(.ESCAPE), 1)
 
-    expect_line_col(t, buffer.history.cursor, 0, 5)
-    expect_cursor_index(t, buffer.history.cursor, 1, 0)
+    expect_line_col(t, buffer.history.cursor, 0, 4)
 }
 
 @(test)
@@ -667,15 +662,11 @@ insert_line_under_current :: proc(t: ^testing.T) {
     // Insert line below and enter insert mode
     run_input_multiple(&e, press_key(.O), 1)
 
-    // Technically the cursor is still on the first line, because the `input_buffer`
-    // has been modified but not the actual contents of the filebuffer
-    expect_line_col(t, buffer.history.cursor, 0, 13)
-    expect_cursor_index(t, buffer.history.cursor, 0, 13)
+    expect_line_col(t, buffer.history.cursor, 1, 0)
 
     run_text_insertion(&e, "This is the second line")
 
     expect_line_col(t, buffer.history.cursor, 1, 22)
-    expect_cursor_index(t, buffer.history.cursor, 1, 23)
 
     contents := buffer_to_string(core.current_buffer(&e))
     defer delete(contents)
@@ -812,21 +803,40 @@ run_editor_frame :: proc(state: ^core.State, input: ArtificialInput, is_ctrl_pre
                             #partial switch key.key {
                                 case .ESCAPE: {
                                     state.mode = .Normal;
-
-                                    core.insert_content(buffer, buffer.input_buffer[:]);
-                                    runtime.clear(&buffer.input_buffer);
+                                    core.move_cursor_left(buffer)
                                 }
                                 case .TAB: {
                                     // TODO: change this to insert a tab character
-                                    for _ in 0..<4 {
-                                        append(&buffer.input_buffer, ' ');
+                                    core.insert_content(buffer, transmute([]u8)string("    "))
+
+                                    if current_panel, ok := state.current_panel.?; ok {
+                                        if panel, ok := util.get(&state.panels, current_panel).?; ok && panel.on_buffer_input != nil {
+                                            panel->on_buffer_input(state)
+                                        }
                                     }
                                 }
                                 case .BACKSPACE: {
                                     core.delete_content(buffer, 1);
+
+                                    if current_panel, ok := state.current_panel.?; ok {
+                                        if panel, ok := util.get(&state.panels, current_panel).?; ok && panel.on_buffer_input != nil {
+                                            panel->on_buffer_input(state)
+                                        }
+                                    }
                                 }
                                 case .ENTER: {
-                                    append(&buffer.input_buffer, '\n');
+                                    indent := core.get_buffer_indent(buffer)
+                                    core.insert_content(buffer, []u8{'\n'})
+
+                                    for i in 0..<indent {
+                                        core.insert_content(buffer, []u8{' '})
+                                    }
+
+                                    if current_panel, ok := state.current_panel.?; ok {
+                                        if panel, ok := util.get(&state.panels, current_panel).?; ok && panel.on_buffer_input != nil {
+                                            panel->on_buffer_input(state)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -839,8 +849,8 @@ run_editor_frame :: proc(state: ^core.State, input: ArtificialInput, is_ctrl_pre
                             break;
                         }
 
-                        if char == '\n' || (char >= 32 && char <= 125 && len(buffer.input_buffer) < 1024-1) {
-                            append(&buffer.input_buffer, u8(char));
+                        if char == '\n' || (char >= 32 && char <= 125) {
+                            core.insert_content(buffer, []u8{u8(char)})
                         }
                     }
 
@@ -854,30 +864,5 @@ run_editor_frame :: proc(state: ^core.State, input: ArtificialInput, is_ctrl_pre
         }
     }
     
-    // TODO: share this with the main application
-    do_insert_mode :: proc(state: ^core.State, buffer: ^core.FileBuffer) {
-        key := 0;
-
-        for key > 0 {
-            if key >= 32 && key <= 125 && len(buffer.input_buffer) < 1024-1 {
-                append(&buffer.input_buffer, u8(key));
-            }
-
-            key = 0;
-        }
-    }
-
-    switch state.mode {
-        case .Normal:
-            // buffer := core.current_buffer(state);
-            // do_normal_mode(state, buffer);
-        case .Insert:
-            buffer := core.current_buffer(state);
-            do_insert_mode(state, buffer);
-        case .Visual:
-            // buffer := core.current_buffer(state);
-            // do_visual_mode(state, buffer);
-    }
-
     runtime.free_all(context.temp_allocator);
 }

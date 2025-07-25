@@ -137,8 +137,6 @@ current_buffer :: proc(state: ^State) -> ^FileBuffer {
 }
 
 yank_whole_line :: proc(state: ^State, buffer: ^FileBuffer) {
-    context.allocator = buffer.allocator
-
     if state.yank_register.data != nil {
         delete(state.yank_register.data)
         state.yank_register.data = nil
@@ -171,7 +169,12 @@ yank_selection :: proc(state: ^State, buffer: ^FileBuffer) {
     length := selection_length(buffer, selection)
 
     state.yank_register.whole_line = false
-    state.yank_register.data = make([]u8, length)
+
+    err: runtime.Allocator_Error
+    state.yank_register.data, err = make([]u8, length)
+    if err != nil {
+        log.error("failed to allocate memory for yank register")
+    }
 
     it := new_file_buffer_iter_with_cursor(buffer, selection.start)
 

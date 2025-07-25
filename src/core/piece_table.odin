@@ -3,6 +3,8 @@ package core
 PieceTable :: struct {
     original_content: []u8,
     added_content: [dynamic]u8,
+
+    // TODO: don't actually reference `added_content` and `original_content` via pointers, since they can be re-allocated
     chunks: [dynamic][]u8,
 }
 
@@ -158,7 +160,19 @@ insert_text :: proc(t: ^PieceTable, to_be_inserted: []u8, index: PieceTableIndex
     if index.char_index == 0 {
         // insertion happening in beginning of content slice
 
-        inject_at(&t.chunks, index.chunk_index, inserted_slice);
+        if len(t.chunks) > 1 && index.chunk_index > 0 {
+            last_chunk_index := len(t.chunks[index.chunk_index-1])-1
+
+            if (&t.chunks[index.chunk_index-1][last_chunk_index]) == (&t.added_content[len(t.added_content)-1 - length]) {
+                start := len(t.added_content)-1 - last_chunk_index - length
+                
+                t.chunks[index.chunk_index-1] = t.added_content[start:]
+            } else {
+                inject_at(&t.chunks, index.chunk_index, inserted_slice);
+            }
+        } else {
+            inject_at(&t.chunks, index.chunk_index, inserted_slice);
+        }
     }
     else {
         // insertion is happening in middle of content slice

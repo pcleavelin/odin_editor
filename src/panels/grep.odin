@@ -21,7 +21,7 @@ open_grep_panel :: proc(state: ^core.State) {
 }
 
 make_grep_panel :: proc() -> core.Panel {
-    run_query :: proc(panel_state: ^core.GrepPanel, query: string, directory: string) {
+    run_query :: proc(panel_state: ^core.GrepPanel, buffer: ^core.FileBuffer, directory: string) {
         if panel_state.query_region.arena != nil {
             mem.end_arena_temp_memory(panel_state.query_region)
         }
@@ -30,7 +30,7 @@ make_grep_panel :: proc() -> core.Panel {
         context.allocator = mem.arena_allocator(&panel_state.query_arena)
 
         rs_results := grep(
-            strings.clone_to_cstring(query),
+            strings.clone_to_cstring(core.buffer_to_string(buffer)),
             strings.clone_to_cstring(directory)
         );
 
@@ -142,7 +142,7 @@ make_grep_panel :: proc() -> core.Panel {
         },
         on_buffer_input = proc(panel: ^core.Panel, state: ^core.State) {
             if panel_state, ok := &panel.type.(core.GrepPanel); ok {
-                run_query(panel_state, string(panel_state.buffer.input_buffer[:]), state.directory)
+                run_query(panel_state, &panel_state.buffer, state.directory)
             }
         },
         render = proc(panel: ^core.Panel, state: ^core.State) -> (ok: bool) {

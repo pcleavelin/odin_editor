@@ -32,10 +32,11 @@ new_logger :: proc(buffer: ^FileBuffer) -> runtime.Logger {
 logger_proc :: proc(data: rawptr, level: runtime.Logger_Level, text: string, options: runtime.Logger_Options, location := #caller_location) {
     buffer := cast(^FileBuffer)data;
 
-   if .Level in options {
-       insert_content(buffer, transmute([]u8)(Level_Header[level]), true);
-   } 
+    // FIXME
+    // if .Level in options {
+    //     insert_content(buffer, transmute([]u8)(Level_Header[level]), true);
+    // } 
 
-   insert_content(buffer, transmute([]u8)(text), true);
-   insert_content(buffer, {'\n'}, true);
+    // insert_content(buffer, transmute([]u8)(text), true);
+    // insert_content(buffer, {'\n'}, true);
 }

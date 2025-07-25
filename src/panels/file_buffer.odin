@@ -502,10 +502,23 @@ file_buffer_text_input_actions :: proc(input_map: ^core.InputActions) {
         core.push_new_snapshot(&buffer.history)
 
         if buffer := buffer; buffer != nil {
-            core.move_cursor_end_of_line(buffer, false);
-            runtime.clear(&buffer.input_buffer)
+            core.move_cursor_end_of_line(buffer);
+            
+            char := core.get_character_at_piece_table_index(core.buffer_piece_table(buffer), buffer.history.cursor.index)
+            indent := core.get_buffer_indent(buffer)
+            if char == '{' {
+                // TODO: update tab to be configurable
+                indent += 4
+            }
 
-            append(&buffer.input_buffer, '\n')
+            if char != '\n' {
+                core.move_cursor_right(buffer, stop_at_end = false)
+            }
+
+            core.insert_content(buffer, []u8{'\n'})
+            for i in 0..<indent {
+                core.insert_content(buffer, []u8{' '})
+            }
 
             state.mode = .Insert;
 
@@ -534,9 +547,8 @@ file_buffer_text_input_actions :: proc(input_map: ^core.InputActions) {
             core.push_new_snapshot(&buffer.history)
 
             if state.yank_register.whole_line {
-                core.move_cursor_end_of_line(buffer, false);
+                core.move_cursor_end_of_line(buffer, stop_at_end = false);
                 core.insert_content(buffer, []u8{'\n'});
-                core.move_cursor_right(buffer, false);
             } else {
                 core.move_cursor_right(buffer)
             }
