@@ -19,6 +19,7 @@ new_test_editor :: proc() -> core.State {
         source_font_height = 16,
 
         panels = util.make_static_list(core.Panel, 128),
+        buffers = util.make_static_list(core.FileBuffer, 64),
 
         directory = "test_directory",
     };

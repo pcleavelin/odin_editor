@@ -160,6 +160,7 @@ main :: proc() {
         command_arena = mem.arena_allocator(&_command_arena),
 
         panels = util.make_static_list(core.Panel, 128),
+        buffers = util.make_static_list(core.FileBuffer, 64),
 
         directory = os.get_current_directory(),
         log_buffer = core.new_virtual_file_buffer(context.allocator),

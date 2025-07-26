@@ -51,6 +51,7 @@ State :: struct {
 
     current_panel: Maybe(int),
     panels: util.StaticList(Panel),
+    buffers: util.StaticList(FileBuffer),
 }
 
 Register :: struct {
@@ -100,7 +101,7 @@ PanelType :: union {
 }
 
 FileBufferPanel :: struct {
-    buffer: FileBuffer,
+    buffer_id: int,
     viewed_symbol: Maybe(string),
 
     search_buffer: FileBuffer,
@@ -141,6 +142,26 @@ current_buffer :: proc(state: ^State) -> ^FileBuffer {
     }
 
     return nil
+}
+
+new_buffer_virtual :: proc(state: ^State) -> (id: int, buffer: ^FileBuffer, ok: bool) {
+    return util.append(&state.buffers, new_virtual_file_buffer(context.allocator))
+}
+
+new_buffer_file :: proc(state: ^State, file_path: string) -> (id: int, buffer: ^FileBuffer, ok: bool) {
+    new_buffer, err := new_file_buffer(context.allocator, file_path, state.directory)
+    if err.type != .None {
+        ok = false
+        return
+    }
+
+    return util.append(&state.buffers, new_buffer)
+}
+
+new_buffer :: proc{new_buffer_file, new_buffer_virtual}
+
+get_buffer :: proc(state: ^State, buffer_id: int) -> Maybe(^FileBuffer) {
+    return util.get(&state.buffers, buffer_id)
 }
 
 yank_whole_line :: proc(state: ^State, buffer: ^FileBuffer) {
