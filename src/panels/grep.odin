@@ -29,20 +29,26 @@ make_grep_panel :: proc() -> core.Panel {
 
         context.allocator = mem.arena_allocator(&panel_state.query_arena)
 
-        rs_results := grep(
-            strings.clone_to_cstring(core.buffer_to_string(buffer)),
-            strings.clone_to_cstring(directory)
-        );
+        search_query := core.buffer_to_string(buffer)
+        if len(search_query) > 0 {
+            rs_results := grep(
+                strings.clone_to_cstring(search_query),
+                strings.clone_to_cstring(directory)
+            );
 
-        panel_state.query_results = rs_grep_as_results(&rs_results)
+            panel_state.query_results = rs_grep_as_results(&rs_results)
 
-        panel_state.selected_result = 0
-        if len(panel_state.query_results) > 0 {
-            core.update_glyph_buffer_from_bytes(
-                &panel_state.glyphs,
-                transmute([]u8)panel_state.query_results[panel_state.selected_result].file_context,
-                panel_state.query_results[panel_state.selected_result].line,
-            )
+            panel_state.selected_result = 0
+            if len(panel_state.query_results) > 0 {
+                core.update_glyph_buffer_from_bytes(
+                    &panel_state.glyphs,
+                    transmute([]u8)panel_state.query_results[panel_state.selected_result].file_context,
+                    panel_state.query_results[panel_state.selected_result].line,
+                )
+            }
+        } else {
+            panel_state.selected_result = 0 
+            panel_state.query_results = nil
         }
     }
 
@@ -259,6 +265,7 @@ foreign import grep_lib "../pkg/grep_lib/target/debug/libgrep.a"
 @(default_calling_convention = "c")
 foreign grep_lib {
 	grep :: proc (pattern: cstring, directory: cstring) -> RS_GrepResults ---
+	grep_buffer :: proc (pattern: cstring, it: ^core.FileBufferIter, func: proc "c" (it: ^core.FileBufferIter) -> core.FileBufferIterResult) -> RS_GrepResults ---
     free_grep_results :: proc(results: RS_GrepResults) ---
 }
 

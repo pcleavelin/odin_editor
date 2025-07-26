@@ -102,6 +102,20 @@ recover_snapshot :: proc(history: ^FileHistory) {
     history.cursor = history.snapshots[history.next].cursor
 }
 
+first_snapshot :: proc(history: ^FileHistory) {
+    context.allocator = history.allocator
+
+    new_next :: 0
+
+    if history.snapshots[new_next].chunks == nil do return
+    history.next = new_next
+
+    delete(history.piece_table.chunks)
+
+    history.piece_table.chunks = clone_chunk(history.snapshots[history.next].chunks)
+    history.cursor = history.snapshots[history.next].cursor
+}
+
 clone_chunk :: proc(chunks: [dynamic][]u8) -> [dynamic][]u8 {
     new_chunks := make([dynamic][]u8, len(chunks), len(chunks))
 

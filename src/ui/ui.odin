@@ -451,9 +451,9 @@ draw :: proc(state: ^State, core_state: ^core.State) {
         if .Right in e.style.border {
             core.draw_line(
                 core_state,
-                e.layout.pos.x + e.layout.size.x,
+                e.layout.pos.x + e.layout.size.x - 1,
                 e.layout.pos.y,
-                e.layout.pos.x + e.layout.size.x,
+                e.layout.pos.x + e.layout.size.x - 1,
                 e.layout.pos.y + e.layout.size.y,
                 e.style.border_color,
             )

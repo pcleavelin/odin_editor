@@ -7,6 +7,7 @@ editor: grep src/**/*.odin
 	odin build src/ -out:bin/editor -debug
 
 grep:
+	cargo fmt --manifest-path "src/pkg/grep_lib/Cargo.toml"
 	cargo build --manifest-path "src/pkg/grep_lib/Cargo.toml"
 
 test: src/**/*.odin

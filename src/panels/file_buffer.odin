@@ -3,6 +3,8 @@ package panels
 import "base:runtime"
 import "core:log"
 import "core:fmt"
+import "core:mem"
+import "core:strings"
 import "core:path/filepath"
 
 import "vendor:sdl2"
@@ -12,6 +14,26 @@ import "../core"
 import "../ui"
 
 make_file_buffer_panel :: proc(file_path: string, line: int = 0, col: int = 0) -> core.Panel {
+    run_query :: proc(panel_state: ^core.FileBufferPanel, buffer: ^core.FileBuffer) {
+        if panel_state.query_region.arena != nil {
+            mem.end_arena_temp_memory(panel_state.query_region)
+        }
+        panel_state.query_region = mem.begin_arena_temp_memory(&panel_state.query_arena)
+
+        context.allocator = mem.arena_allocator(&panel_state.query_arena)
+
+        it := core.new_file_buffer_iter(buffer)
+
+        rs_results := grep_buffer(
+            strings.clone_to_cstring(core.buffer_to_string(&panel_state.search_buffer)),
+            &it,
+            core.iterate_file_buffer_c
+        );
+
+        panel_state.selected_result = 0
+        panel_state.query_results = rs_grep_as_results(&rs_results)
+    }
+
     return core.Panel {
         type = core.FileBufferPanel {
             file_path = file_path,
@@ -27,7 +49,16 @@ make_file_buffer_panel :: proc(file_path: string, line: int = 0, col: int = 0) -
             context.allocator = panel.allocator
 
             panel_state := &panel.type.(core.FileBufferPanel)
+
+            arena_bytes, err := make([]u8, 1024*1024*2)
+            if err != nil {
+                log.errorf("failed to allocate arena for file buffer panel: '%v'", err)
+                return
+            }
+            mem.arena_init(&panel_state.query_arena, arena_bytes)
+
             panel.input_map = core.new_input_map()
+            panel_state.search_buffer = core.new_virtual_file_buffer(panel.allocator)
 
             if len(panel_state.file_path) == 0 {
                 panel_state.buffer = core.new_virtual_file_buffer(panel.allocator)
@@ -62,31 +93,61 @@ make_file_buffer_panel :: proc(file_path: string, line: int = 0, col: int = 0) -
         buffer = proc(panel: ^core.Panel, state: ^core.State) -> (buffer: ^core.FileBuffer, ok: bool) {
             panel_state := &panel.type.(core.FileBufferPanel)
 
-            return &panel_state.buffer, true
+            if panel_state.is_searching {
+                return &panel_state.search_buffer, true
+            } else {
+                return &panel_state.buffer, true
+            }
+        },
+        on_buffer_input = proc(panel: ^core.Panel, state: ^core.State) {
+            panel_state := &panel.type.(core.FileBufferPanel)
+            run_query(panel_state, &panel_state.buffer)
         },
         render = proc(panel: ^core.Panel, state: ^core.State) -> (ok: bool) {
             panel_state := &panel.type.(core.FileBufferPanel)
 
             s := transmute(^ui.State)state.ui
-            render_file_buffer(state, s, &panel_state.buffer)
 
-            if viewed_symbol, ok := panel_state.viewed_symbol.?; ok {
-                ui.open_element(s, nil,
-                    {
-                        dir = .TopToBottom,
-                        kind = {ui.Fit{}, ui.Fit{}},
-                        floating = true, 
-                    },
-                    style = {
-                        background_color = .Background2,
-                    },
-                )
+            ui.open_element(s, nil,
                 {
-                    ui.open_element(s, viewed_symbol, {})
+                    dir = .TopToBottom,
+                    kind = {ui.Grow{}, ui.Grow{}},
+                },
+            )
+            {
+                render_file_buffer(state, s, &panel_state.buffer)
+                if panel_state.is_searching {
+                    ui.open_element(s, nil,
+                        {
+                            dir = .TopToBottom,
+                            kind = {ui.Grow{}, ui.Exact(state.source_font_height)},
+                        },
+                    )
+                    {
+                        render_raw_buffer(state, s, &panel_state.search_buffer)
+                    }
                     ui.close_element(s)
                 }
-                ui.close_element(s)
+
+                if viewed_symbol, ok := panel_state.viewed_symbol.?; ok {
+                    ui.open_element(s, nil,
+                        {
+                            dir = .TopToBottom,
+                            kind = {ui.Fit{}, ui.Fit{}},
+                            floating = true, 
+                        },
+                        style = {
+                            background_color = .Background2,
+                        },
+                    )
+                    {
+                        ui.open_element(s, viewed_symbol, {})
+                        ui.close_element(s)
+                    }
+                    ui.close_element(s)
+                }
             }
+            ui.close_element(s)
 
             return true
         }
@@ -114,6 +175,11 @@ render_file_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileB
             ui.UI_Element_Kind_Custom{fn = draw_func, user_data = transmute(rawptr)buffer},
             {
                 kind = {ui.Grow{}, ui.Grow{}}
+            },
+            style = {
+                border = {.Left, .Right, .Top, .Bottom},
+                border_color = .Background4,
+                background_color = .Background1,
             },
         )
         ui.close_element(s)
@@ -296,6 +362,20 @@ file_buffer_input_actions :: proc(input_map: ^core.InputActions) {
     file_buffer_delete_actions(&delete_actions);
     core.register_key_action(input_map, .D, delete_actions, "Delete commands");
 
+    core.register_key_action(input_map, .SLASH, proc(state: ^core.State, user_data: rawptr) {
+        panel_state := &(transmute(^core.Panel)user_data).type.(core.FileBufferPanel)
+
+        core.first_snapshot(&panel_state.search_buffer.history)
+        core.push_new_snapshot(&panel_state.search_buffer.history)
+
+        core.reset_input_map(state)
+
+        state.mode = .Insert;
+        sdl2.StartTextInput();
+
+        panel_state.is_searching = true
+    }, "search buffer")
+
     core.register_key_action(input_map, .V, proc(state: ^core.State, user_data: rawptr) {
         buffer := &(&(transmute(^core.Panel)user_data).type.(core.FileBufferPanel)).buffer
 
@@ -308,9 +388,34 @@ file_buffer_input_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .ESCAPE, proc(state: ^core.State, user_data: rawptr) {
         panel := transmute(^core.Panel)user_data
         panel_state := &panel.type.(core.FileBufferPanel)
-        buffer := &panel_state.buffer
+
+        if panel_state.is_searching {
+            panel_state.is_searching = false
+            sdl2.StopTextInput()
+        }
 
         panel_state.viewed_symbol = nil
+    });
+
+    core.register_key_action(input_map, .N, proc(state: ^core.State, user_data: rawptr) {
+        panel := transmute(^core.Panel)user_data
+        panel_state := &panel.type.(core.FileBufferPanel)
+
+        if len(panel_state.query_results) > 0 {
+            for result, i in panel_state.query_results {
+                cursor := panel_state.buffer.history.cursor
+
+                if result.line > cursor.line || (result.line == cursor.line && result.col > cursor.col) {
+                    core.move_cursor_to_location(&panel_state.buffer, result.line, result.col)
+                    break
+                }
+
+                if i == len(panel_state.query_results)-1 {
+                    result := panel_state.query_results[0]
+                    core.move_cursor_to_location(&panel_state.buffer, result.line, result.col)
+                }
+            }
+        }
     });
 }
 

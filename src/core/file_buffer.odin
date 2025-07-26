@@ -97,6 +97,22 @@ file_buffer_end :: proc(buffer: ^FileBuffer) -> Cursor {
     };
 }
 
+FileBufferIterResult :: struct {
+    character: u8,
+    done: bool,
+}
+
+iterate_file_buffer_c :: proc "c" (it: ^FileBufferIter) -> FileBufferIterResult {
+    context = runtime.default_context()
+    
+    character, _, cond := iterate_file_buffer(it)
+    
+    return FileBufferIterResult {
+        character = character,
+        done = !cond,
+    } 
+}
+
 iterate_file_buffer :: proc(it: ^FileBufferIter) -> (character: u8, idx: PieceTableIndex, cond: bool) {
     character, idx, cond = iterate_piece_table_iter(&it.piter)
 
@@ -405,6 +421,27 @@ file_buffer_line_length :: proc(buffer: ^FileBuffer, index: PieceTableIndex) -> 
     return line_length;
 }
 
+move_cursor_to_location :: proc(buffer: ^FileBuffer, line, col: int, cursor: Maybe(^Cursor) = nil) {
+    cursor := cursor;
+
+    if cursor == nil {
+        cursor = &buffer.history.cursor;
+    }
+
+    it := new_file_buffer_iter(buffer);
+    for _ in iterate_file_buffer(&it) {
+        if (it.cursor.line == line && it.cursor.col >= col) || it.cursor.line > line {
+            break;
+        }
+    }
+
+    cursor.?^ = it.cursor
+
+    update_file_buffer_scroll(buffer, cursor)
+
+    buffer.last_col = cursor.?.col
+}
+
 move_cursor_start_of_line :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = nil) {
     cursor := cursor;
 
@@ -541,13 +578,13 @@ move_cursor_left :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = nil) {
         cursor = &buffer.history.cursor;
     }
 
-    buffer.last_col = cursor.?.col
-
     if cursor.?.col > 0 {
         it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
         iterate_file_buffer_reverse(&it);
         cursor.?^ = it.cursor;
     }
+
+    buffer.last_col = cursor.?.col
 }
 
 move_cursor_right :: proc(buffer: ^FileBuffer, stop_at_end: bool = true, amt: int = 1, cursor: Maybe(^Cursor) = nil) {
@@ -556,8 +593,6 @@ move_cursor_right :: proc(buffer: ^FileBuffer, stop_at_end: bool = true, amt: in
     if cursor == nil {
         cursor = &buffer.history.cursor;
     }
-
-    buffer.last_col = cursor.?.col
 
     it := new_file_buffer_iter_with_cursor(buffer, cursor.?^);
     line_length := file_buffer_line_length(buffer, it.cursor.index);
@@ -568,6 +603,8 @@ move_cursor_right :: proc(buffer: ^FileBuffer, stop_at_end: bool = true, amt: in
             cursor.?^ = it.cursor;
         }
     }
+
+    buffer.last_col = cursor.?.col
 }
 
 move_cursor_forward_start_of_word :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = nil) {

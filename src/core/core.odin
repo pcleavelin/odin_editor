@@ -103,6 +103,13 @@ FileBufferPanel :: struct {
     buffer: FileBuffer,
     viewed_symbol: Maybe(string),
 
+    search_buffer: FileBuffer,
+    query_arena: mem.Arena,
+    query_region: mem.Arena_Temp_Memory,
+    query_results: []GrepQueryResult,
+    selected_result: int,
+    is_searching: bool,
+
     // only used for initialization
     file_path: string,
     line, col: int,

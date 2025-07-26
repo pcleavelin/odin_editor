@@ -1,6 +1,6 @@
 use std::{
     error::Error,
-    ffi::CStr,
+    ffi::{CStr, c_void},
 };
 
 use grep::{
@@ -33,32 +33,41 @@ struct Match {
 }
 impl Match {
     fn from_sink_match_with_path(
+        pattern: &str,
         value: &grep::searcher::SinkMatch<'_>,
         path: Option<String>,
-    ) -> Result<Self, SimpleSinkError> {
-        let line = value
-            .lines()
-            .next()
-            .ok_or(SimpleSinkError::NoLine)?
-            .to_vec();
-        let column = value.bytes_range_in_buffer().len() as u64;
+    ) -> Result<Vec<Self>, SimpleSinkError> {
+        let line = String::from_utf8_lossy(value.lines().next().ok_or(SimpleSinkError::NoLine)?);
 
-        Ok(Self {
-            // TODO: only return N-lines of context instead of the entire freakin' buffer
-            text: value.buffer().to_vec(),
-            path: path.unwrap_or_default(),
-            line_number: value.line_number(),
-            column,
-        })
+        Ok(line
+            .match_indices(pattern)
+            .into_iter()
+            .map(|(index, _)| Self {
+                text: value.buffer().to_vec(),
+                path: path.clone().unwrap_or_default(),
+                line_number: value.line_number(),
+                column: index as u64 + 1,
+            })
+            .collect())
     }
 }
 
-#[derive(Default, Debug)]
-struct SimpleSink {
+#[derive(Debug)]
+struct SimpleSink<'a> {
+    search_pattern: &'a str,
     current_path: Option<String>,
     matches: Vec<Match>,
 }
-impl Sink for SimpleSink {
+impl<'a> SimpleSink<'a> {
+    fn new(pattern: &'a str) -> Self {
+        Self {
+            search_pattern: pattern,
+            current_path: None,
+            matches: vec![],
+        }
+    }
+}
+impl Sink for SimpleSink<'_> {
     type Error = SimpleSinkError;
 
     fn matched(
@@ -66,16 +75,47 @@ impl Sink for SimpleSink {
         _searcher: &grep::searcher::Searcher,
         mat: &grep::searcher::SinkMatch<'_>,
     ) -> Result<bool, Self::Error> {
-        self.matches.push(Match::from_sink_match_with_path(
-            mat,
-            self.current_path.clone(),
-        )?);
+        let mut matches =
+            Match::from_sink_match_with_path(self.search_pattern, mat, self.current_path.clone())?;
+
+        self.matches.append(&mut matches);
 
         Ok(true)
     }
 }
 
-fn search(pattern: &str, paths: &[&str]) -> Result<SimpleSink, Box<dyn Error>> {
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct FileBufferIter(*const c_void);
+
+#[repr(C)]
+struct FileBufferIterResult {
+    character: u8,
+    done: bool,
+}
+
+struct BufferIter {
+    iter: FileBufferIter,
+    iter_func: extern "C" fn(it: FileBufferIter) -> FileBufferIterResult,
+}
+
+impl std::io::Read for BufferIter {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let result = (self.iter_func)(self.iter);
+
+        if result.done || buf.len() < 1 {
+            return Ok(0);
+        } else {
+            buf[0] = result.character;
+            return Ok(1);
+        }
+    }
+}
+
+fn search_buffer<'a>(
+    pattern: &'a str,
+    buffer: BufferIter,
+) -> Result<SimpleSink<'a>, Box<dyn Error>> {
     let matcher = RegexMatcherBuilder::new()
         .case_smart(true)
         .fixed_strings(true)
@@ -85,7 +125,26 @@ fn search(pattern: &str, paths: &[&str]) -> Result<SimpleSink, Box<dyn Error>> {
         .line_number(true)
         .build();
 
-    let mut sink = SimpleSink::default();
+    let mut sink = SimpleSink::new(pattern);
+    let result = searcher.search_reader(matcher, buffer, &mut sink);
+    if let Err(err) = result {
+        eprintln!("{:?}", err);
+    }
+
+    Ok(sink)
+}
+
+fn search<'a>(pattern: &'a str, paths: &[&str]) -> Result<SimpleSink<'a>, Box<dyn Error>> {
+    let matcher = RegexMatcherBuilder::new()
+        .case_smart(true)
+        .fixed_strings(true)
+        .build(pattern)?;
+    let mut searcher = SearcherBuilder::new()
+        .binary_detection(BinaryDetection::quit(b'\x00'))
+        .line_number(true)
+        .build();
+
+    let mut sink = SimpleSink::new(pattern);
     for path in paths {
         for result in WalkDir::new(path).into_iter().filter_entry(|dent| {
             if dent.file_type().is_dir()
@@ -147,9 +206,17 @@ impl From<Match> for GrepResult {
 impl From<GrepResult> for Match {
     fn from(value: GrepResult) -> Self {
         unsafe {
-            let text = Box::from_raw(std::slice::from_raw_parts_mut(value.text as *mut _, value.text_len as usize)).to_vec();
+            let text = Box::from_raw(std::slice::from_raw_parts_mut(
+                value.text as *mut _,
+                value.text_len as usize,
+            ))
+            .to_vec();
 
-            let path = Box::from_raw(std::slice::from_raw_parts_mut(value.path as *mut _, value.path_len as usize)).to_vec();
+            let path = Box::from_raw(std::slice::from_raw_parts_mut(
+                value.path as *mut _,
+                value.path_len as usize,
+            ))
+            .to_vec();
             let path = String::from_utf8_unchecked(path);
 
             Self {
@@ -182,8 +249,6 @@ extern "C" fn grep(
         )
     };
 
-    println!("pattern: '{pattern}', directory: '{directory}'");
-
     let boxed = search(&pattern, &[&directory])
         .into_iter()
         .map(|sink| sink.matches.into_iter())
@@ -201,9 +266,42 @@ extern "C" fn grep(
 }
 
 #[unsafe(no_mangle)]
+extern "C" fn grep_buffer(
+    pattern: *const std::ffi::c_char,
+    it: FileBufferIter,
+    iter_func: extern "C" fn(it: FileBufferIter) -> FileBufferIterResult,
+) -> GrepResults {
+    let pattern = unsafe { CStr::from_ptr(pattern).to_string_lossy() };
+
+    let boxed = search_buffer(
+        &pattern,
+        BufferIter {
+            iter: it,
+            iter_func,
+        },
+    )
+    .into_iter()
+    .map(|sink| sink.matches.into_iter())
+    .flatten()
+    .map(|v| GrepResult::from(v))
+    .collect::<Vec<_>>()
+    .into_boxed_slice();
+
+    let len = boxed.len() as u32;
+
+    GrepResults {
+        results: Box::into_raw(boxed) as _,
+        len,
+    }
+}
+
+#[unsafe(no_mangle)]
 extern "C" fn free_grep_results(results: GrepResults) {
     unsafe {
-        let mut array = std::slice::from_raw_parts_mut(results.results as *mut GrepResult, results.len as usize);
+        let mut array = std::slice::from_raw_parts_mut(
+            results.results as *mut GrepResult,
+            results.len as usize,
+        );
         let array = Box::from_raw(array);
 
         for v in array {

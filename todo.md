@@ -17,6 +17,8 @@
     - [ ] Finish writing tests for all current user actions
 - Vim-like Macro replays
 - [ ] Simple File Search (vim /)
+    - [x] Forward Search
+    - [ ] Backward Search
 - Modify input system to allow for keybinds that take input
     - Vim's f and F movement commands
     - Vim's r command
