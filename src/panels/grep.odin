@@ -290,7 +290,7 @@ rs_grep_as_results :: proc(results: ^RS_GrepResults, allocator := context.alloca
 
     query_results := make([]core.GrepQueryResult, results.len)
 
-    for i in 0..<results.len {
+    for i in 0..<len(query_results) {
         r := results.results[i]
 
         query_results[i] = core.GrepQueryResult {
