@@ -749,6 +749,8 @@ new_virtual_file_buffer :: proc(allocator := context.allocator) -> FileBuffer {
         glyphs = make_glyph_buffer(width, height),
     };
 
+    push_new_snapshot(&buffer.history)
+
     return buffer;
 }
 
@@ -812,6 +814,7 @@ make_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: 
             glyphs = make_glyph_buffer(width, height),
         };
 
+        push_new_snapshot(&buffer.history)
         ts.parse_buffer(&buffer.tree, tree_sitter_file_buffer_input(&buffer))
 
         return buffer, error();
@@ -905,8 +908,8 @@ color_character :: proc(buffer: ^FileBuffer, start: Cursor, end: Cursor, palette
 }
 
 draw_file_buffer :: proc(state: ^State, buffer: ^FileBuffer, x, y, w, h: int, show_line_numbers: bool = true, show_cursor: bool = true) {
-    glyph_width := math.min(256, int(w / state.source_font_width));
-    glyph_height := math.min(256, int(h / state.source_font_height)) + 1;
+    glyph_width := math.max(math.min(256, int(w / state.source_font_width)), 1);
+    glyph_height := math.max(math.min(256, int(h / state.source_font_height)) + 1, 1);
 
     update_glyph_buffer(buffer, glyph_width, glyph_height);
 

@@ -96,8 +96,12 @@ Panel_VTable :: struct {
 }
 
 PanelType :: union {
+    DebugPanel,
     FileBufferPanel,
     GrepPanel,
+}
+
+DebugPanel :: struct {
 }
 
 FileBufferPanel :: struct {
@@ -136,8 +140,10 @@ GrepQueryResult :: struct {
 current_buffer :: proc(state: ^State) -> ^FileBuffer {
     if current_panel, ok := state.current_panel.?; ok {
         if panel, ok := util.get(&state.panels, current_panel).?; ok {
-            buffer, _ := panel->buffer(state)
-            return buffer
+            if panel.buffer != nil {
+                buffer, _ := panel->buffer(state)
+                return buffer
+            }
         }
     }
 
@@ -149,6 +155,15 @@ new_buffer_virtual :: proc(state: ^State) -> (id: int, buffer: ^FileBuffer, ok: 
 }
 
 new_buffer_file :: proc(state: ^State, file_path: string, line: int = 0, col: int = 0) -> (id: int, buffer: ^FileBuffer, ok: bool) {
+    for i in 0..<len(state.buffers.data) {
+        if buffer, ok := util.get(&state.buffers, i).?; ok {
+            if buffer.file_path == file_path {
+                move_cursor_to_location(buffer, line, col)
+                return i, buffer, true
+            }
+        }
+    }
+
     new_buffer, err := make_file_buffer(context.allocator, file_path, state.directory)
     if err.type != .None {
         ok = false

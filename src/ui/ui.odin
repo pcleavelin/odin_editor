@@ -136,19 +136,33 @@ close_element :: proc(state: ^State, loc := #caller_location) -> UI_Layout {
             case Exact: { e.layout.size.x = int(v) }
             case Fit: {
                 it := e.first
-                for child in iterate_siblings(state, &it) {
-                    if child.layout.floating { continue }
 
-                    switch e.layout.dir {
-                        case .RightToLeft: fallthrough
-                        case .LeftToRight: {
-                            e.layout.size.x += child.layout.size.x
-                        }
+                if it != nil {
+                    for child in iterate_siblings(state, &it) {
+                        if child.layout.floating { continue }
 
-                        case .BottomToTop: fallthrough
-                        case .TopToBottom: {
-                            e.layout.size.x = math.max(e.layout.size.x, child.layout.size.x)
+                        switch e.layout.dir {
+                            case .RightToLeft: fallthrough
+                            case .LeftToRight: {
+                                e.layout.size.x += child.layout.size.x
+                            }
+
+                            case .BottomToTop: fallthrough
+                            case .TopToBottom: {
+                                e.layout.size.x = math.max(e.layout.size.x, child.layout.size.x)
+                            }
                         }
+                    }
+                } else {
+                    switch v in e.kind {
+                        case UI_Element_Kind_Text: {
+                            // FIXME: properly use font size
+                            e.layout.size.x = len(v) * 12
+                        }
+                        case UI_Element_Kind_Image: {
+                            // TODO
+                        }
+                        case UI_Element_Kind_Custom: { }
                     }
                 }
             }
@@ -177,19 +191,34 @@ close_element :: proc(state: ^State, loc := #caller_location) -> UI_Layout {
             case Exact: { e.layout.size.y = int(v) }
             case Fit: {
                 it := e.first
-                for child in iterate_siblings(state, &it) {
-                    if child.layout.floating { continue }
 
-                    switch e.layout.dir {
-                        case .RightToLeft: fallthrough
-                        case .LeftToRight: {
-                            e.layout.size.y = math.max(e.layout.size.y, child.layout.size.y)
-                        }
+                if it != nil {
+                    for child in iterate_siblings(state, &it) {
+                        if child.layout.floating { continue }
 
-                        case .BottomToTop: fallthrough
-                        case .TopToBottom: {
-                            e.layout.size.y += child.layout.size.y
+                        switch e.layout.dir {
+                            case .RightToLeft: fallthrough
+                            case .LeftToRight: {
+                                e.layout.size.y = math.max(e.layout.size.y, child.layout.size.y)
+                            }
+
+                            case .BottomToTop: fallthrough
+                            case .TopToBottom: {
+                                e.layout.size.y += child.layout.size.y
+                            }
                         }
+                    }
+                } else {
+                    switch v in e.kind {
+                        case UI_Element_Kind_Text: {
+                            // TODO: wrap text
+                            // FIXME: properly use font size
+                            e.layout.size.y = 16
+                        }
+                        case UI_Element_Kind_Image: {
+                            // TODO
+                        }
+                        case UI_Element_Kind_Custom: { }
                     }
                 }
             }
@@ -316,7 +345,7 @@ grow_children :: proc(state: ^State, index: int) {
         }
     }
 
-    if num_growing.x > 0 || num_growing.y > 0 {
+    if true || num_growing.x > 0 || num_growing.y > 0 {
         remaining_size := [2]int{ x_e, y_e } - children_size
         to_grow: [2]int
         to_grow.x = 0 if num_growing.x < 1 else remaining_size.x/num_growing.x
@@ -348,9 +377,9 @@ grow_children :: proc(state: ^State, index: int) {
             _, x_growing := child.layout.kind.x.(Grow)
             _, y_growing := child.layout.kind.y.(Grow)
 
-            if x_growing || y_growing || child.layout.floating {
+            // if x_growing || y_growing || child.layout.floating {
                 grow_children(state, child_index)
-            }
+            // }
         }
     }
 }
