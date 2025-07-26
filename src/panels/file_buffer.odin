@@ -103,18 +103,20 @@ make_file_buffer_panel :: proc(file_path: string, line: int = 0, col: int = 0) -
             panel_state := &panel.type.(core.FileBufferPanel)
             run_query(panel_state, &panel_state.buffer)
 
-            if len(panel_state.query_results) > 0 {
-                for result, i in panel_state.query_results {
-                    cursor := panel_state.buffer.history.cursor
+            if panel_state.is_searching {
+                if len(panel_state.query_results) > 0 {
+                    for result, i in panel_state.query_results {
+                        cursor := panel_state.buffer.history.cursor
 
-                    if result.line >= cursor.line || (result.line == cursor.line && result.col >= cursor.col) {
-                        core.move_cursor_to_location(&panel_state.buffer, result.line, result.col)
-                        break
-                    }
+                        if result.line >= cursor.line || (result.line == cursor.line && result.col >= cursor.col) {
+                            core.move_cursor_to_location(&panel_state.buffer, result.line, result.col)
+                            break
+                        }
 
-                    if i == len(panel_state.query_results)-1 {
-                        result := panel_state.query_results[0]
-                        core.move_cursor_to_location(&panel_state.buffer, result.line, result.col)
+                        if i == len(panel_state.query_results)-1 {
+                            result := panel_state.query_results[0]
+                            core.move_cursor_to_location(&panel_state.buffer, result.line, result.col)
+                        }
                     }
                 }
             }
