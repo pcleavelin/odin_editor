@@ -87,13 +87,8 @@ make_grep_panel :: proc() -> core.Panel {
                     if panel_state.query_results != nil {
                         selected_result := &panel_state.query_results[panel_state.selected_result]
 
-                        if panel_id, ok := open(state, make_file_buffer_panel(selected_result.file_path, selected_result.line, selected_result.col)); ok {
-                            close(state, this_panel.id)
-
-                            state.current_panel = panel_id
-                        } else {
-                            log.error("failed to open file buffer in new panel")
-                        }
+                        core.open_buffer_file(state, selected_result.file_path, selected_result.line, selected_result.col)
+                        close(state, this_panel.id)
                     }
                 }
             }, "Open File");

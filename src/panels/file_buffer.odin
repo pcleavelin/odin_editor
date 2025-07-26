@@ -65,11 +65,7 @@ make_file_buffer_panel :: proc(file_path: string, line: int = 0, col: int = 0) -
                 }
             } else {
                 if buffer_id, buffer, ok := core.new_buffer(state, panel_state.file_path); ok {
-                    buffer.history.cursor.line = panel_state.line
-                    buffer.history.cursor.col = panel_state.col
-                    buffer.top_line = buffer.history.cursor.line
-                    core.update_file_buffer_index_from_cursor(buffer)
-
+                    core.move_cursor_to_location(buffer, panel_state.line, panel_state.col)
                     panel_state.buffer_id = buffer_id
                 } else {
                     log.error("failed to create buffer")

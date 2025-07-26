@@ -298,7 +298,7 @@ extern "C" fn grep_buffer(
 #[unsafe(no_mangle)]
 extern "C" fn free_grep_results(results: GrepResults) {
     unsafe {
-        let mut array = std::slice::from_raw_parts_mut(
+        let array = std::slice::from_raw_parts_mut(
             results.results as *mut GrepResult,
             results.len as usize,
         );

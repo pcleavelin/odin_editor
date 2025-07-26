@@ -752,7 +752,7 @@ new_virtual_file_buffer :: proc(allocator := context.allocator) -> FileBuffer {
     return buffer;
 }
 
-new_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: string = "") -> (FileBuffer, Error) {
+make_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: string = "") -> (FileBuffer, Error) {
     context.allocator = allocator;
 
     fmt.eprintln("attempting to open", file_path);
@@ -996,7 +996,7 @@ update_file_buffer_scroll :: proc(buffer: ^FileBuffer, cursor: Maybe(^Cursor) = 
         cursor = &buffer.history.cursor;
     }
 
-    if buffer.glyphs.height < 5 {
+    if buffer.glyphs.height <= 5 {
         buffer.top_line = cursor.?.line
     } else if cursor.?.line > (buffer.top_line + buffer.glyphs.height - 5) {
         buffer.top_line = math.max(cursor.?.line - buffer.glyphs.height + 5, 0);

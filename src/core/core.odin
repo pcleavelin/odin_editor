@@ -148,17 +148,41 @@ new_buffer_virtual :: proc(state: ^State) -> (id: int, buffer: ^FileBuffer, ok: 
     return util.append(&state.buffers, new_virtual_file_buffer(context.allocator))
 }
 
-new_buffer_file :: proc(state: ^State, file_path: string) -> (id: int, buffer: ^FileBuffer, ok: bool) {
-    new_buffer, err := new_file_buffer(context.allocator, file_path, state.directory)
+new_buffer_file :: proc(state: ^State, file_path: string, line: int = 0, col: int = 0) -> (id: int, buffer: ^FileBuffer, ok: bool) {
+    new_buffer, err := make_file_buffer(context.allocator, file_path, state.directory)
     if err.type != .None {
         ok = false
         return
     }
 
+    move_cursor_to_location(&new_buffer, line, col)
+
     return util.append(&state.buffers, new_buffer)
 }
 
 new_buffer :: proc{new_buffer_file, new_buffer_virtual}
+
+open_buffer_file :: proc(state: ^State, file_path: string, line: int = 0, col: int = 0) {
+    next_id := 0
+    for {
+        if panel, ok := util.get(&state.panels, next_id).?; ok {
+            if type, ok := &panel.type.(FileBufferPanel); ok {
+                buffer_id, _, ok := new_buffer_file(state, file_path, line, col)
+                if ok {
+                    type.buffer_id = buffer_id
+                    state.current_panel = panel.id
+                }
+
+                break
+            } else {
+                next_id := util.get_next(&state.panels, next_id)
+                continue
+            }
+        }
+
+        break
+    }
+}
 
 get_buffer :: proc(state: ^State, buffer_id: int) -> Maybe(^FileBuffer) {
     return util.get(&state.buffers, buffer_id)
