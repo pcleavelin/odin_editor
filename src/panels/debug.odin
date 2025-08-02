@@ -85,7 +85,13 @@ render_buffer_list :: proc(state: ^core.State, s: ^ui.State) {
 
         for i in 0..<len(state.buffers.data) {
             if buffer, ok := util.get(&state.buffers, i).?; ok {
-                buffer_label := fmt.tprintf("buf '%v' - %v", i, buffer.file_path[len(state.directory):])
+                buffer_label: string
+                if len(buffer.file_path) > len(state.directory) {
+                    buffer_label = fmt.tprintf("buf '%v' - %v", i, buffer.file_path[len(state.directory):])
+                } else {
+                    buffer_label = fmt.tprintf("buf '%v' - %v", i, buffer.file_path)
+                }
+
                 ui.open_element(s, buffer_label, {})
                 ui.close_element(s)
             }
@@ -120,6 +126,13 @@ render_panel_list :: proc(state: ^core.State, s: ^ui.State) {
             kind = {ui.Fit{}, ui.Exact(8)},
         })
         ui.close_element(s)
+
+        
+        if state.last_panel != nil {
+            last_panel_label := fmt.tprintf("last panel id '%v'", state.last_panel.?)
+            ui.open_element(s, last_panel_label, {})
+            ui.close_element(s)
+        }
 
         for i in 0..<len(state.panels.data) {
             if panel, ok := util.get(&state.panels, i).?; ok {

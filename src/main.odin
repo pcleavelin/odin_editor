@@ -265,10 +265,6 @@ main :: proc() {
         panels.open(&state, panels.make_file_buffer_panel(""))
     }
 
-
-    panels.open(&state, panels.make_debug_panel())
-    panels.open(&state, panels.make_debug_panel())
-
     if sdl2.Init({.VIDEO}) < 0 {
         log.error("SDL failed to initialize:", sdl2.GetError());
         return;

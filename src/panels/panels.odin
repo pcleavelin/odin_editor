@@ -21,13 +21,23 @@ register_default_leader_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .R, proc(state: ^core.State, user_data: rawptr) {
         open_grep_panel(state)
     }, "Grep Workspace")
+
+    core.register_key_action(input_map, .COMMA, proc(state: ^core.State, user_data: rawptr) {
+        current_panel := state.current_panel
+
+        open(state, make_debug_panel())
+
+        state.current_panel = current_panel
+
+        core.reset_input_map(state)
+    }, "DEBUG WINDOW")
 }
 
 register_default_panel_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .H, proc(state: ^core.State, user_data: rawptr) {
         if current_panel, ok := state.current_panel.?; ok {
             if prev, ok := util.get_prev(&state.panels, current_panel).?; ok {
-                state.current_panel = prev
+                core.switch_to_panel(state, prev)
             }
         }
 
@@ -36,12 +46,18 @@ register_default_panel_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .L, proc(state: ^core.State, user_data: rawptr) {
         if current_panel, ok := state.current_panel.?; ok {
             if next, ok := util.get_next(&state.panels, current_panel).?; ok {
-                state.current_panel = next
+                core.switch_to_panel(state, next)
             }
         }
 
         core.reset_input_map(state)
     }, "focus panel to the right");
+
+    core.register_key_action(input_map, .V, proc(state: ^core.State, user_data: rawptr) {
+        open(state, make_file_buffer_panel(""))
+
+        core.reset_input_map(state)
+    }, "Split Panel");
 
     core.register_key_action(input_map, .Q, proc(state: ^core.State, user_data: rawptr) {
         if current_panel, ok := state.current_panel.?; ok {
@@ -54,7 +70,6 @@ register_default_panel_actions :: proc(input_map: ^core.InputActions) {
 open :: proc(state: ^core.State, panel: core.Panel, make_active: bool = true) -> (panel_id: int, ok: bool) {
     if panel_id, panel, ok := util.append_static_list(&state.panels, panel); ok && make_active {
         panel.id = panel_id
-        state.current_panel = panel_id
 
         arena_bytes, err := make([]u8, 1024*1024*8)
         if err != nil {
@@ -68,6 +83,7 @@ open :: proc(state: ^core.State, panel: core.Panel, make_active: bool = true) ->
 
         panel->create(state)
 
+        core.switch_to_panel(state, panel_id)
         core.reset_input_map(state)
 
         return panel_id, true
@@ -86,9 +102,12 @@ close :: proc(state: ^core.State, panel_id: int) {
 
         util.delete(&state.panels, panel_id)
 
-        // TODO: keep track of the last active panel instead of focusing back to the first one
-        if first_active, ok := util.get_first_active_index(&state.panels).?; ok {
+        if last_panel, ok := state.last_panel.?; ok {
+            core.switch_to_panel(state, last_panel)
+        } else if first_active, ok := util.get_first_active_index(&state.panels).?; ok {
             state.current_panel = first_active
+        } else {
+            // TODO: open panel
         }
 
         core.reset_input_map(state)

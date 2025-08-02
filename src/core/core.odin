@@ -50,6 +50,7 @@ State :: struct {
     command_args: [dynamic]EditorCommandArgument,
 
     current_panel: Maybe(int),
+    last_panel: Maybe(int),
     panels: util.StaticList(Panel),
     buffers: util.StaticList(FileBuffer),
 }
@@ -150,6 +151,20 @@ current_buffer :: proc(state: ^State) -> ^FileBuffer {
     return nil
 }
 
+switch_to_panel :: proc(state: ^State, panel_id: int) {
+    if panel, ok := util.get(&state.panels, panel_id).?; ok {
+        if current_panel, ok := state.current_panel.?; ok {
+            if current_panel, ok := util.get(&state.panels, current_panel).?; ok {
+                if !current_panel.is_floating {
+                    state.last_panel = state.current_panel
+                }
+            }
+        }
+
+        state.current_panel = panel_id
+    }
+}
+
 new_buffer_virtual :: proc(state: ^State) -> (id: int, buffer: ^FileBuffer, ok: bool) {
     return util.append(&state.buffers, new_virtual_file_buffer(context.allocator))
 }
@@ -178,19 +193,37 @@ new_buffer_file :: proc(state: ^State, file_path: string, line: int = 0, col: in
 new_buffer :: proc{new_buffer_file, new_buffer_virtual}
 
 open_buffer_file :: proc(state: ^State, file_path: string, line: int = 0, col: int = 0) {
+    attempt_switch_to_panel_buffer :: proc(state: ^State, panel: ^Panel, file_path: string, line: int, col: int) -> bool {
+        if type, ok := &panel.type.(FileBufferPanel); ok {
+            buffer_id, _, ok := new_buffer_file(state, file_path, line, col)
+            if ok {
+                type.buffer_id = buffer_id
+                switch_to_panel(state, panel.id)
+
+                return true
+            }
+        } 
+
+        return false
+    }
+
+    if last_panel, ok := state.last_panel.?; ok {
+        if panel, ok := util.get(&state.panels, last_panel).?; ok {
+            if attempt_switch_to_panel_buffer(state, panel, file_path, line, col) {
+               return 
+            }
+        }
+    }
+
     next_id := 0
     for {
         if panel, ok := util.get(&state.panels, next_id).?; ok {
-            if type, ok := &panel.type.(FileBufferPanel); ok {
-                buffer_id, _, ok := new_buffer_file(state, file_path, line, col)
-                if ok {
-                    type.buffer_id = buffer_id
-                    state.current_panel = panel.id
-                }
-
+            if attempt_switch_to_panel_buffer(state, panel, file_path, line, col) {
                 break
-            } else {
-                next_id := util.get_next(&state.panels, next_id)
+            }
+
+            if id, ok := util.get_next(&state.panels, next_id).?; ok {
+                next_id = id
                 continue
             }
         }
