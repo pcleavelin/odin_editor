@@ -1,8 +1,6 @@
-export RUSTFLAGS=-C target-feature=-avx2
+all: editor
 
-all: bin/libtree-sitter.a editor
-
-editor: grep src/**/*.odin
+editor: src/**/*.odin
 	mkdir -p bin
 	odin build src/ -out:bin/editor -debug
 
@@ -24,5 +22,5 @@ override CFLAGS += -D_POSIX_C_SOURCE=200112L -D_DEFAULT_SOURCE
 override CFLAGS += -I$(TS_DIR)/src -I$(TS_DIR)/src/wasm -I$(TS_DIR)/include
 override CFLAGS += -o bin/
 
-bin/libtree-sitter.a: $(TS_OBJ)
-	$(AR) $(TS_ARFLAGS) $@ $^ --output bin/
+libtree-sitter.a: $(TS_OBJ)
+	$(AR) $(TS_ARFLAGS) $@ $^

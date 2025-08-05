@@ -9,7 +9,7 @@ import "core:mem"
 
 import "../theme"
 
-foreign import ts "../../bin/libtree-sitter.a"
+foreign import ts "system:tree-sitter"
 @(default_calling_convention = "c", link_prefix="ts_")
 foreign ts {
     parser_new :: proc() -> Parser ---
@@ -92,17 +92,17 @@ set_allocator :: proc(allocator := context.allocator) {
     }
 }
 
-foreign import ts_odin "../../bin/libtree-sitter-odin.a"
+foreign import ts_odin "system:tree-sitter-odin"
 foreign ts_odin {
     tree_sitter_odin :: proc "c" () -> Language ---
 }
 
-foreign import ts_rust "../../bin/libtree-sitter-rust.a"
+foreign import ts_rust "system:tree-sitter-rust"
 foreign ts_rust {
     tree_sitter_rust :: proc "c" () -> Language ---
 }
 
-foreign import ts_json "../../bin/libtree-sitter-json.a"
+foreign import ts_json "system:tree-sitter-json"
 foreign ts_json {
     tree_sitter_json :: proc "c" () -> Language ---
 }

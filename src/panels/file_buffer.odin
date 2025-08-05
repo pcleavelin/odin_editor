@@ -43,7 +43,7 @@ make_file_buffer_panel :: proc(file_path: string, line: int = 0, col: int = 0) -
         drop = proc(panel: ^core.Panel, state: ^core.State) {
         },
         create = proc(panel: ^core.Panel, state: ^core.State) {
-            state_allocator = context.allocator
+            // state_allocator = context.allocator
             context.allocator = panel.allocator
 
             panel_state := &panel.type.(core.FileBufferPanel)

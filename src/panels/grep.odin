@@ -256,7 +256,7 @@ make_grep_panel :: proc() -> core.Panel {
     }
 }
 
-foreign import grep_lib "../pkg/grep_lib/target/debug/libgrep.a"
+foreign import grep_lib "system:grep_panel"
 @(default_calling_convention = "c")
 foreign grep_lib {
 	grep :: proc (pattern: cstring, directory: cstring) -> RS_GrepResults ---
