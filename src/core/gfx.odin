@@ -51,8 +51,8 @@ gen_font_atlas :: proc(state: ^State, path: cstring) -> FontAtlas {
 
     font_width := i32(atlas.max_width);
     font_height = i32(atlas.max_height);
-    state.source_font_width = int(font_width/scale);
-    state.source_font_height = int(font_height/scale);
+    // state.source_font_width = int(font_width/scale);
+    // state.source_font_height = int(font_height/scale);
 
     temp_surface: ^sdl2.Surface;
     // FIXME: check if this failed
