@@ -12,6 +12,11 @@ import ts "../tree_sitter"
 import "../core"
 import "../util"
 import "../ui"
+import "../jobs"
+
+import ring "../util/ring_buffer"
+
+MAX_GREP_RESULTS :: 2000
 
 open_grep_panel :: proc(state: ^core.State) {
     open(state, make_grep_panel())
@@ -20,34 +25,93 @@ open_grep_panel :: proc(state: ^core.State) {
     sdl2.StartTextInput()
 }
 
+GrepQuery :: struct {
+    search_query: string,
+    directory: string
+}
+
+@(private)
+query_handler :: proc(job: ^jobs.Job) {
+    context.allocator = job.allocator
+
+    input := transmute(^GrepQuery)job.input
+
+    rs_results := grep(
+        strings.clone_to_cstring(input.search_query),
+        strings.clone_to_cstring(input.directory),
+    );
+
+    results_ptr, err := mem.alloc(size_of(RS_GrepResults), allocator = job.allocator)
+    if err != .None {
+        fmt.eprintln("failed to allocate grep results")
+        job.output = nil
+        return
+    }
+    mem.copy_non_overlapping(results_ptr, &rs_results, size_of(RS_GrepResults))
+
+    job.output = results_ptr
+}
+
+@(private)
+pop_job_results :: proc(panel_state: ^core.GrepPanel) {
+    has_results := false
+    for {
+        job, did_pop := jobs.pop(&panel_state.query_queue);
+        if !did_pop || job.output == nil  {
+            break
+        }
+
+        panel_state.query_results = rs_grep_as_results(transmute(^RS_GrepResults)job.output)
+        jobs.destroy_job(&panel_state.query_queue, job)
+
+        has_results = true
+    }
+
+    if has_results {
+        panel_state.selected_result = 0
+        if len(panel_state.query_results) > 0 {
+            core.update_glyph_buffer_from_bytes(
+                &panel_state.glyphs,
+                transmute([]u8)panel_state.query_results[panel_state.selected_result].file_context,
+                panel_state.query_results[panel_state.selected_result].line,
+            )
+        }
+    }
+}
+
 make_grep_panel :: proc() -> core.Panel {
     run_query :: proc(panel_state: ^core.GrepPanel, buffer: ^core.FileBuffer, directory: string) {
-        if panel_state.query_region.arena != nil {
-            mem.end_arena_temp_memory(panel_state.query_region)
-        }
-        panel_state.query_region = mem.begin_arena_temp_memory(&panel_state.query_arena)
+        search_query := core.buffer_to_string(buffer, allocator = context.temp_allocator)
 
-        context.allocator = mem.arena_allocator(&panel_state.query_arena)
+        // NOTE: no reason to grep the whole workspace with a single character
+        if len(search_query) > 1 {
+            copy_grep_query :: proc(cursor: ^ring.WriteCursor, data: []u8, w: ring.WriteVTable) {
+                query := transmute(^GrepQuery)&data[0]
 
-        search_query := core.buffer_to_string(buffer)
-        if len(search_query) > 0 {
-            rs_results := grep(
-                strings.clone_to_cstring(search_query),
-                strings.clone_to_cstring(directory)
-            );
-
-            panel_state.query_results = rs_grep_as_results(&rs_results)
-
-            panel_state.selected_result = 0
-            if len(panel_state.query_results) > 0 {
-                core.update_glyph_buffer_from_bytes(
-                    &panel_state.glyphs,
-                    transmute([]u8)panel_state.query_results[panel_state.selected_result].file_context,
-                    panel_state.query_results[panel_state.selected_result].line,
-                )
+                w.write_string(cursor, query.search_query)
+                w.write_string(cursor, query.directory)
             }
+
+            pop_grep_query :: proc(cursor: ^ring.ReadCursor, r: ring.ReadVTable, allocator: mem.Allocator) -> rawptr {
+                search_query := r.read_string(cursor, allocator)
+                directory := r.read_string(cursor, allocator)
+
+                data, err := mem.alloc(size_of(GrepQuery), allocator = allocator)
+
+                query := transmute(^GrepQuery)data
+                query.search_query = search_query
+                query.directory = directory
+
+                return query
+            }
+
+            data := GrepQuery {
+                search_query = search_query,
+                directory = directory,
+            }
+            jobs.add(GrepQuery, &panel_state.query_queue, query_handler, data, copy_grep_query, pop_grep_query, name = "grep task")
         } else {
-            panel_state.selected_result = 0 
+            panel_state.selected_result = 0
             panel_state.query_results = nil
         }
     }
@@ -58,6 +122,7 @@ make_grep_panel :: proc() -> core.Panel {
         drop = proc(panel: ^core.Panel, state: ^core.State) {
             panel_state := &panel.type.(core.GrepPanel)
 
+            jobs.destroy_job_queue(&panel_state.query_queue)
             ts.delete_state(&panel_state.buffer.tree)
         },
         create = proc(panel: ^core.Panel, state: ^core.State) {
@@ -65,20 +130,14 @@ make_grep_panel :: proc() -> core.Panel {
 
             panel_state := &panel.type.(core.GrepPanel)
 
-            arena_bytes, err := make([]u8, 1024*1024*2)
-            if err != nil {
-                log.errorf("failed to allocate arena for grep panel: '%v'", err)
-                return
-            }
-            mem.arena_init(&panel_state.query_arena, arena_bytes)
-
             panel.input_map = core.new_input_map(show_help = true)
             panel_state.glyphs = core.make_glyph_buffer(256,256)
             panel_state.buffer = core.new_virtual_file_buffer()
+            jobs.make_job_queue(panel.allocator, 2, &panel_state.query_queue)
 
             panel_actions := core.new_input_actions(show_help = true)
             register_default_panel_actions(&panel_actions)
-            core.register_ctrl_key_action(&panel.input_map.mode[.Normal], .W, panel_actions, "Panel Navigation") 
+            core.register_ctrl_key_action(&panel.input_map.mode[.Normal], .W, panel_actions, "Panel Navigation")
 
             core.register_key_action(&panel.input_map.mode[.Normal], .ENTER, proc(state: ^core.State, user_data: rawptr) {
                 this_panel := transmute(^core.Panel)user_data
@@ -147,14 +206,18 @@ make_grep_panel :: proc() -> core.Panel {
             }
         },
         render = proc(panel: ^core.Panel, state: ^core.State) -> (ok: bool) {
+            context.allocator = panel.allocator
+
             if panel_state, ok := &panel.type.(core.GrepPanel); ok {
+                pop_job_results(panel_state)
+
                 s := transmute(^ui.State)state.ui
 
                 ui.open_element(s, nil,
                     {
                         dir = .TopToBottom,
                         kind = {ui.Grow{}, ui.Grow{}},
-                        floating = true, 
+                        floating = true,
                     },
                     style = {
                         background_color = .Background1,
@@ -240,7 +303,7 @@ make_grep_panel :: proc() -> core.Panel {
                             background_color = .Background2
                         }
                     )
-                    { 
+                    {
                         defer ui.close_element(s)
 
                         render_raw_buffer(state, s, &panel_state.buffer)
@@ -259,8 +322,8 @@ make_grep_panel :: proc() -> core.Panel {
 foreign import grep_lib "system:grep_panel"
 @(default_calling_convention = "c")
 foreign grep_lib {
-	grep :: proc (pattern: cstring, directory: cstring) -> RS_GrepResults ---
-	grep_buffer :: proc (pattern: cstring, it: ^core.FileBufferIter, func: proc "c" (it: ^core.FileBufferIter) -> core.FileBufferIterResult) -> RS_GrepResults ---
+    grep :: proc (pattern: cstring, directory: cstring) -> RS_GrepResults ---
+    grep_buffer :: proc (pattern: cstring, it: ^core.FileBufferIter, func: proc "c" (it: ^core.FileBufferIter) -> core.FileBufferIterResult) -> RS_GrepResults ---
     free_grep_results :: proc(results: RS_GrepResults) ---
 }
 
@@ -283,7 +346,9 @@ RS_GrepResult :: struct {
 rs_grep_as_results :: proc(results: ^RS_GrepResults, allocator := context.allocator) -> []core.GrepQueryResult {
     context.allocator = allocator
 
-    query_results := make([]core.GrepQueryResult, results.len)
+    max_results := min(results.len, MAX_GREP_RESULTS)
+
+    query_results := make([]core.GrepQueryResult, max_results)
 
     for i in 0..<len(query_results) {
         r := results.results[i]
@@ -312,7 +377,7 @@ render_raw_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileBu
         kind = {ui.Grow{}, ui.Grow{}}
     })
     ui.close_element(s)
-    
+
 }
 
 render_glyph_buffer :: proc(state: ^core.State, s: ^ui.State, glyphs: ^core.GlyphBuffer) {
@@ -330,5 +395,5 @@ render_glyph_buffer :: proc(state: ^core.State, s: ^ui.State, glyphs: ^core.Glyp
         kind = {ui.Grow{}, ui.Grow{}}
     })
     ui.close_element(s)
-    
+
 }

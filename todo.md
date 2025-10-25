@@ -3,9 +3,11 @@
 - Scrolling past end/beginning of grep results panics
 - "change selection" not pushing snapshot
 - Don't allow panel navigation in grep panel
+- Grep (rust side) can allocate gigabytes of duplicate data
 
 # Visual QOL
 - Split grep search results into a table to avoid funky unaligned text
+- Padding around UI elements
 
 # TODO
 - [ ] Jump List
@@ -48,10 +50,16 @@
         - [x] Open file in new buffer at found location
         - [ ] Preview file with context
             - [x] Show Context
+            - [ ] Syntax highlighting
             - [ ] Properly show lines numbers
             - [ ] Don't overlap result list with file preview
     - [ ] Open Buffer Search
     - [ ] Workspace file search
+- [ ] Job System
+    - [x] Minimal Thread Pool
+    - [ ] Setting to only pop the the latest result
+    - [ ] Use reflection to avoid manually writing ring buffer serializer for each type
+        - [ ] Auto copy in and out of ring buffer/job output 
 - Re-write the UI (again)
     - [x] New UI
     - [ ] Styling

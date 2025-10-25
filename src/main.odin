@@ -13,6 +13,7 @@ import "core:slice"
 import "vendor:sdl2"
 import "vendor:sdl2/ttf"
 
+import "jobs"
 import "util"
 import "core"
 import "panels"
