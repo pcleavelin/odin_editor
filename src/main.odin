@@ -306,7 +306,7 @@ main :: proc() {
         log.error("Failed to create renderer:", sdl2.GetError());
         return;
     }
-    state.font_atlas = core.gen_font_atlas(&state, core.HardcodedFontPath);
+    state.font_atlas = core.gen_font_atlas(&state, state.font_path);
     defer {
         if state.font_atlas.font != nil {
             ttf.CloseFont(state.font_atlas.font);

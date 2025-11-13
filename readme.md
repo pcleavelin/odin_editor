@@ -1,7 +1,9 @@
-## How to build
+## How to build on *nix an macOS
 * Install the [nix package manager](https://nixos.org/download/).
-* Download [JetBrains Mono](https://www.jetbrains.com/lp/mono/) and place it in a new `bin` directory in the root of the project.
 * Run `nix build .#editor` or `nix run .#editor`.
+
+# How to build on Windows
+**TODO**
 
 ## What is this?
 This is an in-development modal text editor inspired by vim but with an actual GUI interface instead of yet another terminal program nobody asked for.

@@ -376,7 +376,7 @@ file_buffer_input_actions :: proc(input_map: ^core.InputActions) {
                 state.source_font_height -= 2;
                 state.source_font_width = state.source_font_height / 2;
 
-                state.font_atlas = core.gen_font_atlas(state, core.HardcodedFontPath);
+                state.font_atlas = core.gen_font_atlas(state, state.font_path);
             }
             log.debug(state.source_font_height);
         }, "increase font size");
@@ -384,7 +384,7 @@ file_buffer_input_actions :: proc(input_map: ^core.InputActions) {
             state.source_font_height += 2;
             state.source_font_width = state.source_font_height / 2;
 
-            state.font_atlas = core.gen_font_atlas(state, core.HardcodedFontPath);
+            state.font_atlas = core.gen_font_atlas(state, state.font_path);
         }, "decrease font size");
     }
 

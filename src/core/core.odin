@@ -11,8 +11,6 @@ import "vendor:sdl2"
 import "../util"
 import "../jobs"
 
-HardcodedFontPath :: "bin/JetBrainsMono-Regular.ttf";
-
 Mode :: enum {
     Normal,
     Insert,
@@ -24,6 +22,7 @@ State :: struct {
     ctx: runtime.Context,
     sdl_renderer: ^sdl2.Renderer,
     font_atlas: FontAtlas,
+    font_path: cstring,
     ui: rawptr,
 
     mode: Mode,
