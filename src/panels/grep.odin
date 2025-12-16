@@ -61,7 +61,9 @@ pop_job_results :: proc(panel_state: ^core.GrepPanel) {
             break
         }
 
+        context.allocator = mem.arena_allocator(&panel_state.query_arena)
         panel_state.query_results = rs_grep_as_results(transmute(^RS_GrepResults)job.output)
+
         jobs.destroy_job(&panel_state.query_queue, job)
 
         has_results = true
@@ -81,6 +83,11 @@ pop_job_results :: proc(panel_state: ^core.GrepPanel) {
 
 make_grep_panel :: proc() -> core.Panel {
     run_query :: proc(panel_state: ^core.GrepPanel, buffer: ^core.FileBuffer, directory: string) {
+        if panel_state.query_region.arena != nil {
+            mem.end_arena_temp_memory(panel_state.query_region)
+        }
+        panel_state.query_region = mem.begin_arena_temp_memory(&panel_state.query_arena)
+
         search_query := core.buffer_to_string(buffer, allocator = context.temp_allocator)
 
         // NOTE: no reason to grep the whole workspace with a single character
@@ -135,6 +142,14 @@ make_grep_panel :: proc() -> core.Panel {
             panel_state.buffer = core.new_virtual_file_buffer()
             jobs.make_job_queue(panel.allocator, 2, &panel_state.query_queue)
 
+
+            arena_bytes, err := make([]u8, MAX_GREP_RESULTS*512)
+            if err != nil {
+                log.errorf("failed to allocate arena for grep panel: '%v'", err)
+                return
+            }
+            mem.arena_init(&panel_state.query_arena, arena_bytes)
+
             panel_actions := core.new_input_actions(show_help = true)
             register_default_panel_actions(&panel_actions)
             core.register_ctrl_key_action(&panel.input_map.mode[.Normal], .W, panel_actions, "Panel Navigation")
@@ -159,8 +174,9 @@ make_grep_panel :: proc() -> core.Panel {
                 this_panel := transmute(^core.Panel)user_data
 
                 if panel_state, ok := &this_panel.type.(core.GrepPanel); ok {
-                    // TODO: bounds checking
-                    panel_state.selected_result -= 1
+                    if panel_state.selected_result > 0 {
+                        panel_state.selected_result -= 1
+                    }
 
                     core.update_glyph_buffer_from_bytes(
                         &panel_state.glyphs,
@@ -173,8 +189,9 @@ make_grep_panel :: proc() -> core.Panel {
                 this_panel := transmute(^core.Panel)user_data
 
                 if panel_state, ok := &this_panel.type.(core.GrepPanel); ok {
-                    // TODO: bounds checking
-                    panel_state.selected_result += 1
+                    if panel_state.selected_result < len(panel_state.query_results)-1 {
+                        panel_state.selected_result += 1
+                    }
 
                     core.update_glyph_buffer_from_bytes(
                         &panel_state.glyphs,

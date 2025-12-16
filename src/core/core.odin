@@ -126,8 +126,11 @@ GrepPanel :: struct {
     buffer: FileBuffer,
     selected_result: int,
     search_query: string,
-    query_results: []GrepQueryResult,
     glyphs: GlyphBuffer,
+
+    query_arena: mem.Arena,
+    query_region: mem.Arena_Temp_Memory,
+    query_results: []GrepQueryResult,
 
     query_queue: jobs.JobQueue,
 }
