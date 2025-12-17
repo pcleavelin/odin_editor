@@ -2,7 +2,7 @@ all: editor
 
 editor: src/**/*.odin
 	mkdir -p bin
-	odin build src/ -out:bin/editor -debug
+	odin build src/ -out:bin/editor
 
 grep:
 	cargo fmt --manifest-path "src/pkg/grep_lib/Cargo.toml"

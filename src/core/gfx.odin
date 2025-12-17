@@ -17,6 +17,11 @@ FontAtlas :: struct {
     max_height: int,
 }
 
+SystemFont :: struct {
+    display_name: string,
+    file_path: cstring,
+}
+
 gen_font_atlas :: proc(state: ^State, path: cstring) -> FontAtlas {
     free_font_atlas(state.font_atlas);
 
