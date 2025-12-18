@@ -84,6 +84,32 @@
           };
       in
       {
+        checks = {
+          tests = pkgs.stdenv.mkDerivation {
+            name = "editor-tests";
+            src = ./.;
+
+            nativeBuildInputs = with pkgs; [
+              tree-sitter-odin
+              tree-sitter-json
+              tree-sitter-rust
+              tree-sitter
+              grep-lib
+              odin
+              SDL2
+              SDL2_ttf
+            ];
+
+            buildPhase = ''
+              mkdir -p bin/
+              make test
+            '';
+            installPhase = ''
+              touch $out
+            '';
+          };
+        };
+
         devShell = pkgs.mkShell {
           buildInputs = with pkgs; (if pkgs.system == "aarch64-darwin" || pkgs.system == "x86_64-darwin" then [
             git

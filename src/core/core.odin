@@ -88,7 +88,7 @@ Panel :: struct {
 }
 
 Panel_VTable :: struct {
-    create:          proc(panel: ^Panel, state: ^State), 
+    create:          proc(panel: ^Panel, state: ^State),
     drop:            proc(panel: ^Panel, state: ^State),
 
     on_buffer_input: proc(panel: ^Panel, state: ^State),
@@ -205,7 +205,7 @@ open_buffer_file :: proc(state: ^State, file_path: string, line: int = 0, col: i
 
                 return true
             }
-        } 
+        }
 
         return false
     }
@@ -213,7 +213,7 @@ open_buffer_file :: proc(state: ^State, file_path: string, line: int = 0, col: i
     if last_panel, ok := state.last_panel.?; ok {
         if panel, ok := util.get(&state.panels, last_panel).?; ok {
             if attempt_switch_to_panel_buffer(state, panel, file_path, line, col) {
-               return 
+               return
             }
         }
     }
@@ -255,7 +255,7 @@ yank_whole_line :: proc(state: ^State, buffer: ^FileBuffer) {
 
     index := 0
     for !it.hit_end && index < length {
-        state.yank_register.data[index] = get_character_at_iter(it) 
+        state.yank_register.data[index] = get_character_at_iter(it)
 
         iterate_file_buffer(&it)
         index += 1
@@ -283,7 +283,7 @@ yank_selection :: proc(state: ^State, buffer: ^FileBuffer) {
 
     index := 0
     for !it.hit_end && index < length {
-        state.yank_register.data[index] = get_character_at_iter(it) 
+        state.yank_register.data[index] = get_character_at_iter(it)
 
         iterate_file_buffer(&it)
         index += 1
