@@ -24,6 +24,9 @@ register_default_leader_actions :: proc(input_map: ^core.InputActions) {
 
     core.register_key_action(input_map, .P, proc(state: ^core.State, user_data: rawptr) {
         open(state, make_cmd_palette_panel())
+
+        state.mode = .Insert
+        sdl2.StartTextInput()
     }, "Command Palette")
 
     core.register_key_action(input_map, .COMMA, proc(state: ^core.State, user_data: rawptr) {

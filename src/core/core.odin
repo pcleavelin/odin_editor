@@ -441,7 +441,7 @@ run_command :: proc(state: ^State, group: string, name: string) {
             if cmd.name == name {
                 log.info("Running command", group, name);
                 // TODO: rework command system
-                // cmd.action(state);
+                cmd.action(state, nil);
                 return;
             }
         }
