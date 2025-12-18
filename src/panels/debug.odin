@@ -14,11 +14,12 @@ import "../ui"
 
 make_debug_panel :: proc() -> core.Panel {
     return core.Panel {
-        type = core.DebugPanel {},
-        create = proc(panel: ^core.Panel, state: ^core.State) {
+        name = proc(panel: ^core.Panel) -> string {
+            return "DebugPanel"
+        },
+        create = proc(panel: ^core.Panel, state: ^core.State, data: rawptr) {
             context.allocator = panel.allocator
 
-            panel_state := &panel.type.(core.DebugPanel)
             panel.input_map = core.new_input_map(show_help = true)
 
             panel_actions := core.new_input_actions(show_help = true)
@@ -26,30 +27,28 @@ make_debug_panel :: proc() -> core.Panel {
             core.register_ctrl_key_action(&panel.input_map.mode[.Normal], .W, panel_actions, "Panel Navigation") 
         },
         render = proc(panel: ^core.Panel, state: ^core.State) -> (ok: bool) {
-            if panel_state, ok := &panel.type.(core.DebugPanel); ok {
-                s := transmute(^ui.State)state.ui
+            s := transmute(^ui.State)state.ui
 
-                ui.open_element(s, nil,
-                    {
-                        dir = .TopToBottom,
-                        kind = {ui.Fit{}, ui.Grow{}},
-                    },
-                    style = {
-                        background_color = .Background1,
-                    },
-                )
+            ui.open_element(s, nil,
                 {
-                    render_buffer_list(state, s)
+                    dir = .TopToBottom,
+                    kind = {ui.Fit{}, ui.Grow{}},
+                },
+                style = {
+                    background_color = .Background1,
+                },
+            )
+            {
+                render_buffer_list(state, s)
 
-                    ui.open_element(s, nil, {
-                        kind = {ui.Fit{}, ui.Exact(8)},
-                    })
-                    ui.close_element(s)
-
-                    render_panel_list(state, s)
-                }
+                ui.open_element(s, nil, {
+                    kind = {ui.Fit{}, ui.Exact(8)},
+                })
                 ui.close_element(s)
+
+                render_panel_list(state, s)
             }
+            ui.close_element(s)
 
             return true
         }
@@ -136,14 +135,7 @@ render_panel_list :: proc(state: ^core.State, s: ^ui.State) {
 
         for i in 0..<len(state.panels.data) {
             if panel, ok := util.get(&state.panels, i).?; ok {
-                info: string
-                switch v in &panel.type {
-                    case core.DebugPanel:      info = "DebugPanel"
-                    case core.FileBufferPanel: info = "FileBufferPanel"
-                    case core.GrepPanel:       info = "GrepPanel"
-                }
-
-                panel_label := fmt.tprintf("panel id '%v' - %v", i, info)
+                panel_label := fmt.tprintf("panel id '%v' - %v", i, panel->name())
                 ui.open_element(s, panel_label, {})
                 ui.close_element(s)
             }

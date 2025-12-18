@@ -89,7 +89,7 @@ input_text :: proc(text: string) -> ArtificialTextInput {
 }
 
 setup_empty_buffer :: proc(state: ^core.State) {
-    panels.open(state, panels.make_file_buffer_panel(""))
+    panels.open(state, panels.make_file_buffer_panel(), &panels.MakeFileBuffer{})
 
     core.reset_input_map(state)
 }

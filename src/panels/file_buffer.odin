@@ -13,8 +13,31 @@ import ts "../tree_sitter"
 import "../core"
 import "../ui"
 
-make_file_buffer_panel :: proc(file_path: string, line: int = 0, col: int = 0) -> core.Panel {
-    run_query :: proc(panel_state: ^core.FileBufferPanel, buffer: ^core.FileBuffer) {
+MakeFileBuffer :: struct {
+    file_path: string,
+    line: int,
+    col: int,
+}
+
+FileBufferPanel :: struct {
+    buffer_id: int,
+    viewed_symbol: Maybe(string),
+
+    search_buffer: core.FileBuffer,
+    query_arena: mem.Arena,
+    query_region: mem.Arena_Temp_Memory,
+    query_results: []GrepQueryResult,
+    selected_result: int,
+    is_searching: bool,
+
+    // only used for initialization
+    file_path: string,
+    line, col: int,
+}
+
+
+make_file_buffer_panel :: proc() -> core.Panel {
+    run_query :: proc(panel_state: ^FileBufferPanel, buffer: ^core.FileBuffer) {
         if panel_state.query_region.arena != nil {
             mem.end_arena_temp_memory(panel_state.query_region)
         }
@@ -35,18 +58,32 @@ make_file_buffer_panel :: proc(file_path: string, line: int = 0, col: int = 0) -
     }
 
     return core.Panel {
-        type = core.FileBufferPanel {
-            file_path = file_path,
-            line = line,
-            col = col,
+        is_file_buffer = true,
+        _set_buffer = proc(panel: ^core.Panel, buffer_id: int) {
+            panel_state := transmute(^FileBufferPanel)panel.state
+            panel_state.buffer_id = buffer_id
+        },
+        name = proc(panel: ^core.Panel) -> string {
+            return "FileBufferPanel"
         },
         drop = proc(panel: ^core.Panel, state: ^core.State) {
         },
-        create = proc(panel: ^core.Panel, state: ^core.State) {
-            // state_allocator = context.allocator
+        create = proc(panel: ^core.Panel, state: ^core.State, data: rawptr) {
             context.allocator = panel.allocator
 
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel.state = transmute(core.PanelState)new(FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
+
+            data := transmute(^MakeFileBuffer)data
+            if data == nil {
+                panel_state^ = FileBufferPanel {}
+            } else {
+                panel_state^ = FileBufferPanel {
+                    file_path = data.file_path,
+                    line = data.line,
+                    col = data.col,
+                }
+            }
 
             arena_bytes, err := make([]u8, 1024*1024*2)
             if err != nil {
@@ -88,7 +125,7 @@ make_file_buffer_panel :: proc(file_path: string, line: int = 0, col: int = 0) -
             file_buffer_text_input_actions(&panel.input_map.mode[.Normal]);
         },
         buffer = proc(panel: ^core.Panel, state: ^core.State) -> (buffer: ^core.FileBuffer, ok: bool) {
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
 
             if panel_state.is_searching {
                 return &panel_state.search_buffer, true
@@ -98,7 +135,7 @@ make_file_buffer_panel :: proc(file_path: string, line: int = 0, col: int = 0) -
             }
         },
         on_buffer_input = proc(panel: ^core.Panel, state: ^core.State) {
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             run_query(panel_state, buffer)
@@ -122,7 +159,7 @@ make_file_buffer_panel :: proc(file_path: string, line: int = 0, col: int = 0) -
             }
         },
         render = proc(panel: ^core.Panel, state: ^core.State) -> (ok: bool) {
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             s := transmute(^ui.State)state.ui
@@ -248,7 +285,7 @@ render_file_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileB
 file_buffer_leader_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .K, proc(state: ^core.State, user_data: rawptr) {
         panel := transmute(^core.Panel)user_data
-        panel_state := &panel.type.(core.FileBufferPanel)
+        panel_state := transmute(^FileBufferPanel)panel.state
         buffer := core.get_buffer(state, panel_state.buffer_id).?
 
         ts.update_cursor(&buffer.tree, buffer.history.cursor.line, buffer.history.cursor.col)
@@ -261,7 +298,7 @@ file_buffer_leader_actions :: proc(input_map: ^core.InputActions) {
 file_buffer_go_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .H, proc(state: ^core.State, user_data: rawptr) {
         panel := transmute(^core.Panel)user_data
-        panel_state := &panel.type.(core.FileBufferPanel)
+        panel_state := transmute(^FileBufferPanel)panel.state
         buffer := core.get_buffer(state, panel_state.buffer_id).?
 
         core.move_cursor_start_of_line(buffer);
@@ -269,7 +306,7 @@ file_buffer_go_actions :: proc(input_map: ^core.InputActions) {
     }, "move to beginning of line");
     core.register_key_action(input_map, .L, proc(state: ^core.State, user_data: rawptr) {
         panel := transmute(^core.Panel)user_data
-        panel_state := &panel.type.(core.FileBufferPanel)
+        panel_state := transmute(^FileBufferPanel)panel.state
         buffer := core.get_buffer(state, panel_state.buffer_id).?
 
         core.move_cursor_end_of_line(buffer);
@@ -280,7 +317,7 @@ file_buffer_go_actions :: proc(input_map: ^core.InputActions) {
 file_buffer_delete_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .D, proc(state: ^core.State, user_data: rawptr) {
         panel := transmute(^core.Panel)user_data
-        panel_state := &panel.type.(core.FileBufferPanel)
+        panel_state := transmute(^FileBufferPanel)panel.state
         buffer := core.get_buffer(state, panel_state.buffer_id).?
 
         core.push_new_snapshot(&buffer.history)
@@ -303,14 +340,14 @@ file_buffer_input_actions :: proc(input_map: ^core.InputActions) {
     {
         core.register_key_action(input_map, .W, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             core.move_cursor_forward_start_of_word(buffer);
         }, "move forward one word");
         core.register_key_action(input_map, .E, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             core.move_cursor_forward_end_of_word(buffer);
@@ -318,7 +355,7 @@ file_buffer_input_actions :: proc(input_map: ^core.InputActions) {
 
         core.register_key_action(input_map, .B, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             core.move_cursor_backward_start_of_word(buffer);
@@ -326,28 +363,28 @@ file_buffer_input_actions :: proc(input_map: ^core.InputActions) {
 
         core.register_key_action(input_map, .K, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             core.move_cursor_up(buffer);
         }, "move up one line");
         core.register_key_action(input_map, .J, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             core.move_cursor_down(buffer);
         }, "move down one line");
         core.register_key_action(input_map, .H, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             core.move_cursor_left(buffer);
         }, "move left one char");
         core.register_key_action(input_map, .L, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             core.move_cursor_right(buffer);
@@ -355,14 +392,14 @@ file_buffer_input_actions :: proc(input_map: ^core.InputActions) {
 
         core.register_ctrl_key_action(input_map, .U, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             core.scroll_file_buffer(buffer, .Up);
         }, "scroll buffer up");
         core.register_ctrl_key_action(input_map, .D, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             core.scroll_file_buffer(buffer, .Down);
@@ -391,7 +428,7 @@ file_buffer_input_actions :: proc(input_map: ^core.InputActions) {
     // Save file
     core.register_ctrl_key_action(input_map, .S, proc(state: ^core.State, user_data: rawptr) {
         panel := transmute(^core.Panel)user_data
-        panel_state := &panel.type.(core.FileBufferPanel)
+        panel_state := transmute(^FileBufferPanel)panel.state
         buffer := core.get_buffer(state, panel_state.buffer_id).?
 
         if err := core.save_buffer_to_disk(state, buffer); err != nil {
@@ -408,8 +445,8 @@ file_buffer_input_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .D, delete_actions, "Delete commands");
 
     core.register_key_action(input_map, .SLASH, proc(state: ^core.State, user_data: rawptr) {
-        panel_state := &(transmute(^core.Panel)user_data).type.(core.FileBufferPanel)
-
+        panel := transmute(^core.Panel)user_data
+        panel_state := transmute(^FileBufferPanel)panel.state
         core.first_snapshot(&panel_state.search_buffer.history)
         core.push_new_snapshot(&panel_state.search_buffer.history)
 
@@ -423,7 +460,7 @@ file_buffer_input_actions :: proc(input_map: ^core.InputActions) {
 
     core.register_key_action(input_map, .V, proc(state: ^core.State, user_data: rawptr) {
         panel := transmute(^core.Panel)user_data
-        panel_state := &panel.type.(core.FileBufferPanel)
+        panel_state := transmute(^FileBufferPanel)panel.state
         buffer := core.get_buffer(state, panel_state.buffer_id).?
 
         state.mode = .Visual;
@@ -434,7 +471,7 @@ file_buffer_input_actions :: proc(input_map: ^core.InputActions) {
 
     core.register_key_action(input_map, .ESCAPE, proc(state: ^core.State, user_data: rawptr) {
         panel := transmute(^core.Panel)user_data
-        panel_state := &panel.type.(core.FileBufferPanel)
+        panel_state := transmute(^FileBufferPanel)panel.state
 
         if panel_state.is_searching {
             panel_state.is_searching = false
@@ -446,7 +483,7 @@ file_buffer_input_actions :: proc(input_map: ^core.InputActions) {
 
     core.register_key_action(input_map, .N, proc(state: ^core.State, user_data: rawptr) {
         panel := transmute(^core.Panel)user_data
-        panel_state := &panel.type.(core.FileBufferPanel)
+        panel_state := transmute(^FileBufferPanel)panel.state
         buffer := core.get_buffer(state, panel_state.buffer_id).?
 
         if len(panel_state.query_results) > 0 {
@@ -470,7 +507,7 @@ file_buffer_input_actions :: proc(input_map: ^core.InputActions) {
 file_buffer_visual_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .ESCAPE, proc(state: ^core.State, user_data: rawptr) {
         panel := transmute(^core.Panel)user_data
-        panel_state := &panel.type.(core.FileBufferPanel)
+        panel_state := transmute(^FileBufferPanel)panel.state
         buffer := core.get_buffer(state, panel_state.buffer_id).?
 
         state.mode = .Normal;
@@ -484,7 +521,7 @@ file_buffer_visual_actions :: proc(input_map: ^core.InputActions) {
     {
         core.register_key_action(input_map, .W, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             sel_cur := &(buffer.selection.?);
@@ -493,7 +530,7 @@ file_buffer_visual_actions :: proc(input_map: ^core.InputActions) {
         }, "move forward one word");
         core.register_key_action(input_map, .E, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             sel_cur := &(buffer.selection.?);
@@ -503,7 +540,7 @@ file_buffer_visual_actions :: proc(input_map: ^core.InputActions) {
 
         core.register_key_action(input_map, .B, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             sel_cur := &(buffer.selection.?);
@@ -513,7 +550,7 @@ file_buffer_visual_actions :: proc(input_map: ^core.InputActions) {
 
         core.register_key_action(input_map, .K, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             sel_cur := &(buffer.selection.?);
@@ -522,7 +559,7 @@ file_buffer_visual_actions :: proc(input_map: ^core.InputActions) {
         }, "move up one line");
         core.register_key_action(input_map, .J, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             sel_cur := &(buffer.selection.?);
@@ -531,7 +568,7 @@ file_buffer_visual_actions :: proc(input_map: ^core.InputActions) {
         }, "move down one line");
         core.register_key_action(input_map, .H, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             sel_cur := &(buffer.selection.?);
@@ -540,7 +577,7 @@ file_buffer_visual_actions :: proc(input_map: ^core.InputActions) {
         }, "move left one char");
         core.register_key_action(input_map, .L, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             sel_cur := &(buffer.selection.?);
@@ -550,7 +587,7 @@ file_buffer_visual_actions :: proc(input_map: ^core.InputActions) {
 
         core.register_ctrl_key_action(input_map, .U, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             sel_cur := &(buffer.selection.?);
@@ -559,7 +596,7 @@ file_buffer_visual_actions :: proc(input_map: ^core.InputActions) {
         }, "scroll buffer up");
         core.register_ctrl_key_action(input_map, .D, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             sel_cur := &(buffer.selection.?);
@@ -572,7 +609,7 @@ file_buffer_visual_actions :: proc(input_map: ^core.InputActions) {
     {
         core.register_key_action(input_map, .D, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             core.push_new_snapshot(&buffer.history)
@@ -589,7 +626,7 @@ file_buffer_visual_actions :: proc(input_map: ^core.InputActions) {
 
         core.register_key_action(input_map, .C, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             core.push_new_snapshot(&buffer.history)
@@ -610,7 +647,7 @@ file_buffer_visual_actions :: proc(input_map: ^core.InputActions) {
     {
         core.register_key_action(input_map, .Y, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             core.yank_selection(state, buffer)
@@ -624,7 +661,7 @@ file_buffer_visual_actions :: proc(input_map: ^core.InputActions) {
 
         core.register_key_action(input_map, .P, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             core.push_new_snapshot(&buffer.history)
@@ -645,7 +682,7 @@ file_buffer_visual_actions :: proc(input_map: ^core.InputActions) {
 file_buffer_text_input_actions :: proc(input_map: ^core.InputActions) {
     core.register_key_action(input_map, .I, proc(state: ^core.State, user_data: rawptr) {
         panel := transmute(^core.Panel)user_data
-        panel_state := &panel.type.(core.FileBufferPanel)
+        panel_state := transmute(^FileBufferPanel)panel.state
         buffer := core.get_buffer(state, panel_state.buffer_id).?
 
         core.push_new_snapshot(&buffer.history)
@@ -655,7 +692,7 @@ file_buffer_text_input_actions :: proc(input_map: ^core.InputActions) {
     }, "enter insert mode");
     core.register_key_action(input_map, .A, proc(state: ^core.State, user_data: rawptr) {
         panel := transmute(^core.Panel)user_data
-        panel_state := &panel.type.(core.FileBufferPanel)
+        panel_state := transmute(^FileBufferPanel)panel.state
         buffer := core.get_buffer(state, panel_state.buffer_id).?
 
         core.push_new_snapshot(&buffer.history)
@@ -667,7 +704,7 @@ file_buffer_text_input_actions :: proc(input_map: ^core.InputActions) {
 
     core.register_key_action(input_map, .U, proc(state: ^core.State, user_data: rawptr) {
         panel := transmute(^core.Panel)user_data
-        panel_state := &panel.type.(core.FileBufferPanel)
+        panel_state := transmute(^FileBufferPanel)panel.state
         buffer := core.get_buffer(state, panel_state.buffer_id).?
 
         core.pop_snapshot(&buffer.history, true)
@@ -676,7 +713,7 @@ file_buffer_text_input_actions :: proc(input_map: ^core.InputActions) {
 
     core.register_ctrl_key_action(input_map, .R, proc(state: ^core.State, user_data: rawptr) {
         panel := transmute(^core.Panel)user_data
-        panel_state := &panel.type.(core.FileBufferPanel)
+        panel_state := transmute(^FileBufferPanel)panel.state
         buffer := core.get_buffer(state, panel_state.buffer_id).?
 
         core.recover_snapshot(&buffer.history)
@@ -687,7 +724,7 @@ file_buffer_text_input_actions :: proc(input_map: ^core.InputActions) {
 
     core.register_key_action(input_map, .O, proc(state: ^core.State, user_data: rawptr) {
         panel := transmute(^core.Panel)user_data
-        panel_state := &panel.type.(core.FileBufferPanel)
+        panel_state := transmute(^FileBufferPanel)panel.state
         buffer := core.get_buffer(state, panel_state.buffer_id).?
 
         core.push_new_snapshot(&buffer.history)
@@ -723,7 +760,7 @@ file_buffer_text_input_actions :: proc(input_map: ^core.InputActions) {
 
             core.register_key_action(&yank_actions, .Y, proc(state: ^core.State, user_data: rawptr) {
                 panel := transmute(^core.Panel)user_data
-                panel_state := &panel.type.(core.FileBufferPanel)
+                panel_state := transmute(^FileBufferPanel)panel.state
                 buffer := core.get_buffer(state, panel_state.buffer_id).?
 
                 core.yank_whole_line(state, buffer)
@@ -734,7 +771,7 @@ file_buffer_text_input_actions :: proc(input_map: ^core.InputActions) {
 
         core.register_key_action(input_map, .P, proc(state: ^core.State, user_data: rawptr) {
             panel := transmute(^core.Panel)user_data
-            panel_state := &panel.type.(core.FileBufferPanel)
+            panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
             core.push_new_snapshot(&buffer.history)

@@ -76,69 +76,29 @@ EditorCommandArgument :: union #no_nil {
     i32
 }
 
+PanelState :: distinct rawptr
 Panel :: struct {
     using vtable: Panel_VTable,
     arena: mem.Arena,
     allocator: mem.Allocator,
 
     id: int,
-    type: PanelType,
+    state: PanelState,
     input_map: InputMap,
     is_floating: bool,
+    is_file_buffer: bool,
 }
 
 Panel_VTable :: struct {
-    create:          proc(panel: ^Panel, state: ^State),
+    create:          proc(panel: ^Panel, state: ^State, data: rawptr),
     drop:            proc(panel: ^Panel, state: ^State),
 
     on_buffer_input: proc(panel: ^Panel, state: ^State),
     buffer:          proc(panel: ^Panel, state: ^State) -> (buffer: ^FileBuffer, ok: bool),
     render:          proc(panel: ^Panel, state: ^State) -> (ok: bool),
-}
+    name:            proc(panel: ^Panel) -> string,
 
-PanelType :: union {
-    DebugPanel,
-    FileBufferPanel,
-    GrepPanel,
-}
-
-DebugPanel :: struct {
-}
-
-FileBufferPanel :: struct {
-    buffer_id: int,
-    viewed_symbol: Maybe(string),
-
-    search_buffer: FileBuffer,
-    query_arena: mem.Arena,
-    query_region: mem.Arena_Temp_Memory,
-    query_results: []GrepQueryResult,
-    selected_result: int,
-    is_searching: bool,
-
-    // only used for initialization
-    file_path: string,
-    line, col: int,
-}
-
-GrepPanel :: struct {
-    buffer: FileBuffer,
-    selected_result: int,
-    search_query: string,
-    glyphs: GlyphBuffer,
-
-    query_arena: mem.Arena,
-    query_region: mem.Arena_Temp_Memory,
-    query_results: []GrepQueryResult,
-
-    query_queue: jobs.JobQueue,
-}
-
-GrepQueryResult :: struct {
-    file_context: string,
-    file_path: string,
-    line: int,
-    col: int,
+    _set_buffer:     proc(panel: ^Panel, buffer_id: int),
 }
 
 current_buffer :: proc(state: ^State) -> ^FileBuffer {
@@ -197,10 +157,10 @@ new_buffer :: proc{new_buffer_file, new_buffer_virtual}
 
 open_buffer_file :: proc(state: ^State, file_path: string, line: int = 0, col: int = 0) {
     attempt_switch_to_panel_buffer :: proc(state: ^State, panel: ^Panel, file_path: string, line: int, col: int) -> bool {
-        if type, ok := &panel.type.(FileBufferPanel); ok {
+        if panel.is_file_buffer {
             buffer_id, _, ok := new_buffer_file(state, file_path, line, col)
             if ok {
-                type.buffer_id = buffer_id
+                panel->_set_buffer(buffer_id)
                 switch_to_panel(state, panel.id)
 
                 return true

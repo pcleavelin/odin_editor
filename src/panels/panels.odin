@@ -54,7 +54,7 @@ register_default_panel_actions :: proc(input_map: ^core.InputActions) {
     }, "focus panel to the right");
 
     core.register_key_action(input_map, .V, proc(state: ^core.State, user_data: rawptr) {
-        open(state, make_file_buffer_panel(""))
+        open(state, make_file_buffer_panel())
 
         core.reset_input_map(state)
     }, "Split Panel");
@@ -67,7 +67,7 @@ register_default_panel_actions :: proc(input_map: ^core.InputActions) {
 }
 
 
-open :: proc(state: ^core.State, panel: core.Panel, make_active: bool = true) -> (panel_id: int, ok: bool) {
+open :: proc(state: ^core.State, panel: core.Panel, data: rawptr = nil, make_active: bool = true) -> (panel_id: int, ok: bool) {
     if panel_id, panel, ok := util.append_static_list(&state.panels, panel); ok && make_active {
         panel.id = panel_id
 
@@ -81,7 +81,11 @@ open :: proc(state: ^core.State, panel: core.Panel, make_active: bool = true) ->
         mem.arena_init(&panel.arena, arena_bytes)
         panel.allocator = mem.arena_allocator(&panel.arena)
 
-        panel->create(state)
+        if panel.name == nil {
+            panel.name = proc(panel: ^core.Panel) -> string { return "Unknown Panel" }
+        }
+
+        panel->create(state, data)
 
         core.switch_to_panel(state, panel_id)
         core.reset_input_map(state)

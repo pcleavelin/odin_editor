@@ -262,10 +262,13 @@ main :: proc() {
 
     if len(os.args) > 1 {
         for arg in os.args[1:] {
-            panels.open(&state, panels.make_file_buffer_panel(arg))
+            data := panels.MakeFileBuffer {
+                file_path = arg
+            }
+            panels.open(&state, panels.make_file_buffer_panel(), &data)
         }
     } else {
-        panels.open(&state, panels.make_file_buffer_panel(""))
+        panels.open(&state, panels.make_file_buffer_panel(), &panels.MakeFileBuffer {})
     }
 
     if sdl2.Init({.VIDEO}) < 0 {
