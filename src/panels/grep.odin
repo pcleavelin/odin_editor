@@ -231,7 +231,6 @@ make_grep_panel :: proc() -> core.Panel {
             }, "exit insert mode");
             core.register_key_action(&panel.input_map.mode[.Normal], .ESCAPE, proc(state: ^core.State, user_data: rawptr) {
                 this_panel := transmute(^core.Panel)user_data
-                panel_state := transmute(^GrepPanel)this_panel.state
                 close(state, this_panel.id)
             }, "close panel");
         },
