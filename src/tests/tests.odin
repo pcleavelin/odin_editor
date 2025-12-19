@@ -28,24 +28,30 @@ new_test_editor :: proc() -> core.State {
 }
 
 delete_editor :: proc(e: ^core.State) {
+    // these are just here to reduce the noise in the tests
     util.delete(&e.panels)
+    util.delete(&e.buffers)
+
+    if e.yank_register.data != nil {
+        delete(e.yank_register.data)
+    }
 }
 
-buffer_to_string :: proc(buffer: ^core.FileBuffer, allocator = context.allocator) -> string {
-    if buffer == nil {
-        log.error("nil buffer")
-    }
+buffer_to_string :: proc(buffer: ^core.FileBuffer, allocator := context.allocator) -> string {
+    context.allocator = allocator
+
+    t := core.buffer_piece_table(buffer)
 
     length := 0
-    for chunk in core.buffer_piece_table(buffer).chunks {
-        length += len(chunk)
+    for chunk in t.chunks {
+        length += chunk.len
     }
 
-    buffer_contents := make([]u8, length, allocator = allocator)
+    buffer_contents := make([]u8, length)
 
     offset := 0
-    for chunk in core.buffer_piece_table(buffer).chunks {
-        for c in chunk {
+    for chunk in t.chunks {
+        for c in core.get_content(t.content, chunk) {
             buffer_contents[offset] = c
             offset += 1
         }
@@ -147,6 +153,7 @@ insert_from_empty_no_newlines :: proc(t: ^testing.T) {
 
     inputted_text := "Hello, world!"
     expected_text := fmt.aprintf("%v\n", inputted_text)
+    defer delete(expected_text)
     run_text_insertion(&e, inputted_text)
 
     expect_line_col(t, buffer.history.cursor, 0, 12)
@@ -171,6 +178,7 @@ insert_from_empty_with_newline :: proc(t: ^testing.T) {
 
     inputted_text := "Hello, world!\nThis is a new line"
     expected_text := fmt.aprintf("%v\n", inputted_text)
+    defer delete(expected_text)
     run_text_insertion(&e, inputted_text)
 
     expect_line_col(t, buffer.history.cursor, 1, 17)

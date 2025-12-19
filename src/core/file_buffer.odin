@@ -830,7 +830,7 @@ tree_sitter_file_buffer_input :: proc(buffer: ^FileBuffer) -> ts.Input {
         buffer := transmute(^FileBuffer)payload
 
         if iter, ok := new_piece_table_iter_from_byte_offset(&buffer.history.piece_table, int(byte_index)); ok {
-            bytes := iter.t.chunks[iter.index.chunk_index][iter.index.char_index:]
+            bytes := get_content(iter.t.content, iter.t.chunks[iter.index.chunk_index])[iter.index.char_index:]
             bytes_read^ = u32(len(bytes))
 
             return raw_data(bytes)
@@ -851,11 +851,13 @@ save_buffer_to_disk :: proc(state: ^State, buffer: ^FileBuffer) -> (error: os.Er
     fd := os.open(buffer.file_path, flags = os.O_WRONLY | os.O_TRUNC | os.O_CREATE) or_return;
     defer os.close(fd);
 
+    t := buffer_piece_table(buffer)
+
     offset: i64 = 0
-    for chunk in buffer_piece_table(buffer).chunks {
-        os.write(fd, chunk) or_return
+    for chunk in t.chunks {
+        os.write(fd, get_content(t.content, chunk)) or_return
         
-        offset += i64(len(chunk))
+        offset += i64(chunk.len)
     }
     os.flush(fd)
 
@@ -1099,16 +1101,18 @@ get_buffer_indent :: proc(buffer: ^FileBuffer, cursor: Maybe(Cursor) = nil) -> i
 buffer_to_string :: proc(buffer: ^FileBuffer, allocator := context.allocator) -> string {
     context.allocator = allocator
 
+    t := buffer_piece_table(buffer)
+
     length := 0
-    for chunk in buffer_piece_table(buffer).chunks {
-        length += len(chunk)
+    for chunk in t.chunks {
+        length += chunk.len
     }
 
     buffer_contents := make([]u8, length)
 
     offset := 0
-    for chunk in buffer_piece_table(buffer).chunks {
-        for c in chunk {
+    for chunk in t.chunks {
+        for c in get_content(t.content, chunk) {
             buffer_contents[offset] = c
             offset += 1
         }

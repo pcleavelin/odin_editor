@@ -15,7 +15,7 @@ FileHistory :: struct {
 }
 
 Snapshot :: struct {
-    chunks: [dynamic][]u8,
+    chunks: [dynamic]ContentIndex,
     cursor: Cursor,
 }
 
@@ -53,8 +53,7 @@ free_history :: proc(history: ^FileHistory) {
     }
     delete(history.snapshots)
 
-    delete(history.piece_table.original_content)
-    delete(history.piece_table.added_content)
+    delete(history.piece_table.content)
     delete(history.piece_table.chunks)
 }
 
@@ -116,11 +115,11 @@ first_snapshot :: proc(history: ^FileHistory) {
     history.cursor = history.snapshots[history.next].cursor
 }
 
-clone_chunk :: proc(chunks: [dynamic][]u8) -> [dynamic][]u8 {
-    new_chunks := make([dynamic][]u8, len(chunks), len(chunks))
+clone_chunk :: proc(chunks: [dynamic]ContentIndex) -> [dynamic]ContentIndex {
+    new_chunks := make([dynamic]ContentIndex, len(chunks), len(chunks))
 
-    for ptr, i in chunks {
-        new_chunks[i] = ptr
+    for index, i in chunks {
+        new_chunks[i] = index
     }
 
     return new_chunks
