@@ -1,6 +1,7 @@
 # Bugs
+- when "change selection" is the first operation on a file, out of bounds crash
+- sometimes after making a lot of edits to a file, memory corruption occurs
 - Fix jumping forward a word jumping past consecutive brackets
-- Scrolling past end/beginning of grep results panics
 - "change selection" not pushing snapshot
 - Don't allow panel navigation in grep panel
 - Grep (rust side) can allocate gigabytes of duplicate data
@@ -86,4 +87,5 @@
     - Allow any-sized tabs
 - Command Search and Execution
     - Refactor to remove generics added specifically for plugins
-    - Palette based UI?
+    - [ ] Palette based UI
+        - How do inputs work?
