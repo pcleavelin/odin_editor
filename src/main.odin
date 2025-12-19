@@ -220,52 +220,67 @@ main :: proc() {
     //     }
     // )
 
-    // core.register_editor_command(
-    //     &state.commands,
-    //     "nl.spacegirl.editor.core",
-    //     "New Scratch Buffer",
-    //     "Opens a new scratch buffer",
-    //     proc(state: ^State) {
-    //         buffer := core.new_virtual_file_buffer(context.allocator);
-    //         util.append_static_list(&state.panels, panels.make_file_buffer_panel(len(state.buffers)))
-    //         runtime.append(&state.buffers, buffer);
-    //     }
-    // )
+    core.register_editor_command(
+        &state.commands,
+        "nl.spacegirl.editor.core",
+        "scratch",
+        "Opens a new scratch buffer",
+        proc(state: ^State, _: rawptr) {
+            panels.open(state, panels.make_file_buffer_panel())
+        }
+    )
+
+    core.register_editor_command(
+        &state.commands,
+        "nl.spacegirl.editor.core",
+        "select-font",
+        "Opens the font selector",
+        proc(state: ^State, _: rawptr) {
+            panels.open(state, panels.make_font_selector_panel())
+        }
+    )
+
     // core.register_editor_command(
     //     &state.commands,
     //     "nl.spacegirl.editor.core",
     //     "Open File",
     //     "Opens a file in a new buffer",
-    //     proc(state: ^State) {
+    //     proc(state: ^State, _: rawptr) {
     //         log.info("open file args:");
-
+    //
     //         Args :: struct {
     //             file_path: string
     //         }
-
+    //
     //         if args, ok := core.attempt_read_command_args(Args, state.command_args[:]); ok {
     //             log.info("attempting to open file", args.file_path)
-
-    //             panels.open_file_buffer_in_new_panel(state, args.file_path, 0, 0)
+    //
+    //             panels.open(state, panels.make_file_buffer_panel(), &panels.MakeFileBuffer {file_path = args.file_path})
+    //
+    //             core.reset_input_map(state)
     //         }
     //     }
     // )
-    // core.register_editor_command(
-    //     &state.commands,
-    //     "nl.spacegirl.editor.core",
-    //     "Quit",
-    //     "Quits the application",
-    //     proc(state: ^State) {
-    //         state.should_close = true
-    //     }
-    // )
+
+    core.register_editor_command(
+        &state.commands,
+        "nl.spacegirl.editor.core",
+        "quit",
+        "Quits the application",
+        proc(state: ^State, _: rawptr) {
+            state.should_close = true
+        }
+    )
 
     if len(os.args) > 1 {
         for arg in os.args[1:] {
-            panels.open(&state, panels.make_file_buffer_panel(arg))
+            data := panels.MakeFileBuffer {
+                file_path = arg
+            }
+            panels.open(&state, panels.make_file_buffer_panel(), &data)
         }
     } else {
-        panels.open(&state, panels.make_file_buffer_panel(""))
+        panels.open(&state, panels.make_file_buffer_panel(), &panels.MakeFileBuffer {})
     }
 
     if sdl2.Init({.VIDEO}) < 0 {
@@ -306,7 +321,7 @@ main :: proc() {
         log.error("Failed to create renderer:", sdl2.GetError());
         return;
     }
-    state.font_atlas = core.gen_font_atlas(&state, core.HardcodedFontPath);
+    state.font_atlas = core.gen_font_atlas(&state, state.font_path);
     defer {
         if state.font_atlas.font != nil {
             ttf.CloseFont(state.font_atlas.font);

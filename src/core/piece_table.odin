@@ -150,6 +150,7 @@ iterate_piece_table_iter_reverse :: proc(it: ^PieceTableIter) -> (character: u8,
 }
 
 get_character_at_piece_table_index :: proc(t: ^PieceTable, index: PieceTableIndex) -> u8 {
+    // FIXME: up the call chain (particularly with pasting over selections) these can be out of bounds
     return t.chunks[index.chunk_index][index.char_index]
 }
 
@@ -163,6 +164,7 @@ insert_text :: proc(t: ^PieceTable, to_be_inserted: []u8, index: PieceTableIndex
         if len(t.chunks) > 1 && index.chunk_index > 0 {
             last_chunk_index := len(t.chunks[index.chunk_index-1])-1
 
+            // FIXME:                                                                 [this can be negative?          ]
             if (&t.chunks[index.chunk_index-1][last_chunk_index]) == (&t.added_content[len(t.added_content)-1 - length]) {
                 start := len(t.added_content)-1 - last_chunk_index - length
                 

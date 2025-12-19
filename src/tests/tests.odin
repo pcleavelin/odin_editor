@@ -31,7 +31,7 @@ delete_editor :: proc(e: ^core.State) {
     util.delete(&e.panels)
 }
 
-buffer_to_string :: proc(buffer: ^core.FileBuffer) -> string {
+buffer_to_string :: proc(buffer: ^core.FileBuffer, allocator = context.allocator) -> string {
     if buffer == nil {
         log.error("nil buffer")
     }
@@ -41,7 +41,7 @@ buffer_to_string :: proc(buffer: ^core.FileBuffer) -> string {
         length += len(chunk)
     }
 
-    buffer_contents := make([]u8, length)
+    buffer_contents := make([]u8, length, allocator = allocator)
 
     offset := 0
     for chunk in core.buffer_piece_table(buffer).chunks {
@@ -89,7 +89,7 @@ input_text :: proc(text: string) -> ArtificialTextInput {
 }
 
 setup_empty_buffer :: proc(state: ^core.State) {
-    panels.open(state, panels.make_file_buffer_panel(""))
+    panels.open(state, panels.make_file_buffer_panel(), &panels.MakeFileBuffer{})
 
     core.reset_input_map(state)
 }

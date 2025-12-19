@@ -17,16 +17,27 @@ FontAtlas :: struct {
     max_height: int,
 }
 
+SystemFont :: struct {
+    display_name: string,
+    file_path: cstring,
+}
+
 gen_font_atlas :: proc(state: ^State, path: cstring) -> FontAtlas {
     free_font_atlas(state.font_atlas);
 
     font_height := i32(state.source_font_height*scale);
+    state.font_path = path
 
+    if state.font_path == nil {
+        state.font_path = load_default_system_font_path(font_height)
+    } 
+
+    // FIXME: check if this failed
     atlas := FontAtlas {
-        // FIXME: check if this failed
-        font = ttf.OpenFont(path, font_height),
+        font = ttf.OpenFont(state.font_path, font_height),
     }
-    assert(atlas.font != nil);
+    assert(atlas.font != nil)
+
     ttf.SetFontStyle(atlas.font, ttf.STYLE_NORMAL);
 
     // NOTE: not sure if I like the look of this or not yet

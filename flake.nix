@@ -84,6 +84,32 @@
           };
       in
       {
+        checks = {
+          tests = pkgs.stdenv.mkDerivation {
+            name = "editor-tests";
+            src = ./.;
+
+            nativeBuildInputs = with pkgs; [
+              tree-sitter-odin
+              tree-sitter-json
+              tree-sitter-rust
+              tree-sitter
+              grep-lib
+              odin
+              SDL2
+              SDL2_ttf
+            ];
+
+            buildPhase = ''
+              mkdir -p bin/
+              make test
+            '';
+            installPhase = ''
+              touch $out
+            '';
+          };
+        };
+
         devShell = pkgs.mkShell {
           buildInputs = with pkgs; (if pkgs.system == "aarch64-darwin" || pkgs.system == "x86_64-darwin" then [
             git
@@ -92,6 +118,13 @@
             ols
             SDL2
             SDL2_ttf
+            tree-sitter-odin
+            tree-sitter-json
+            tree-sitter-rust
+            tree-sitter
+            grep-lib
+            binutils
+            clang
           ] else if pkgs.system == "x86_64-linux" then [
             pkg-config
             binutils
@@ -110,6 +143,12 @@
         };
 
         packages = {
+          grep-lib = grep-lib;
+          tree-sitter-json = tree-sitter-json;
+          tree-sitter-rust = tree-sitter-rust;
+          tree-sitter-odin = tree-sitter-odin;
+          tree-sitter = tree-sitter;
+
           editor = pkgs.stdenv.mkDerivation rec {
             pname = "editor";
             version = "0.1";
@@ -121,11 +160,7 @@
               tree-sitter-rust
               tree-sitter
               grep-lib
-              local-rust
-              binutils
-              clang
               odin
-              ols
               SDL2
               SDL2_ttf
             ];

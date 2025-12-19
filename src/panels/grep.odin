@@ -18,6 +18,26 @@ import ring "../util/ring_buffer"
 
 MAX_GREP_RESULTS :: 2000
 
+GrepPanel :: struct {
+    buffer: core.FileBuffer,
+    selected_result: int,
+    search_query: string,
+    glyphs: core.GlyphBuffer,
+
+    query_arena: mem.Arena,
+    query_region: mem.Arena_Temp_Memory,
+    query_results: []GrepQueryResult,
+
+    query_queue: jobs.JobQueue,
+}
+
+GrepQueryResult :: struct {
+    file_context: string,
+    file_path: string,
+    line: int,
+    col: int,
+}
+
 open_grep_panel :: proc(state: ^core.State) {
     open(state, make_grep_panel())
 
@@ -53,7 +73,7 @@ query_handler :: proc(job: ^jobs.Job) {
 }
 
 @(private)
-pop_job_results :: proc(panel_state: ^core.GrepPanel) {
+pop_job_results :: proc(panel_state: ^GrepPanel) {
     has_results := false
     for {
         job, did_pop := jobs.pop(&panel_state.query_queue);
@@ -61,7 +81,9 @@ pop_job_results :: proc(panel_state: ^core.GrepPanel) {
             break
         }
 
+        context.allocator = mem.arena_allocator(&panel_state.query_arena)
         panel_state.query_results = rs_grep_as_results(transmute(^RS_GrepResults)job.output)
+
         jobs.destroy_job(&panel_state.query_queue, job)
 
         has_results = true
@@ -80,7 +102,12 @@ pop_job_results :: proc(panel_state: ^core.GrepPanel) {
 }
 
 make_grep_panel :: proc() -> core.Panel {
-    run_query :: proc(panel_state: ^core.GrepPanel, buffer: ^core.FileBuffer, directory: string) {
+    run_query :: proc(panel_state: ^GrepPanel, buffer: ^core.FileBuffer, directory: string) {
+        if panel_state.query_region.arena != nil {
+            mem.end_arena_temp_memory(panel_state.query_region)
+        }
+        panel_state.query_region = mem.begin_arena_temp_memory(&panel_state.query_arena)
+
         search_query := core.buffer_to_string(buffer, allocator = context.temp_allocator)
 
         // NOTE: no reason to grep the whole workspace with a single character
@@ -117,23 +144,35 @@ make_grep_panel :: proc() -> core.Panel {
     }
 
     return core.Panel {
-        type = core.GrepPanel {},
         is_floating = true,
+        name = proc(panel: ^core.Panel) -> string {
+            return "GrepPanel"
+        },
         drop = proc(panel: ^core.Panel, state: ^core.State) {
-            panel_state := &panel.type.(core.GrepPanel)
+            panel_state := transmute(^GrepPanel)panel.state
 
             jobs.destroy_job_queue(&panel_state.query_queue)
             ts.delete_state(&panel_state.buffer.tree)
         },
-        create = proc(panel: ^core.Panel, state: ^core.State) {
+        create = proc(panel: ^core.Panel, state: ^core.State, data: rawptr) {
             context.allocator = panel.allocator
 
-            panel_state := &panel.type.(core.GrepPanel)
+            panel.state = transmute(core.PanelState)new(GrepPanel)
+            panel_state := transmute(^GrepPanel)panel.state
+            panel_state^ = GrepPanel {}
 
             panel.input_map = core.new_input_map(show_help = true)
             panel_state.glyphs = core.make_glyph_buffer(256,256)
             panel_state.buffer = core.new_virtual_file_buffer()
             jobs.make_job_queue(panel.allocator, 2, &panel_state.query_queue)
+
+
+            arena_bytes, err := make([]u8, MAX_GREP_RESULTS*512)
+            if err != nil {
+                log.errorf("failed to allocate arena for grep panel: '%v'", err)
+                return
+            }
+            mem.arena_init(&panel_state.query_arena, arena_bytes)
 
             panel_actions := core.new_input_actions(show_help = true)
             register_default_panel_actions(&panel_actions)
@@ -141,15 +180,15 @@ make_grep_panel :: proc() -> core.Panel {
 
             core.register_key_action(&panel.input_map.mode[.Normal], .ENTER, proc(state: ^core.State, user_data: rawptr) {
                 this_panel := transmute(^core.Panel)user_data
+                panel_state := transmute(^GrepPanel)this_panel.state
 
-                if panel_state, ok := &this_panel.type.(core.GrepPanel); ok {
-                    if panel_state.query_results != nil {
-                        selected_result := &panel_state.query_results[panel_state.selected_result]
+                if panel_state.query_results != nil {
+                    selected_result := &panel_state.query_results[panel_state.selected_result]
 
-                        core.open_buffer_file(state, selected_result.file_path, selected_result.line, selected_result.col)
-                        close(state, this_panel.id)
-                    }
+                    core.open_buffer_file(state, selected_result.file_path, selected_result.line, selected_result.col)
+                    close(state, this_panel.id)
                 }
+
             }, "Open File");
             core.register_key_action(&panel.input_map.mode[.Normal], .I, proc(state: ^core.State, user_data: rawptr) {
                 state.mode = .Insert;
@@ -157,31 +196,33 @@ make_grep_panel :: proc() -> core.Panel {
             }, "enter insert mode");
             core.register_key_action(&panel.input_map.mode[.Normal], .K, proc(state: ^core.State, user_data: rawptr) {
                 this_panel := transmute(^core.Panel)user_data
+                panel_state := transmute(^GrepPanel)this_panel.state
 
-                if panel_state, ok := &this_panel.type.(core.GrepPanel); ok {
-                    // TODO: bounds checking
+                if panel_state.selected_result > 0 {
                     panel_state.selected_result -= 1
-
-                    core.update_glyph_buffer_from_bytes(
-                        &panel_state.glyphs,
-                        transmute([]u8)panel_state.query_results[panel_state.selected_result].file_context,
-                        panel_state.query_results[panel_state.selected_result].line,
-                    )
                 }
+
+                core.update_glyph_buffer_from_bytes(
+                    &panel_state.glyphs,
+                    transmute([]u8)panel_state.query_results[panel_state.selected_result].file_context,
+                    panel_state.query_results[panel_state.selected_result].line,
+                )
+
             }, "move selection up");
             core.register_key_action(&panel.input_map.mode[.Normal], .J, proc(state: ^core.State, user_data: rawptr) {
                 this_panel := transmute(^core.Panel)user_data
+                panel_state := transmute(^GrepPanel)this_panel.state
 
-                if panel_state, ok := &this_panel.type.(core.GrepPanel); ok {
-                    // TODO: bounds checking
+                if panel_state.selected_result < len(panel_state.query_results)-1 {
                     panel_state.selected_result += 1
-
-                    core.update_glyph_buffer_from_bytes(
-                        &panel_state.glyphs,
-                        transmute([]u8)panel_state.query_results[panel_state.selected_result].file_context,
-                        panel_state.query_results[panel_state.selected_result].line,
-                    )
                 }
+
+                core.update_glyph_buffer_from_bytes(
+                    &panel_state.glyphs,
+                    transmute([]u8)panel_state.query_results[panel_state.selected_result].file_context,
+                    panel_state.query_results[panel_state.selected_result].line,
+                )
+
             }, "move selection down");
 
             core.register_key_action(&panel.input_map.mode[.Insert], .ESCAPE, proc(state: ^core.State, user_data: rawptr) {
@@ -194,127 +235,121 @@ make_grep_panel :: proc() -> core.Panel {
             }, "close panel");
         },
         buffer = proc(panel: ^core.Panel, state: ^core.State) -> (buffer: ^core.FileBuffer, ok: bool) {
-            if panel_state, ok := &panel.type.(core.GrepPanel); ok {
-                return &panel_state.buffer, true
-            }
+            panel_state := transmute(^GrepPanel)panel.state
 
-            return
+            return &panel_state.buffer, true
         },
         on_buffer_input = proc(panel: ^core.Panel, state: ^core.State) {
-            if panel_state, ok := &panel.type.(core.GrepPanel); ok {
-                run_query(panel_state, &panel_state.buffer, state.directory)
-            }
+            panel_state := transmute(^GrepPanel)panel.state
+            run_query(panel_state, &panel_state.buffer, state.directory)
         },
         render = proc(panel: ^core.Panel, state: ^core.State) -> (ok: bool) {
             context.allocator = panel.allocator
 
-            if panel_state, ok := &panel.type.(core.GrepPanel); ok {
-                pop_job_results(panel_state)
+            panel_state := transmute(^GrepPanel)panel.state
+            pop_job_results(panel_state)
 
-                s := transmute(^ui.State)state.ui
+            s := transmute(^ui.State)state.ui
 
-                ui.open_element(s, nil,
-                    {
-                        dir = .TopToBottom,
-                        kind = {ui.Grow{}, ui.Grow{}},
-                        floating = true,
-                    },
-                    style = {
-                        background_color = .Background1,
-                    },
-                )
+            ui.open_element(s, nil,
                 {
-                    // query results and file contents side-by-side
-                    ui.open_element(s, nil, {
-                        dir = .LeftToRight,
-                        kind = {ui.Grow{}, ui.Grow{}}
-                    })
-                    {
-                        if panel_state.query_results != nil {
-                            // query results
-                            query_result_container := ui.open_element(s, nil,
-                                {
-                                    dir = .TopToBottom,
-                                    kind = {ui.Grow{}, ui.Grow{}}
-                                },
-                                style = {
-                                    border = {.Right},
-                                    border_color = .Background4
-                                }
-                            )
+                    dir = .TopToBottom,
+                    kind = {ui.Grow{}, ui.Grow{}},
+                    floating = true,
+                },
+                style = {
+                    background_color = .Background1,
+                },
+            )
+            {
+                // query results and file contents side-by-side
+                ui.open_element(s, nil, {
+                    dir = .LeftToRight,
+                    kind = {ui.Grow{}, ui.Grow{}}
+                })
+                {
+                    if panel_state.query_results != nil {
+                        // query results
+                        query_result_container := ui.open_element(s, nil,
                             {
-                                container_height := query_result_container.layout.size.y
-                                max_results := container_height / 16
+                                dir = .TopToBottom,
+                                kind = {ui.Grow{}, ui.Grow{}}
+                            },
+                            style = {
+                                border = {.Right},
+                                border_color = .Background4
+                            }
+                        )
+                        {
+                            container_height := query_result_container.layout.size.y
+                            max_results := container_height / 16
 
-                                for result, i in panel_state.query_results {
-                                    if i >= max_results {
-                                        break
+                            for result, i in panel_state.query_results {
+                                if i >= max_results {
+                                    break
+                                }
+
+                                ui.open_element(s, nil, {
+                                    dir = .LeftToRight,
+                                    kind = {ui.Fit{}, ui.Fit{}},
+                                })
+                                {
+                                    defer ui.close_element(s)
+
+                                    ui.open_element(s, fmt.tprintf("%v:%v: ", result.line, result.col), {})
+                                    ui.close_element(s)
+
+
+                                    style := ui.UI_Style{}
+
+                                    if panel_state.selected_result == i {
+                                        style.background_color = .Background2
                                     }
 
-                                    ui.open_element(s, nil, {
-                                        dir = .LeftToRight,
-                                        kind = {ui.Fit{}, ui.Fit{}},
-                                    })
-                                    {
-                                        defer ui.close_element(s)
-
-                                        ui.open_element(s, fmt.tprintf("%v:%v: ", result.line, result.col), {})
+                                    if len(result.file_path) > 0 {
+                                        ui.open_element(s, result.file_path[len(state.directory):], {}, style)
                                         ui.close_element(s)
-
-
-                                        style := ui.UI_Style{}
-
-                                        if panel_state.selected_result == i {
-                                            style.background_color = .Background2
-                                        }
-
-                                        if len(result.file_path) > 0 {
-                                            ui.open_element(s, result.file_path[len(state.directory):], {}, style)
-                                            ui.close_element(s)
-                                        } else {
-                                            style.background_color = .BrightRed
-                                            ui.open_element(s, "BAD FILE DIRECTORY", {}, style)
-                                            ui.close_element(s)
-                                        }
+                                    } else {
+                                        style.background_color = .BrightRed
+                                        ui.open_element(s, "BAD FILE DIRECTORY", {}, style)
+                                        ui.close_element(s)
                                     }
                                 }
                             }
-                            ui.close_element(s)
-
-                            // file contents
-                            selected_result := &panel_state.query_results[panel_state.selected_result]
-
-                            core.update_glyph_buffer_from_bytes(
-                                &panel_state.glyphs,
-                                transmute([]u8)selected_result.file_context,
-                                selected_result.line,
-                            )
-                            render_glyph_buffer(state, s, &panel_state.glyphs)
                         }
-                    }
-                    ui.close_element(s)
+                        ui.close_element(s)
 
-                    // text input
-                    ui.open_element(s, nil,
-                        {
-                            kind = {ui.Grow{}, ui.Exact(state.source_font_height)}
-                        },
-                        style = {
-                            background_color = .Background2
-                        }
-                    )
-                    {
-                        defer ui.close_element(s)
+                        // file contents
+                        selected_result := &panel_state.query_results[panel_state.selected_result]
 
-                        render_raw_buffer(state, s, &panel_state.buffer)
+                        core.update_glyph_buffer_from_bytes(
+                            &panel_state.glyphs,
+                            transmute([]u8)selected_result.file_context,
+                            selected_result.line,
+                        )
+                        render_glyph_buffer(state, s, &panel_state.glyphs)
                     }
                 }
                 ui.close_element(s)
 
-                return true
-            }
+                // text input
+                ui.open_element(s, nil,
+                    {
+                        kind = {ui.Grow{}, ui.Exact(state.source_font_height)}
+                    },
+                    style = {
+                        background_color = .Background2
+                    }
+                )
+                {
+                    defer ui.close_element(s)
 
-            return false
+                    render_raw_buffer(state, s, &panel_state.buffer)
+                }
+            }
+            ui.close_element(s)
+
+            return true
         }
     }
 }
@@ -343,17 +378,17 @@ RS_GrepResult :: struct {
 }
 
 @(private)
-rs_grep_as_results :: proc(results: ^RS_GrepResults, allocator := context.allocator) -> []core.GrepQueryResult {
+rs_grep_as_results :: proc(results: ^RS_GrepResults, allocator := context.allocator) -> []GrepQueryResult {
     context.allocator = allocator
 
     max_results := min(results.len, MAX_GREP_RESULTS)
 
-    query_results := make([]core.GrepQueryResult, max_results)
+    query_results := make([]GrepQueryResult, max_results)
 
     for i in 0..<len(query_results) {
         r := results.results[i]
 
-        query_results[i] = core.GrepQueryResult {
+        query_results[i] = GrepQueryResult {
             file_context = strings.clone_from_ptr(r.text, int(r.text_len)) or_continue,
             file_path = strings.clone_from_ptr(r.path, int(r.path_len)) or_continue,
             line = int(r.line_number) - 1,
