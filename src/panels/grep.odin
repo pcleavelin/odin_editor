@@ -190,6 +190,11 @@ make_grep_panel :: proc() -> core.Panel {
 
             }, "Open File");
             core.register_key_action(&panel.input_map.mode[.Normal], .I, proc(state: ^core.State, user_data: rawptr) {
+                this_panel := transmute(^core.Panel)user_data
+                panel_state := transmute(^GrepPanel)this_panel.state
+                
+                core.move_cursor_right(&panel_state.buffer, false);
+                
                 state.mode = .Insert;
                 sdl2.StartTextInput();
             }, "enter insert mode");

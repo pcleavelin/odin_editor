@@ -65,7 +65,16 @@ make_cmd_palette_panel :: proc() -> core.Panel {
                     num_items += 1
                 }
             }
-
+            
+            core.register_key_action(&panel.input_map.mode[.Normal], .I, proc(state: ^core.State, user_data: rawptr) {
+                this_panel := transmute(^core.Panel)user_data
+                panel_state := transmute(^CommandPalettePanel)this_panel.state
+                
+                core.move_cursor_right(&panel_state.buffer, false);
+                
+                state.mode = .Insert;
+                sdl2.StartTextInput();
+            }, "enter insert mode");
             core.register_key_action(&panel.input_map.mode[.Normal], .K, proc(state: ^core.State, user_data: rawptr) {
                 this_panel := transmute(^core.Panel)user_data
                 panel_state := transmute(^CommandPalettePanel)this_panel.state
@@ -120,23 +129,52 @@ make_cmd_palette_panel :: proc() -> core.Panel {
             panel_state := transmute(^CommandPalettePanel)panel.state
 
             input_str := core.buffer_to_string(&panel_state.buffer, allocator = context.temp_allocator)
+            
+            if len(input_str) > 0 && input_str[len(input_str)-1] == '\n' && panel_state.items != nil {
+                item := &panel_state.items[panel_state.selected_item]
 
+                close(state, panel.id)
+
+                if item.action != nil {
+                   item.action(state, nil)
+                }
+                
+                state.mode = .Normal
+                sdl2.StopTextInput()
+                
+                core.reset_input_map(state)
+                
+                return
+            }
+                
             // really janky and barely working fuzzy search
             // it *attempts* to find the closest set of consecutive letters
             // with each letter in between them adding to the total distance
-            //
-            // one problem is that it is biased towards the first letter from the needle
-            // it find in the haystack
             for &item in panel_state.items {
                 haystack_index := 0
-                dist := 0
+                dist := -1 
                 for needle in input_str {
+                    letter_exists := false
+                    if haystack_index >= len(item.name) {
+                        dist += 1
+                    }
                     for haystack, i in item.name[haystack_index:] {
                         if haystack == needle {
-                            dist += i
+                            letter_exists = true
+                            
+                            if haystack_index > 0 {
+                                dist += i
+                            } else if dist < 0 {
+                                dist = 0
+                            }
+                            
                             haystack_index = haystack_index + i+1
                             break
                         }
+                    }
+                    
+                    if !letter_exists {
+                        dist += len(item.name) - haystack_index
                     }
                 }
 
@@ -144,6 +182,9 @@ make_cmd_palette_panel :: proc() -> core.Panel {
             }
 
             slice.sort_by(panel_state.items, proc(a,b: CommandPaletteItem) -> bool {
+                if a.sort_id < 0 { return false }
+                if b.sort_id < 0 { return true }
+                
                 return a.sort_id < b.sort_id
             })
         },
@@ -274,5 +315,6 @@ render_input_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.File
     ui.close_element(s)
 
 }
+
 
 
