@@ -123,21 +123,23 @@ list :: proc($T: typeid, s: ^State, items: []T, state: rawptr, selected_item: ^i
             }
 
             open_element(s, nil,
+                {
+                    kind = {Grow{},Exact(s.font_size.y * 2)}
+                },
+                style = {
+                    border = {.Bottom, .Top},
+                    border_color = .Background4,
+                    background_color = .Background3 if i+list_start^ == selected_item^ else .None,
+                }
+            )
             {
-                kind = {Grow{},Exact(s.font_size.y * 2)}
-            },
-            style = {
-                border = {.Bottom, .Top},
-                border_color = .Background4,
-                background_color = .Background3 if i+list_start^ == selected_item^ else .None,
+                render_item(s, &item, state)
             }
-        )
-        {
-            render_item(s, &item, state)
+            close_element(s)
         }
-        close_element(s)
     }
-}
     close_element(s)
 }
+
+
 

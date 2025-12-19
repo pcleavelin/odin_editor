@@ -21,11 +21,11 @@ MAX_GREP_RESULTS :: 2000
 GrepPanel :: struct {
     buffer: core.FileBuffer,
     selected_result: int,
+    results_start: int,
     search_query: string,
     glyphs: core.GlyphBuffer,
 
     query_arena: mem.Arena,
-    query_region: mem.Arena_Temp_Memory,
     query_results: []GrepQueryResult,
 
     query_queue: jobs.JobQueue,
@@ -77,19 +77,23 @@ pop_job_results :: proc(panel_state: ^GrepPanel) {
     has_results := false
     for {
         job, did_pop := jobs.pop(&panel_state.query_queue);
+        has_results = did_pop
+        
         if !did_pop || job.output == nil  {
             break
         }
 
+        panel_state.query_results = nil
         context.allocator = mem.arena_allocator(&panel_state.query_arena)
+
+        mem.free_all()
+
         panel_state.query_results = rs_grep_as_results(transmute(^RS_GrepResults)job.output)
 
         jobs.destroy_job(&panel_state.query_queue, job)
-
-        has_results = true
     }
 
-    if has_results {
+    if has_results && panel_state.query_results != nil {
         panel_state.selected_result = 0
         if len(panel_state.query_results) > 0 {
             core.update_glyph_buffer_from_bytes(
@@ -103,11 +107,6 @@ pop_job_results :: proc(panel_state: ^GrepPanel) {
 
 make_grep_panel :: proc() -> core.Panel {
     run_query :: proc(panel_state: ^GrepPanel, buffer: ^core.FileBuffer, directory: string) {
-        if panel_state.query_region.arena != nil {
-            mem.end_arena_temp_memory(panel_state.query_region)
-        }
-        panel_state.query_region = mem.begin_arena_temp_memory(&panel_state.query_arena)
-
         search_query := core.buffer_to_string(buffer, allocator = context.temp_allocator)
 
         // NOTE: no reason to grep the whole workspace with a single character
@@ -251,6 +250,15 @@ make_grep_panel :: proc() -> core.Panel {
 
             s := transmute(^ui.State)state.ui
 
+            ListState :: struct {
+                core_state: ^core.State,
+                panel_state: ^GrepPanel,
+            }
+            list_state := ListState {
+                core_state = state,
+                panel_state = panel_state
+            }
+
             ui.open_element(s, nil,
                 {
                     dir = .TopToBottom,
@@ -272,7 +280,7 @@ make_grep_panel :: proc() -> core.Panel {
                         // query results
                         query_result_container := ui.open_element(s, nil,
                             {
-                                dir = .TopToBottom,
+                                dir = .LeftToRight,
                                 kind = {ui.Grow{}, ui.Grow{}}
                             },
                             style = {
@@ -281,41 +289,31 @@ make_grep_panel :: proc() -> core.Panel {
                             }
                         )
                         {
-                            container_height := query_result_container.layout.size.y
-                            max_results := container_height / 16
-
-                            for result, i in panel_state.query_results {
-                                if i >= max_results {
-                                    break
-                                }
-
-                                ui.open_element(s, nil, {
-                                    dir = .LeftToRight,
-                                    kind = {ui.Fit{}, ui.Fit{}},
-                                })
-                                {
-                                    defer ui.close_element(s)
-
-                                    ui.open_element(s, fmt.tprintf("%v:%v: ", result.line, result.col), {})
+                            ui.list(
+                                GrepQueryResult,
+                                s,
+                                panel_state.query_results,
+                                &list_state, &panel_state.selected_result, &panel_state.results_start, 
+                                proc(s: ^ui.State, item: rawptr, state: rawptr) {
+                                    result := transmute(^GrepQueryResult)item
+                                    list_state := transmute(^ListState)state
+                                    
+                                    ui.left_to_right(s)
+                                    {
+                                       ui.open_element(s, fmt.tprintf("%v:%v: ", result.line, result.col), { kind = {ui.Exact(list_state.core_state.source_font_width*10), ui.Fit{} }})
+                                       ui.close_element(s)
+                                       
+                                       if len(result.file_path) > 0 {
+                                            ui.open_element(s, result.file_path[len(list_state.core_state.directory):], { kind = {ui.Grow{}, ui.Fit{}} })
+                                            ui.close_element(s)
+                                        } else {
+                                            ui.open_element(s, "BAD FILE DIRECTORY", {}, style = { background_color = .BrightRed })
+                                            ui.close_element(s)
+                                        } 
+                                    }
                                     ui.close_element(s)
-
-
-                                    style := ui.UI_Style{}
-
-                                    if panel_state.selected_result == i {
-                                        style.background_color = .Background2
-                                    }
-
-                                    if len(result.file_path) > 0 {
-                                        ui.open_element(s, result.file_path[len(state.directory):], {}, style)
-                                        ui.close_element(s)
-                                    } else {
-                                        style.background_color = .BrightRed
-                                        ui.open_element(s, "BAD FILE DIRECTORY", {}, style)
-                                        ui.close_element(s)
-                                    }
                                 }
-                            }
+                            )
                         }
                         ui.close_element(s)
 
@@ -432,3 +430,5 @@ render_glyph_buffer :: proc(state: ^core.State, s: ^ui.State, glyphs: ^core.Glyp
     ui.close_element(s)
 
 }
+
+

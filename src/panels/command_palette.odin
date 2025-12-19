@@ -246,7 +246,7 @@ render_command_list :: proc(state: ^core.State, s: ^ui.State, panel_state: ^Comm
                 ui.close_element(s)
 
                 if len(item.description) > 0 {
-                    ui.open_element(s, fmt.tprintf("%v - dist: %v", item.description, item.sort_id), {})
+                    ui.open_element(s, fmt.tprintf("%v - dist: %v", item.description, item.sort_id), { kind = {ui.Grow{}, ui.Fit{}} })
                     ui.close_element(s)
                 }
             }
@@ -274,4 +274,5 @@ render_input_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.File
     ui.close_element(s)
 
 }
+
 

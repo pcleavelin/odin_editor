@@ -25,7 +25,6 @@ FileBufferPanel :: struct {
 
     search_buffer: core.FileBuffer,
     query_arena: mem.Arena,
-    query_region: mem.Arena_Temp_Memory,
     query_results: []GrepQueryResult,
     selected_result: int,
     is_searching: bool,
@@ -38,12 +37,8 @@ FileBufferPanel :: struct {
 
 make_file_buffer_panel :: proc() -> core.Panel {
     run_query :: proc(panel_state: ^FileBufferPanel, buffer: ^core.FileBuffer) {
-        if panel_state.query_region.arena != nil {
-            mem.end_arena_temp_memory(panel_state.query_region)
-        }
-        panel_state.query_region = mem.begin_arena_temp_memory(&panel_state.query_arena)
-
         context.allocator = mem.arena_allocator(&panel_state.query_arena)
+        mem.free_all()
 
         it := core.new_file_buffer_iter(buffer)
 
