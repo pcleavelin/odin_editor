@@ -71,7 +71,7 @@ open :: proc(state: ^core.State, panel: core.Panel, make_active: bool = true) ->
     if panel_id, panel, ok := util.append_static_list(&state.panels, panel); ok && make_active {
         panel.id = panel_id
 
-        arena_bytes, err := make([]u8, 1024*1024*8)
+        arena_bytes, err := make([]u8, 1024*1024*64)
         if err != nil {
             log.errorf("failed to allocate memory for panel: '%v'", err)
             util.delete(&state.panels, panel_id)

@@ -13,6 +13,7 @@ import "core:slice"
 import "vendor:sdl2"
 import "vendor:sdl2/ttf"
 
+import "jobs"
 import "util"
 import "core"
 import "panels"
@@ -40,6 +41,8 @@ draw :: proc(state: ^State) {
     new_ui := transmute(^ui.State)state.ui
     new_ui.max_size.x = state.screen_width
     new_ui.max_size.y = state.screen_height
+    new_ui.font_size.x = state.source_font_width
+    new_ui.font_size.y = state.source_font_height
 
     ui.open_element(new_ui, nil,
         {

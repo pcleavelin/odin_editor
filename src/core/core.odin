@@ -9,6 +9,7 @@ import "core:log"
 import "vendor:sdl2"
 
 import "../util"
+import "../jobs"
 
 HardcodedFontPath :: "bin/JetBrainsMono-Regular.ttf";
 
@@ -122,13 +123,13 @@ FileBufferPanel :: struct {
 }
 
 GrepPanel :: struct {
-    query_arena: mem.Arena,
-    query_region: mem.Arena_Temp_Memory,
     buffer: FileBuffer,
     selected_result: int,
     search_query: string,
     query_results: []GrepQueryResult,
     glyphs: GlyphBuffer,
+
+    query_queue: jobs.JobQueue,
 }
 
 GrepQueryResult :: struct {

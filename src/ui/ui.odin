@@ -15,6 +15,7 @@ State :: struct {
     prev_elements: []UI_Element,
 
     max_size: [2]int, 
+    font_size: [2]int,
 }
 
 UI_Element :: struct {
@@ -124,7 +125,7 @@ close_element :: proc(state: ^State, loc := #caller_location) -> UI_Layout {
                 switch v in e.kind {
                     case UI_Element_Kind_Text: {
                         // FIXME: properly use font size
-                        e.layout.size.x = len(v) * 12
+                        e.layout.size.x = len(v) * state.font_size.x
                     }
                     case UI_Element_Kind_Image: {
                         // TODO
@@ -157,7 +158,7 @@ close_element :: proc(state: ^State, loc := #caller_location) -> UI_Layout {
                     switch v in e.kind {
                         case UI_Element_Kind_Text: {
                             // FIXME: properly use font size
-                            e.layout.size.x = len(v) * 12
+                            e.layout.size.x = len(v) * state.font_size.x 
                         }
                         case UI_Element_Kind_Image: {
                             // TODO
@@ -179,7 +180,7 @@ close_element :: proc(state: ^State, loc := #caller_location) -> UI_Layout {
                     case UI_Element_Kind_Text: {
                         // TODO: wrap text
                         // FIXME: properly use font size
-                        e.layout.size.y = 16
+                        e.layout.size.y = state.font_size.y 
                     }
                     case UI_Element_Kind_Image: {
                         // TODO
@@ -213,7 +214,7 @@ close_element :: proc(state: ^State, loc := #caller_location) -> UI_Layout {
                         case UI_Element_Kind_Text: {
                             // TODO: wrap text
                             // FIXME: properly use font size
-                            e.layout.size.y = 16
+                            e.layout.size.y = state.font_size.y
                         }
                         case UI_Element_Kind_Image: {
                             // TODO
