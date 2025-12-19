@@ -1,4 +1,4 @@
-## How to build on *nix an macOS
+## How to build on *nix and macOS
 * Install the [nix package manager](https://nixos.org/download/).
 * Run `nix build .#editor` or `nix run .#editor`.
 
