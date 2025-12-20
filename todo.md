@@ -5,10 +5,10 @@
 - Grep (rust side) can allocate gigabytes of duplicate data
 
 # Visual QOL
-- Split grep search results into a table to avoid funky unaligned text
 - Padding around UI elements
 
 # TODO
+- [ ] Create new files
 - [ ] Jump List
 - [x] Use grouped lifetimes exclusively for memory allocation/freeing
 - [ ] Highlight which panel is currently active
@@ -74,6 +74,7 @@
 - Finish selections
     - [x] Guarantee that start and end are always ordered
     - [ ] Whole Line Selections
+        - [ ] V-Block & V-Line selection modes / pasting
     - Add in text actions
         - [x] Yank
         - [x] Delete
@@ -87,4 +88,5 @@
     - Refactor to remove generics added specifically for plugins
     - [ ] Palette based UI
         - How do inputs work?
+
 

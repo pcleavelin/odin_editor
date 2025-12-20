@@ -90,6 +90,14 @@ growing_top_to_bottom :: proc(s: ^State) -> UI_Element {
         },
     )
 }
+growing_left_to_right :: proc(s: ^State) -> UI_Element {
+    return open_element(s, nil,
+        {
+            dir = .LeftToRight,
+            kind = {Grow{}, Grow{}},
+        },
+    )
+}
 
 RenderItemProc :: proc(s: ^State, item: rawptr, state: rawptr)
 list :: proc($T: typeid, s: ^State, items: []T, state: rawptr, selected_item: ^int, list_start: ^int, render_item: RenderItemProc) {
@@ -140,6 +148,4 @@ list :: proc($T: typeid, s: ^State, items: []T, state: rawptr, selected_item: ^i
     }
     close_element(s)
 }
-
-
 

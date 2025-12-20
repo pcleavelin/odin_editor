@@ -245,6 +245,21 @@ make_grep_panel :: proc() -> core.Panel {
         },
         on_buffer_input = proc(panel: ^core.Panel, state: ^core.State) {
             panel_state := transmute(^GrepPanel)panel.state
+            
+            input_str := core.buffer_to_string(&panel_state.buffer, allocator = context.temp_allocator)
+            if len(input_str) > 0 && input_str[len(input_str)-1] == '\n' && panel_state.query_results != nil {
+                selected_result := &panel_state.query_results[panel_state.selected_result]
+
+                core.open_buffer_file(state, selected_result.file_path, selected_result.line, selected_result.col)
+                close(state, panel.id)
+
+                state.mode = .Normal
+                sdl2.StopTextInput()
+                
+                core.reset_input_map(state)
+                return
+            }
+
             run_query(panel_state, &panel_state.buffer, state.directory)
         },
         render = proc(panel: ^core.Panel, state: ^core.State) -> (ok: bool) {
@@ -281,47 +296,72 @@ make_grep_panel :: proc() -> core.Panel {
                     kind = {ui.Grow{}, ui.Grow{}}
                 })
                 {
-                    if panel_state.query_results != nil {
-                        // query results
-                        query_result_container := ui.open_element(s, nil,
+                    // query results
+                    query_result_container := ui.open_element(s, nil,
+                        {
+                            dir = .TopToBottom,
+                            kind = {ui.Grow{}, ui.Grow{}}
+                        },
+                        style = {
+                            border = {.Right},
+                            border_color = .Background4
+                        }
+                    )
+                    {
+                        ui.open_element(s, nil,
                             {
                                 dir = .LeftToRight,
-                                kind = {ui.Grow{}, ui.Grow{}}
+                                kind = {ui.Grow{}, ui.Exact(state.source_font_height*2)},
                             },
                             style = {
-                                border = {.Right},
-                                border_color = .Background4
-                            }
+                                border = {.Left, .Right, .Top, .Bottom},
+                                border_color = .Background4,
+                                background_color = .Background2, 
+                            },
                         )
                         {
-                            ui.list(
-                                GrepQueryResult,
-                                s,
-                                panel_state.query_results,
-                                &list_state, &panel_state.selected_result, &panel_state.results_start, 
-                                proc(s: ^ui.State, item: rawptr, state: rawptr) {
-                                    result := transmute(^GrepQueryResult)item
-                                    list_state := transmute(^ListState)state
-                                    
-                                    ui.left_to_right(s)
-                                    {
-                                       ui.open_element(s, fmt.tprintf("%v:%v: ", result.line, result.col), { kind = {ui.Exact(list_state.core_state.source_font_width*10), ui.Fit{} }})
-                                       ui.close_element(s)
-                                       
-                                       if len(result.file_path) > 0 {
-                                            ui.open_element(s, result.file_path[len(list_state.core_state.directory):], { kind = {ui.Grow{}, ui.Fit{}} })
-                                            ui.close_element(s)
-                                        } else {
-                                            ui.open_element(s, "BAD FILE DIRECTORY", {}, style = { background_color = .BrightRed })
-                                            ui.close_element(s)
-                                        } 
-                                    }
-                                    ui.close_element(s)
-                                }
-                            )
+                            ui.centered_top_to_bottom(s)
+                            {
+                                ui.left_to_right(s)
+                                {
+                                    ui.spacer(s, state.source_font_width)
+                                    render_raw_buffer(state, s, &panel_state.buffer)
+                                } 
+                                ui.close_element(s)
+                            }
+                            ui.close_centered_top_to_bottom(s)
                         }
                         ui.close_element(s)
+                        
+                        ui.list(
+                            GrepQueryResult,
+                            s,
+                            panel_state.query_results,
+                            &list_state, &panel_state.selected_result, &panel_state.results_start, 
+                            proc(s: ^ui.State, item: rawptr, state: rawptr) {
+                                result := transmute(^GrepQueryResult)item
+                                list_state := transmute(^ListState)state
+                                
+                                ui.left_to_right(s)
+                                {
+                                   ui.open_element(s, fmt.tprintf("%v:%v: ", result.line, result.col), { kind = {ui.Exact(list_state.core_state.source_font_width*10), ui.Fit{} }})
+                                   ui.close_element(s)
+                                   
+                                   if len(result.file_path) > 0 {
+                                        ui.open_element(s, result.file_path[len(list_state.core_state.directory):], { kind = {ui.Grow{}, ui.Fit{}} })
+                                        ui.close_element(s)
+                                    } else {
+                                        // ui.open_element(s, result.file_path, {}, style = { background_color = .BrightRed })
+                                        // ui.close_element(s)
+                                    } 
+                                }
+                                ui.close_element(s)
+                            }
+                        )
+                    }
+                    ui.close_element(s)
 
+                    if panel_state.query_results != nil {
                         // file contents
                         selected_result := &panel_state.query_results[panel_state.selected_result]
 
@@ -334,21 +374,6 @@ make_grep_panel :: proc() -> core.Panel {
                     }
                 }
                 ui.close_element(s)
-
-                // text input
-                ui.open_element(s, nil,
-                    {
-                        kind = {ui.Grow{}, ui.Exact(state.source_font_height)}
-                    },
-                    style = {
-                        background_color = .Background2
-                    }
-                )
-                {
-                    defer ui.close_element(s)
-
-                    render_raw_buffer(state, s, &panel_state.buffer)
-                }
             }
             ui.close_element(s)
 
@@ -388,19 +413,22 @@ rs_grep_as_results :: proc(results: ^RS_GrepResults, allocator := context.alloca
 
     query_results := make([]GrepQueryResult, max_results)
 
+    q_i := 0
     for i in 0..<len(query_results) {
         r := results.results[i]
 
-        query_results[i] = GrepQueryResult {
+        query_results[q_i] = GrepQueryResult {
             file_context = strings.clone_from_ptr(r.text, int(r.text_len)) or_continue,
             file_path = strings.clone_from_ptr(r.path, int(r.path_len)) or_continue,
             line = int(r.line_number) - 1,
             col = int(r.column) - 1,
         }
+
+        q_i += 1
     }
 
     free_grep_results(results^)
-    return query_results
+    return query_results[:q_i]
 }
 
 render_raw_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.FileBuffer) {
@@ -435,5 +463,7 @@ render_glyph_buffer :: proc(state: ^core.State, s: ^ui.State, glyphs: ^core.Glyp
     ui.close_element(s)
 
 }
+
+
 
 

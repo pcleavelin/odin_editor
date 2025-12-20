@@ -110,15 +110,15 @@ close :: proc(state: ^core.State, panel_id: int) {
         }
 
         mem.free(raw_data(panel.arena.data))
-
         util.delete(&state.panels, panel_id)
 
-        if last_panel, ok := state.last_panel.?; ok {
+        if last_panel, ok := state.last_panel.?; ok && util.static_list_elem_is_active(&state.panels, last_panel) {
             core.switch_to_panel(state, last_panel)
         } else if first_active, ok := util.get_first_active_index(&state.panels).?; ok {
             state.current_panel = first_active
         } else {
-            // TODO: open panel
+            panel_id, _ := open(state, make_file_buffer_panel())
+            core.switch_to_panel(state, panel_id)
         }
 
         core.reset_input_map(state)

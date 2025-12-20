@@ -85,7 +85,6 @@ make_piece_table_from_bytes :: proc(data: []u8, starting_capacity: int = 1024*10
         append(&content, ..data)
     }
 
-    append(&content, u8('\n'))
     append(&chunks, make_index(content))
 
     return PieceTable {

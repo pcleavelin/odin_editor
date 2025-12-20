@@ -309,3 +309,4 @@ extern "C" fn free_grep_results(results: GrepResults) {
         }
     }
 }
+

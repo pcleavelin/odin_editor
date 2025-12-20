@@ -66,7 +66,41 @@ draw :: proc(state: ^State) {
                             num_floating += 1
                         }
                     } else {
-                        panel->render(state)
+                        if panel.id == state.current_panel {
+                            ui.open_element(new_ui, nil,
+                                {
+                                    dir = .LeftToRight,
+                                    kind = {ui.Grow{}, ui.Grow{}},
+                                },
+                                style = {
+                                    border = {.Left, .Right, .Top, .Bottom},
+                                    border_color = .Background4,
+                                    background_color = .Background4, 
+                                },
+                            )
+                            {
+                                ui.growing_top_to_bottom(new_ui)
+                                {
+                                    ui.spacer(new_ui, state.source_font_width)
+                                    {
+                                        ui.growing_left_to_right(new_ui)
+                                        {
+                                            ui.spacer(new_ui, state.source_font_width)
+                                            {
+                                                panel->render(state)
+                                            }
+                                            ui.spacer(new_ui, state.source_font_width)
+                                        }
+                                        ui.close_element(new_ui)
+                                    }
+                                    ui.spacer(new_ui, state.source_font_width)
+                                }
+                                ui.close_element(new_ui)
+                            }
+                            ui.close_element(new_ui)
+                        } else {
+                            panel->render(state)
+                        }
                     }
                 }
             }
@@ -321,15 +355,6 @@ main :: proc() {
         log.error("Failed to create renderer:", sdl2.GetError());
         return;
     }
-    state.font_atlas = core.gen_font_atlas(&state, state.font_path);
-    defer {
-        if state.font_atlas.font != nil {
-            ttf.CloseFont(state.font_atlas.font);
-        }
-        if state.font_atlas.texture != nil {
-            sdl2.DestroyTexture(state.font_atlas.texture);
-        }
-    }
 
     {
         w,h: i32;
@@ -339,6 +364,19 @@ main :: proc() {
         state.height_dpi_ratio = f32(h) / f32(state.screen_height);
         state.screen_width = int(w);
         state.screen_height = int(h);
+
+        state.source_font_width = int(f32(state.source_font_width) * state.width_dpi_ratio)
+        state.source_font_height = int(f32(state.source_font_height) * state.height_dpi_ratio)
+    }
+
+    state.font_atlas = core.gen_font_atlas(&state, state.font_path);
+    defer {
+        if state.font_atlas.font != nil {
+            ttf.CloseFont(state.font_atlas.font);
+        }
+        if state.font_atlas.texture != nil {
+            sdl2.DestroyTexture(state.font_atlas.texture);
+        }
     }
 
     sdl2.SetRenderDrawBlendMode(state.sdl_renderer, .BLEND);
@@ -359,7 +397,8 @@ main :: proc() {
             // ui_context.last_mouse_y = ui_context.mouse_y;
 
             sdl_event: sdl2.Event;
-            for(sdl2.PollEvent(&sdl_event)) {
+            // for(sdl2.PollEvent(&sdl_event)) {
+            if sdl2.WaitEvent(&sdl_event) {
                 if sdl_event.type == .QUIT {
                     state.should_close = true;
                 }
