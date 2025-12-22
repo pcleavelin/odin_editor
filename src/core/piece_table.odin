@@ -35,7 +35,7 @@ make_index_all :: proc(c: [dynamic]u8) -> ContentIndex {
 @(private)
 make_index_to_end :: proc(c: [dynamic]u8, start: int) -> ContentIndex {
     assert(start < len(c))
-    assert(start > 0)
+    assert(start >= 0)
 
     return ContentIndex {
         start = start,
@@ -142,6 +142,13 @@ new_piece_table_index_from_end :: proc(t: ^PieceTable) -> PieceTableIndex {
         chunk_index = chunk_index,
         char_index = char_index,
     }
+}
+
+clear_piece_table :: proc(t: ^PieceTable) {
+    clear(&t.chunks)
+
+    append(&t.content, '\n')
+    append(&t.chunks, ContentIndex { start = len(t.content)-1, len = 1 })
 }
 
 iterate_piece_table_iter :: proc(it: ^PieceTableIter) -> (character: u8, index: PieceTableIndex, cond: bool) {

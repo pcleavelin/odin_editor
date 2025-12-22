@@ -266,6 +266,16 @@ main :: proc() {
 
     core.register_editor_command(
         &state.commands,
+        "nl.spaegirl.editor.core",
+        "grep",
+        "Grep the workspace",
+        proc(state: ^State, _: rawptr) {
+            panels.open_grep_panel(state) 
+        }
+    )
+
+    core.register_editor_command(
+        &state.commands,
         "nl.spacegirl.editor.core",
         "select-font",
         "Opens the font selector",
@@ -273,28 +283,23 @@ main :: proc() {
             panels.open(state, panels.make_font_selector_panel())
         }
     )
-
-    // core.register_editor_command(
-    //     &state.commands,
-    //     "nl.spacegirl.editor.core",
-    //     "Open File",
-    //     "Opens a file in a new buffer",
-    //     proc(state: ^State, _: rawptr) {
-    //         log.info("open file args:");
-    //
-    //         Args :: struct {
-    //             file_path: string
-    //         }
-    //
-    //         if args, ok := core.attempt_read_command_args(Args, state.command_args[:]); ok {
-    //             log.info("attempting to open file", args.file_path)
-    //
-    //             panels.open(state, panels.make_file_buffer_panel(), &panels.MakeFileBuffer {file_path = args.file_path})
-    //
-    //             core.reset_input_map(state)
-    //         }
-    //     }
-    // )
+    
+    OpenFileArgs :: struct {
+        file_path: core.FilePathArg,
+    }
+    core.register_editor_command(
+        &state.commands,
+        "nl.spacegirl.editor.core",
+        "open-file",
+        "Opens a file in a new buffer",
+        OpenFileArgs,
+        proc(state: ^State, _: rawptr) {
+            if args, ok := core.attempt_read_command_args(OpenFileArgs, state.command_args[:]); ok {
+                core.open_buffer_file(state, string(args.file_path))
+                core.reset_input_map(state)
+            }
+        }
+    )
 
     core.register_editor_command(
         &state.commands,
@@ -330,7 +335,7 @@ main :: proc() {
     defer ttf.Quit();
 
     sdl_window := sdl2.CreateWindow(
-        "odin_editor - [now with `nix build`]",
+        "odin_editor - [it's command mode time]",
         sdl2.WINDOWPOS_UNDEFINED,
         sdl2.WINDOWPOS_UNDEFINED,
         640,
@@ -387,7 +392,8 @@ main :: proc() {
 
     sdl2.AddEventWatch(expose_event_watcher, &state);
 
-    control_key_pressed: bool;
+    control_key_pressed: bool
+    shift_key_pressed: bool
     for !state.should_close {
         {
             // ui_context.last_mouse_left_down = ui_context.mouse_left_down;
@@ -419,7 +425,7 @@ main :: proc() {
                     }
                 }
 
-                run_key_action := proc(state: ^core.State, control_key_pressed: bool, key: core.Key) -> bool {
+                run_key_action := proc(state: ^core.State, control_key_pressed: bool, shift_key_pressed: bool, key: core.Key) -> bool {
                     if current_panel, ok := state.current_panel.?; ok {
                         panel := util.get(&state.panels, current_panel).?
 
@@ -434,6 +440,17 @@ main :: proc() {
                                         return true;
                                 }
                             }
+                        } else if shift_key_pressed {
+                            if action, exists := state.current_input_map.shift_key_actions[key]; exists {
+                                switch value in action.action {
+                                    case core.EditorAction:
+                                        value(state, panel);
+                                        return true;
+                                    case core.InputActions:
+                                        state.current_input_map = &(&state.current_input_map.shift_key_actions[key]).action.(core.InputActions)
+                                        return true;
+                                }
+                            } 
                         } else {
                             if action, exists := state.current_input_map.key_actions[key]; exists {
                                 switch value in action.action {
@@ -455,12 +472,14 @@ main :: proc() {
                     case .Visual: fallthrough
                     case .Normal: {
                         if sdl_event.type == .KEYDOWN {
-                            key := core.Key(sdl_event.key.keysym.sym);
+                            key := core.Key(sdl_event.key.keysym.sym)
 
                             if key == .LCTRL {
-                                control_key_pressed = true;
-                            } else  {
-                                run_key_action(&state, control_key_pressed, key)
+                                control_key_pressed = true
+                            } else if key == .LSHIFT {
+                                shift_key_pressed = true
+                            } else {
+                                run_key_action(&state, control_key_pressed, shift_key_pressed, key)
                             }
                         }
                         if sdl_event.type == .KEYUP {
@@ -468,6 +487,9 @@ main :: proc() {
                             if key == .LCTRL {
                                 control_key_pressed = false;
                             }
+                            if key == .LSHIFT {
+                                shift_key_pressed = false;
+                            } 
                         }
                     }
                     case .Insert: {
@@ -477,7 +499,7 @@ main :: proc() {
                             key := core.Key(sdl_event.key.keysym.sym);
 
                             // TODO: make this work properly
-                            if true || !run_key_action(&state, control_key_pressed, key) {
+                            if true || !run_key_action(&state, control_key_pressed, shift_key_pressed, key) {
                                 #partial switch key {
                                     case .ESCAPE: {
                                         state.mode = .Normal;

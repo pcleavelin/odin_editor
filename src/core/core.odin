@@ -64,6 +64,7 @@ EditorCommand :: struct {
     name: string,
     description: string,
     action: EditorAction,
+    arg_type_list: []EditorCommandArgumentType,
 }
 
 EditorCommandExec :: struct {
@@ -72,9 +73,17 @@ EditorCommandExec :: struct {
 }
 
 EditorCommandArgument :: union #no_nil {
-    string,
-    i32
+    FilePathArg,
+    NumberArg,
 }
+
+EditorCommandArgumentType :: enum i32 {
+    FilePath,
+    Number,
+}
+
+FilePathArg :: distinct string
+NumberArg :: distinct i32
 
 PanelState :: distinct rawptr
 Panel :: struct {
@@ -274,6 +283,7 @@ EditorAction :: proc(state: ^State, user_data: rawptr);
 InputActions :: struct {
     key_actions: map[Key]Action,
     ctrl_key_actions: map[Key]Action,
+    shift_key_actions: map[Key]Action,
     show_help: bool,
 }
 Action :: struct {
@@ -307,6 +317,7 @@ new_input_actions :: proc(show_help: bool = false, allocator := context.allocato
     input_actions := InputActions {
         key_actions = make(map[Key]Action),
         ctrl_key_actions = make(map[Key]Action),
+        shift_key_actions = make(map[Key]Action),
         show_help = show_help,
     }
 
@@ -321,6 +332,7 @@ delete_input_map :: proc(input_map: ^InputMap) {
 delete_input_actions :: proc(input_map: ^InputActions) {
     delete(input_map.key_actions);
     delete(input_map.ctrl_key_actions);
+    delete(input_map.shift_key_actions);
 }
 
 register_key_action_single :: proc(input_map: ^InputActions, key: Key, action: EditorAction, description: string = "") {
@@ -371,10 +383,35 @@ register_ctrl_key_action_group :: proc(input_map: ^InputActions, key: Key, input
     };
 }
 
+register_shift_key_action_single :: proc(input_map: ^InputActions, key: Key, action: EditorAction, description: string = "") {
+    if ok := key in input_map.shift_key_actions; ok {
+        // TODO: log that key is already registered
+        log.error("key already registered with shift + single action", key);
+    }
+
+    input_map.shift_key_actions[key] = Action {
+        action = action,
+        description = description,
+    };
+}
+
+register_shift_key_action_group :: proc(input_map: ^InputActions, key: Key, input_group: InputGroup, description: string = "") {
+    if ok := key in input_map.shift_key_actions; ok {
+        // TODO: log that key is already registered
+        log.error("key already registered with shift + single action", key);
+    }
+
+    input_map.shift_key_actions[key] = Action {
+        action = input_group,
+        description = description,
+    };
+}
+
 register_key_action :: proc{register_key_action_single, register_key_action_group};
 register_ctrl_key_action :: proc{register_ctrl_key_action_single, register_ctrl_key_action_group};
+register_shift_key_action :: proc{register_shift_key_action_single, register_shift_key_action_group};
 
-register_editor_command :: proc(command_list: ^EditorCommandList, command_group, name, description: string, action: EditorAction) {
+register_editor_command_no_args :: proc(command_list: ^EditorCommandList, command_group, name, description: string, action: EditorAction) {
     if _, ok := command_list[command_group]; !ok {
         command_list[command_group] = make([dynamic]EditorCommand);
     }
@@ -385,6 +422,27 @@ register_editor_command :: proc(command_list: ^EditorCommandList, command_group,
         action = action,
     });
 }
+
+register_editor_command_with_args  :: proc(command_list: ^EditorCommandList, command_group, name, description: string, $T: typeid, action: EditorAction)
+where intrinsics.type_is_struct(T) {
+    arg_types, ok := struct_to_arg_type_list(T)
+    if !ok {
+        return
+    }
+
+    if _, ok := command_list[command_group]; !ok {
+        command_list[command_group] = make([dynamic]EditorCommand);
+    }
+
+    runtime.append(&command_list[command_group], EditorCommand {
+        name = name,
+        description = description,
+        action = action,
+        arg_type_list = arg_types,
+    });
+}
+
+register_editor_command :: proc{register_editor_command_no_args, register_editor_command_with_args}
 
 query_editor_commands_by_name :: proc(command_list: ^EditorCommandList, name: string, allocator: runtime.Allocator) -> []EditorCommand {
     context.allocator = allocator;
@@ -426,7 +484,7 @@ push_command_arg :: proc(state: ^State, command_arg: EditorCommandArgument) {
     append(&state.command_args, command_arg)
 }
 
-run_command :: proc(state: ^State, group: string, name: string) {
+run_command_by_name :: proc(state: ^State, group: string, name: string) {
     if state.command_args == nil {
         state.command_args = make([dynamic]EditorCommandArgument);
     }
@@ -450,6 +508,45 @@ run_command :: proc(state: ^State, group: string, name: string) {
     log.error("no command", group, name);
 }
 
+run_command_by_action :: proc(state: ^State, action: EditorAction) {
+    defer {
+        state.command_args = nil
+        runtime.free_all(state.command_arena)
+    }
+
+    action(state, nil)
+}
+
+run_command :: proc{run_command_by_name, run_command_by_action}
+
+struct_to_arg_type_list :: proc($T: typeid, allocator := context.allocator) -> (values: []EditorCommandArgumentType, ok: bool)
+where intrinsics.type_is_struct(T) {
+    ti := runtime.type_info_base(type_info_of(T))
+    struct_info := ti.variant.(runtime.Type_Info_Struct) or_return
+    field_types := reflect.struct_field_types(T)
+
+    num_field_types := len(field_types)
+    values = make([]EditorCommandArgumentType, num_field_types)
+
+    for ty, i in field_types {
+        type_name := ty.variant.(runtime.Type_Info_Named).name
+
+        switch type_name {
+            case "FilePathArg": {
+                values[i] = .FilePath
+            }
+            case "NumberArg": {
+                values[i] = .Number
+            }
+            case: {
+                return nil, false
+            }
+        }
+    }
+
+    return values, true
+}
+
 attempt_read_command_args :: proc($T: typeid, args: []EditorCommandArgument) -> (value: T, ok: bool)
 where intrinsics.type_is_struct(T) {
     ti := runtime.type_info_base(type_info_of(T));
@@ -465,27 +562,27 @@ where intrinsics.type_is_struct(T) {
 
             for arg, i in args {
                 switch varg in arg {
-                    case string:
+                    case FilePathArg:
                     {
-                        if _, is_string := v.types[i].variant.(runtime.Type_Info_String); !is_string {
+                        if info, ok := v.types[i].variant.(runtime.Type_Info_Named); !ok && info.name == "FilePathArg" {
                             ok = false
                             log.error("invalid argument #", i, "given to command, found string, expected", v.types[i].variant)
                             return
                         }
 
-                        value_string: ^string = transmute(^string)(uintptr(&value) + v.offsets[i])
+                        value_string: ^FilePathArg = transmute(^FilePathArg)(uintptr(&value) + v.offsets[i])
                         value_string^ = varg
                     }
-                    case i32:
+                    case NumberArg:
                     {
 
-                        if _, is_integer := v.types[i].variant.(runtime.Type_Info_Integer); !is_integer {
+                        if info, ok := v.types[i].variant.(runtime.Type_Info_Named); !ok && info.name == "NumberArg" {
                             ok = false
                             log.error("invalid argument #", i, "given to command, unexpected integer, expected", v.types[i].variant)
                             return
                         }
 
-                        value_i32: ^i32 = transmute(^i32)(uintptr(&value) + v.offsets[i])
+                        value_i32: ^NumberArg = transmute(^NumberArg)(uintptr(&value) + v.offsets[i])
                         value_i32^ = varg
                     }
                 }

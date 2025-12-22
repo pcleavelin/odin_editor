@@ -4,6 +4,7 @@ import "base:runtime"
 import "core:fmt"
 import "core:strings"
 import "core:slice"
+import "core:strconv"
 
 import "vendor:sdl2"
 
@@ -15,6 +16,9 @@ CommandPalettePanel :: struct {
     items: []CommandPaletteItem,
     selected_item: int,
     items_start: int,
+
+    inputting_arguments: bool,
+    argument_index: int,
 }
 
 CommandPaletteItem :: struct {
@@ -24,6 +28,7 @@ CommandPaletteItem :: struct {
     name: string,
     description: string,
     action: core.EditorAction,
+    arg_type_list: []core.EditorCommandArgumentType,
 }
 
 make_cmd_palette_panel :: proc() -> core.Panel {
@@ -60,6 +65,7 @@ make_cmd_palette_panel :: proc() -> core.Panel {
                         name = cmd.name,
                         description = cmd.description, 
                         action = cmd.action,
+                        arg_type_list = cmd.arg_type_list,
                     }
 
                     num_items += 1
@@ -100,15 +106,7 @@ make_cmd_palette_panel :: proc() -> core.Panel {
                 this_panel := transmute(^core.Panel)user_data
                 panel_state := transmute(^CommandPalettePanel)this_panel.state
 
-                if panel_state.items != nil {
-                    item := &panel_state.items[panel_state.selected_item]
-
-                    close(state, this_panel.id)
-
-                    if item.action != nil {
-                        item.action(state, nil)
-                    }
-                }
+                on_enter(state, this_panel.id, panel_state)
 
             }, "Run Command");
             core.register_key_action(&panel.input_map.mode[.Insert], .ESCAPE, proc(state: ^core.State, user_data: rawptr) {
@@ -129,64 +127,91 @@ make_cmd_palette_panel :: proc() -> core.Panel {
             panel_state := transmute(^CommandPalettePanel)panel.state
 
             input_str := core.buffer_to_string(&panel_state.buffer, allocator = context.temp_allocator)
-            
-            if len(input_str) > 0 && input_str[len(input_str)-1] == '\n' && panel_state.items != nil {
-                item := &panel_state.items[panel_state.selected_item]
 
-                close(state, panel.id)
+            if panel_state.inputting_arguments {
+                if len(input_str) > 0 && input_str[len(input_str)-1] == '\n' {
+                    item := &panel_state.items[panel_state.selected_item]
+                    arg_type := item.arg_type_list[panel_state.argument_index]
 
-                if item.action != nil {
-                   item.action(state, nil)
-                }
-                
-                state.mode = .Normal
-                sdl2.StopTextInput()
-                
-                core.reset_input_map(state)
-                
-                return
-            }
-                
-            // really janky and barely working fuzzy search
-            // it *attempts* to find the closest set of consecutive letters
-            // with each letter in between them adding to the total distance
-            for &item in panel_state.items {
-                haystack_index := 0
-                dist := -1 
-                for needle in input_str {
-                    letter_exists := false
-                    if haystack_index >= len(item.name) {
-                        dist += 1
-                    }
-                    for haystack, i in item.name[haystack_index:] {
-                        if haystack == needle {
-                            letter_exists = true
-                            
-                            if haystack_index > 0 {
-                                dist += i
-                            } else if dist < 0 {
-                                dist = 0
+                    name: string
+                    switch arg_type {
+                        case .FilePath: { core.push_command_arg(state, core.FilePathArg(input_str[:len(input_str)-1])) }
+                        case .Number: {
+                            val, ok := strconv.parse_int(input_str[:len(input_str)-1])
+                            if !ok {
+                                //FIXME: set error flag, render it
+                                fmt.eprintln("bad input")
+                                return
                             }
-                            
-                            haystack_index = haystack_index + i+1
-                            break
+
+                            core.push_command_arg(state, core.NumberArg(val))
                         }
                     }
-                    
-                    if !letter_exists {
-                        dist += len(item.name) - haystack_index
+
+                    core.clear_file_buffer(&panel_state.buffer)
+                    panel_state.argument_index += 1
+
+                    if panel_state.argument_index >= len(item.arg_type_list) {
+                        close(state, panel.id)
+
+                        if item.action != nil {
+                            core.run_command(state, item.action)
+                        }
+
+                        state.mode = .Normal
+                        sdl2.StopTextInput()
+                        core.reset_input_map(state)
                     }
                 }
+            } else {
+                panel_state.selected_item = 0
 
-                item.sort_id = dist
+                if len(input_str) > 0 && input_str[len(input_str)-1] == '\n' && panel_state.items != nil {
+                    on_enter(state, panel.id, panel_state)
+                    return
+                }
+                    
+                // really janky and barely working fuzzy search
+                // it *attempts* to find the closest set of consecutive letters
+                // with each letter in between them adding to the total distance
+                for &item in panel_state.items {
+                    haystack_index := 0
+                    dist := -1 
+                    for needle in input_str {
+                        letter_exists := false
+                        if haystack_index >= len(item.name) {
+                            dist += 1
+                        }
+                        for haystack, i in item.name[haystack_index:] {
+                            if haystack == needle {
+                                letter_exists = true
+                                
+                                if haystack_index > 0 {
+                                    dist += i
+                                } else if dist < 0 {
+                                    dist = 0
+                                }
+                                
+                                haystack_index = haystack_index + i+1
+                                break
+                            }
+                        }
+                        
+                        if !letter_exists {
+                            dist += len(item.name) - haystack_index
+                        }
+                    }
+
+                    item.sort_id = dist
+                }
+
+                slice.sort_by(panel_state.items, proc(a,b: CommandPaletteItem) -> bool {
+                    if a.sort_id < 0 { return false }
+                    if b.sort_id < 0 { return true }
+                    
+                    return a.sort_id < b.sort_id
+                })
             }
-
-            slice.sort_by(panel_state.items, proc(a,b: CommandPaletteItem) -> bool {
-                if a.sort_id < 0 { return false }
-                if b.sort_id < 0 { return true }
-                
-                return a.sort_id < b.sort_id
-            })
         },
         render = proc(panel: ^core.Panel, state: ^core.State) -> (ok: bool) {
             context.allocator = panel.allocator
@@ -217,7 +242,21 @@ make_cmd_palette_panel :: proc() -> core.Panel {
                     )
                     {
                         render_palette_input(state, s, panel_state)
-                        render_command_list(state, s, panel_state)
+                        if panel_state.inputting_arguments {
+                            item := &panel_state.items[panel_state.selected_item]
+                            arg_type := item.arg_type_list[panel_state.argument_index]
+
+                            name: string
+                            switch arg_type {
+                                case .FilePath: { name = "File Path" }
+                                case .Number: { name = "Number" }
+                            }
+
+                            ui.open_element(s, name, {})
+                            ui.close_element(s)
+                        } else {
+                            render_command_list(state, s, panel_state)
+                        }
                     }
                     ui.close_element(s)
                 }
@@ -227,6 +266,30 @@ make_cmd_palette_panel :: proc() -> core.Panel {
 
             return true
         },
+    }
+}
+
+@(private)
+on_enter :: proc(state: ^core.State, panel_id: int, panel_state: ^CommandPalettePanel) {
+    if panel_state.items != nil {
+        item := &panel_state.items[panel_state.selected_item]
+
+        if item.arg_type_list == nil {
+            close(state, panel_id)
+
+            state.mode = .Normal
+            sdl2.StopTextInput()
+            core.reset_input_map(state)
+
+            if item.action != nil {
+                item.action(state, nil)
+            }
+        } else {
+            core.clear_file_buffer(&panel_state.buffer)
+
+            panel_state.inputting_arguments = true
+            panel_state.argument_index = 0
+        }
     }
 }
 
@@ -263,7 +326,6 @@ render_palette_input :: proc(state: ^core.State, s: ^ui.State, panel_state: ^Com
 
 @(private)
 render_command_list :: proc(state: ^core.State, s: ^ui.State, panel_state: ^CommandPalettePanel) {
-
     ListState :: struct {
         core_state: ^core.State,
         panel_state: ^CommandPalettePanel,
@@ -287,7 +349,7 @@ render_command_list :: proc(state: ^core.State, s: ^ui.State, panel_state: ^Comm
                 ui.close_element(s)
 
                 if len(item.description) > 0 {
-                    ui.open_element(s, fmt.tprintf("%v - dist: %v", item.description, item.sort_id), { kind = {ui.Grow{}, ui.Fit{}} })
+                    ui.open_element(s, fmt.tprintf("%v", item.description), { kind = {ui.Grow{}, ui.Fit{}} })
                     ui.close_element(s)
                 }
             }

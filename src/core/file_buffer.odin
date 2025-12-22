@@ -757,8 +757,6 @@ new_virtual_file_buffer :: proc(allocator := context.allocator) -> FileBuffer {
 make_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: string = "") -> (FileBuffer, Error) {
     context.allocator = allocator;
 
-    fmt.eprintln("attempting to open", file_path);
-
     fd, err := os.open(file_path);
     if err != nil {
         return FileBuffer{}, make_error(ErrorType.FileIOError, fmt.aprintf("failed to open file: errno=%x", err));
@@ -797,7 +795,7 @@ make_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: 
         width := 256;
         height := 256;
 
-        fmt.eprintln("file path", fi.fullpath[:]);
+        // fmt.eprintln("file path", fi.fullpath[:]);
 
         buffer := FileBuffer {
             allocator = allocator,
@@ -807,7 +805,6 @@ make_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: 
             // file_path = fi.fullpath[4:],
             extension = extension,
 
-            // TODO: derive language type from extension
             tree = ts.make_state(file_type),
             history = make_history(content),
 
@@ -1080,6 +1077,15 @@ delete_content_from_selection :: proc(buffer: ^FileBuffer, selection: ^Selection
 }
 
 delete_content :: proc{delete_content_from_buffer_cursor, delete_content_from_selection};
+
+clear_file_buffer :: proc(buffer: ^FileBuffer) {
+    clear_piece_table(buffer_piece_table(buffer)) 
+    buffer.history.cursor = Cursor{}
+    buffer.last_col = 0
+    buffer.top_line = 0
+    buffer.selection = nil
+    buffer.flags += { .UnsavedChanges }
+}
 
 get_buffer_indent :: proc(buffer: ^FileBuffer, cursor: Maybe(Cursor) = nil) -> int {
     cursor := cursor;
