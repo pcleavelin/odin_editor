@@ -382,7 +382,16 @@ make_grep_panel :: proc() -> core.Panel {
     }
 }
 
-foreign import grep_lib "system:grep_panel"
+when ODIN_OS == .Windows {
+    @require foreign import "system:ws2_32.lib"
+    @require foreign import "system:user32.lib"
+    @require foreign import "system:userenv.lib"
+    @require foreign import "system:ntdll.lib"
+    foreign import grep_lib "../pkg/grep_lib/target/debug/grep.lib"
+} else {
+    foreign import grep_lib "system:grep_panel"
+}
+
 @(default_calling_convention = "c")
 foreign grep_lib {
     grep :: proc (pattern: cstring, directory: cstring) -> RS_GrepResults ---

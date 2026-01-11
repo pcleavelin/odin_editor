@@ -104,13 +104,13 @@ FileBufferIterResult :: struct {
 
 iterate_file_buffer_c :: proc "c" (it: ^FileBufferIter) -> FileBufferIterResult {
     context = runtime.default_context()
-    
+
     character, _, cond := iterate_file_buffer(it)
-    
+
     return FileBufferIterResult {
         character = character,
         done = !cond,
-    } 
+    }
 }
 
 iterate_file_buffer :: proc(it: ^FileBufferIter) -> (character: u8, idx: PieceTableIndex, cond: bool) {
@@ -845,7 +845,7 @@ tree_sitter_file_buffer_input :: proc(buffer: ^FileBuffer) -> ts.Input {
 }
 
 save_buffer_to_disk :: proc(state: ^State, buffer: ^FileBuffer) -> (error: os.Error) {
-    fd := os.open(buffer.file_path, flags = os.O_WRONLY | os.O_TRUNC | os.O_CREATE) or_return;
+    fd := os.open(buffer.file_path, mode = os.O_WRONLY | os.O_TRUNC | os.O_CREATE) or_return;
     defer os.close(fd);
 
     t := buffer_piece_table(buffer)
@@ -853,14 +853,14 @@ save_buffer_to_disk :: proc(state: ^State, buffer: ^FileBuffer) -> (error: os.Er
     offset: i64 = 0
     for chunk in t.chunks {
         os.write(fd, get_content(t.content, chunk)) or_return
-        
+
         offset += i64(chunk.len)
     }
     os.flush(fd)
 
     log.infof("written %v bytes", offset)
     buffer.flags -= { .UnsavedChanges }
-    
+
     return
 }
 
@@ -1079,7 +1079,7 @@ delete_content_from_selection :: proc(buffer: ^FileBuffer, selection: ^Selection
 delete_content :: proc{delete_content_from_buffer_cursor, delete_content_from_selection};
 
 clear_file_buffer :: proc(buffer: ^FileBuffer) {
-    clear_piece_table(buffer_piece_table(buffer)) 
+    clear_piece_table(buffer_piece_table(buffer))
     buffer.history.cursor = Cursor{}
     buffer.last_col = 0
     buffer.top_line = 0

@@ -9,7 +9,11 @@ import "core:mem"
 
 import "../theme"
 
-foreign import ts "system:tree-sitter"
+when ODIN_OS == .Windows {
+	foreign import ts "../../bin/tree-sitter.lib"
+} else {
+	foreign import ts "system:tree-sitter"
+}
 @(default_calling_convention = "c", link_prefix="ts_")
 foreign ts {
     parser_new :: proc() -> Parser ---
@@ -65,46 +69,60 @@ set_allocator :: proc(allocator := context.allocator) {
     TS_ALLOCATOR = allocator
 
     new_malloc :: proc "c" (size: uint) -> rawptr {
-        context = runtime.default_context() 
+        context = runtime.default_context()
 
         data, _ := TS_ALLOCATOR.procedure(TS_ALLOCATOR.data, .Alloc, int(size), runtime.DEFAULT_ALIGNMENT, nil, 0)
         return raw_data(data)
     }
 
     new_calloc :: proc "c" (num: uint, size: uint) -> rawptr {
-        context = runtime.default_context() 
+        context = runtime.default_context()
 
         data, _ := TS_ALLOCATOR.procedure(TS_ALLOCATOR.data, .Alloc, int(num * size), runtime.DEFAULT_ALIGNMENT, nil, 0)
         return raw_data(data)
     }
 
     new_realloc :: proc "c" (old_ptr: rawptr, size: uint) -> rawptr {
-        context = runtime.default_context() 
+        context = runtime.default_context()
 
         data, _ := TS_ALLOCATOR.procedure(TS_ALLOCATOR.data, .Resize, int(size), runtime.DEFAULT_ALIGNMENT, old_ptr, 0)
         return raw_data(data)
     }
 
     new_free :: proc "c" (ptr: rawptr) {
-        context = runtime.default_context() 
+        context = runtime.default_context()
 
         TS_ALLOCATOR.procedure(TS_ALLOCATOR.data, .Free, 0, runtime.DEFAULT_ALIGNMENT, ptr, 0)
     }
 }
 
-foreign import ts_odin "system:tree-sitter-odin"
+when ODIN_OS == .Windows {
+	foreign import ts_odin "../../bin/tree-sitter-odin.lib"
+} else {
+	foreign import ts_odin "system:tree-sitter-odin"
+}
 foreign ts_odin {
     tree_sitter_odin :: proc "c" () -> Language ---
 }
 
-foreign import ts_rust "system:tree-sitter-rust"
-foreign ts_rust {
-    tree_sitter_rust :: proc "c" () -> Language ---
+when ODIN_OS == .Windows {
+	// TODO
+	// foreign import ts_rust "../../bin/tree-sitter-rust"
+} else {
+	foreign import ts_rust "system:tree-sitter-rust"
+	foreign ts_rust {
+	    tree_sitter_rust :: proc "c" () -> Language ---
+	}
 }
 
-foreign import ts_json "system:tree-sitter-json"
-foreign ts_json {
-    tree_sitter_json :: proc "c" () -> Language ---
+when ODIN_OS == .Windows {
+	// TODO
+	// foreign import ts_json "../../bin/tree-sitter-json"
+} else {
+	foreign import ts_json "system:tree-sitter-json"
+	foreign ts_json {
+	    tree_sitter_json :: proc "c" () -> Language ---
+	}
 }
 
 State :: struct {
@@ -217,8 +235,16 @@ make_state :: proc(type: LanguageType, allocator := context.allocator) -> State 
     switch (type) {
         case .None: {}
         case .Odin: language = tree_sitter_odin()
-        case .Rust: language = tree_sitter_rust()
-        case .Json: language = tree_sitter_json()
+        case .Rust: {
+            when ODIN_OS != .Windows {
+                language = tree_sitter_rust()
+            }
+        }
+        case .Json: {
+            when ODIN_OS != .Windows {
+                language = tree_sitter_json()
+            }
+        }
     }
 
     if language != nil && !parser_set_language(parser, language) {
@@ -437,8 +463,8 @@ print_node_type :: proc(state: ^State) -> Maybe(string) {
 
     start_point := node_start_point(current_node)
     end_point := node_end_point(current_node)
-    log.infof("Node position: (%d:%d) to (%d:%d)", 
-        start_point.row+1, start_point.column+1, 
+    log.infof("Node position: (%d:%d) to (%d:%d)",
+        start_point.row+1, start_point.column+1,
         end_point.row+1, end_point.column+1)
 
     return string(node_type_str)
