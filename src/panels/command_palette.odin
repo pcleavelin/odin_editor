@@ -63,7 +63,7 @@ make_cmd_palette_panel :: proc() -> core.Panel {
                         sort_id = num_items,
                         group = group,
                         name = cmd.name,
-                        description = cmd.description, 
+                        description = cmd.description,
                         action = cmd.action,
                         arg_type_list = cmd.arg_type_list,
                     }
@@ -71,13 +71,13 @@ make_cmd_palette_panel :: proc() -> core.Panel {
                     num_items += 1
                 }
             }
-            
+
             core.register_key_action(&panel.input_map.mode[.Normal], .I, proc(state: ^core.State, user_data: rawptr) {
                 this_panel := transmute(^core.Panel)user_data
                 panel_state := transmute(^CommandPalettePanel)this_panel.state
-                
+
                 core.move_cursor_right(&panel_state.buffer, false);
-                
+
                 state.mode = .Insert;
                 sdl2.StartTextInput();
             }, "enter insert mode");
@@ -152,10 +152,11 @@ make_cmd_palette_panel :: proc() -> core.Panel {
                     panel_state.argument_index += 1
 
                     if panel_state.argument_index >= len(item.arg_type_list) {
+                        action := item.action
                         close(state, panel.id)
 
-                        if item.action != nil {
-                            core.run_command(state, item.action)
+                        if action != nil {
+                            core.run_command(state, action)
                         }
 
                         state.mode = .Normal
@@ -170,13 +171,13 @@ make_cmd_palette_panel :: proc() -> core.Panel {
                     on_enter(state, panel.id, panel_state)
                     return
                 }
-                    
+
                 // really janky and barely working fuzzy search
                 // it *attempts* to find the closest set of consecutive letters
                 // with each letter in between them adding to the total distance
                 for &item in panel_state.items {
                     haystack_index := 0
-                    dist := -1 
+                    dist := -1
                     for needle in input_str {
                         letter_exists := false
                         if haystack_index >= len(item.name) {
@@ -185,18 +186,18 @@ make_cmd_palette_panel :: proc() -> core.Panel {
                         for haystack, i in item.name[haystack_index:] {
                             if haystack == needle {
                                 letter_exists = true
-                                
+
                                 if haystack_index > 0 {
                                     dist += i
                                 } else if dist < 0 {
                                     dist = 0
                                 }
-                                
+
                                 haystack_index = haystack_index + i+1
                                 break
                             }
                         }
-                        
+
                         if !letter_exists {
                             dist += len(item.name) - haystack_index
                         }
@@ -208,7 +209,7 @@ make_cmd_palette_panel :: proc() -> core.Panel {
                 slice.sort_by(panel_state.items, proc(a,b: CommandPaletteItem) -> bool {
                     if a.sort_id < 0 { return false }
                     if b.sort_id < 0 { return true }
-                    
+
                     return a.sort_id < b.sort_id
                 })
             }
@@ -275,14 +276,15 @@ on_enter :: proc(state: ^core.State, panel_id: int, panel_state: ^CommandPalette
         item := &panel_state.items[panel_state.selected_item]
 
         if item.arg_type_list == nil {
+            action := item.action
             close(state, panel_id)
 
             state.mode = .Normal
             sdl2.StopTextInput()
             core.reset_input_map(state)
 
-            if item.action != nil {
-                item.action(state, nil)
+            if action != nil {
+                action(state, nil)
             }
         } else {
             core.clear_file_buffer(&panel_state.buffer)
@@ -306,7 +308,7 @@ render_palette_input :: proc(state: ^core.State, s: ^ui.State, panel_state: ^Com
         style = {
             border = {.Left, .Right, .Top, .Bottom},
             border_color = .Background4,
-            background_color = .Background2, 
+            background_color = .Background2,
         },
     )
     {
@@ -315,7 +317,7 @@ render_palette_input :: proc(state: ^core.State, s: ^ui.State, panel_state: ^Com
             ui.left_to_right(s)
             {
                 ui.spacer(s, state.source_font_width)
-                render_input_buffer(state, s, &panel_state.buffer, input_width)  
+                render_input_buffer(state, s, &panel_state.buffer, input_width)
             }
             ui.close_element(s)
         }
@@ -377,6 +379,3 @@ render_input_buffer :: proc(state: ^core.State, s: ^ui.State, buffer: ^core.File
     ui.close_element(s)
 
 }
-
-
-

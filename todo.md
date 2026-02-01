@@ -1,4 +1,8 @@
 # Bugs
+- copy paste from clipboard
+- can't escape out of certain input actions
+- 'changing' that includes the last character of a line moves the cursor incorrectly
+
 - Fix jumping forward a word jumping past consecutive brackets
 - "change selection" not pushing snapshot
 - Don't allow panel navigation in grep panel
@@ -8,6 +12,24 @@
 - Padding around UI elements
 
 # TODO
+- [ ] Buffer horizontal scrolling
+- [ ] Buffer text wrapping
+- [ ] More Vim Edits
+  - [ ] 'r' Replace char
+- Modify input system to allow for keybinds that take input
+    - Vim's f and F movement commands
+    - Vim's r command
+- Finish selections
+    - [x] Guarantee that start and end are always ordered
+    - [ ] Whole Line Selections
+        - [ ] V-Block & V-Line selection modes / pasting
+    - Add in text actions
+        - [x] Yank
+        - [x] Delete
+        - [ ] Change
+            - [x] Change
+            - [ ] Change word
+            - [ ] Change inside delimiter
 - [ ] Create new files
 - [ ] Jump List
 - [x] Use grouped lifetimes exclusively for memory allocation/freeing
@@ -20,9 +42,6 @@
 - [ ] Simple File Search (vim /)
     - [x] Forward Search
     - [ ] Backward Search
-- Modify input system to allow for keybinds that take input
-    - Vim's f and F movement commands
-    - Vim's r command
 - Save/Load files
     - [x] Save
     - [ ] Load when changed on disk
@@ -71,22 +90,9 @@
     - [ ] Interface for undo-able actions
     - [ ] Edit History Tree
     - [ ] Undo history saved to disk
-- Finish selections
-    - [x] Guarantee that start and end are always ordered
-    - [ ] Whole Line Selections
-        - [ ] V-Block & V-Line selection modes / pasting
-    - Add in text actions
-        - [x] Yank
-        - [x] Delete
-        - [ ] Change
-            - [x] Change
-            - [ ] Change word
-            - [ ] Change inside delimiter
 - Virtual Whitespace
     - Allow any-sized tabs
 - Command Search and Execution
     - Refactor to remove generics added specifically for plugins
     - [ ] Palette based UI
         - How do inputs work?
-
-

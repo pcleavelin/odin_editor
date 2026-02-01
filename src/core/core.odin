@@ -20,9 +20,10 @@ Mode :: enum {
 EditorCommandList :: map[string][dynamic]EditorCommand;
 State :: struct {
     ctx: runtime.Context,
+    sdl_window: ^sdl2.Window,
     sdl_renderer: ^sdl2.Renderer,
     font_atlas: FontAtlas,
-    font_path: cstring,
+    font: SystemFont,
     ui: rawptr,
 
     mode: Mode,

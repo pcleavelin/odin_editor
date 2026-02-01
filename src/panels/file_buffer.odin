@@ -113,7 +113,7 @@ make_file_buffer_panel :: proc() -> core.Panel {
 
             panel_actions := core.new_input_actions(show_help = true)
             register_default_panel_actions(&panel_actions)
-            core.register_ctrl_key_action(&panel.input_map.mode[.Normal], .W, panel_actions, "Panel Navigation") 
+            core.register_ctrl_key_action(&panel.input_map.mode[.Normal], .W, panel_actions, "Panel Navigation")
 
             file_buffer_input_actions(&panel.input_map.mode[.Normal]);
             file_buffer_visual_actions(&panel.input_map.mode[.Visual]);
@@ -185,7 +185,7 @@ make_file_buffer_panel :: proc() -> core.Panel {
                         {
                             dir = .TopToBottom,
                             kind = {ui.Fit{}, ui.Fit{}},
-                            floating = true, 
+                            floating = true,
                         },
                         style = {
                             background_color = .Background2,
@@ -408,7 +408,7 @@ file_buffer_input_actions :: proc(input_map: ^core.InputActions) {
                 state.source_font_height -= 2;
                 state.source_font_width = state.source_font_height / 2;
 
-                state.font_atlas = core.gen_font_atlas(state, state.font_path);
+                state.font_atlas = core.load_font(state, state.font);
             }
             log.debug(state.source_font_height);
         }, "increase font size");
@@ -416,7 +416,7 @@ file_buffer_input_actions :: proc(input_map: ^core.InputActions) {
             state.source_font_height += 2;
             state.source_font_width = state.source_font_height / 2;
 
-            state.font_atlas = core.gen_font_atlas(state, state.font_path);
+            state.font_atlas = core.load_font(state, state.font);
         }, "decrease font size");
     }
 
@@ -725,7 +725,7 @@ file_buffer_text_input_actions :: proc(input_map: ^core.InputActions) {
         core.push_new_snapshot(&buffer.history)
 
         core.move_cursor_end_of_line(buffer);
-        
+
         char := core.get_character_at_piece_table_index(core.buffer_piece_table(buffer), buffer.history.cursor.index)
         indent := core.get_buffer_indent(buffer)
         if char == '{' {

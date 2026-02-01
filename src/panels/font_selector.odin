@@ -31,7 +31,7 @@ make_font_selector_panel :: proc() -> core.Panel {
 
             panel.input_map = core.new_input_map(show_help = true)
 
-            panel_state.items = core.load_system_font_list(allocator = panel.allocator)
+            panel_state.items = core.load_system_font_list(state, allocator = panel.allocator)
 
             core.register_key_action(&panel.input_map.mode[.Normal], .K, proc(state: ^core.State, user_data: rawptr) {
                 this_panel := transmute(^core.Panel)user_data
@@ -58,10 +58,7 @@ make_font_selector_panel :: proc() -> core.Panel {
                 this_panel := transmute(^core.Panel)user_data
                 panel_state := transmute(^FontSelectorPanel)this_panel.state
 
-                file_path := panel_state.items[panel_state.selected_item].file_path
-                fmt.println(file_path)
-
-                state.font_atlas = core.gen_font_atlas(state, file_path)
+                state.font_atlas = core.load_font(state, panel_state.items[panel_state.selected_item])
 
                 close(state, this_panel.id)
             }, "set font");

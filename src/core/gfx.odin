@@ -1,6 +1,8 @@
 package core
 
 import "core:fmt"
+import "core:log"
+import "core:strings"
 import "vendor:sdl2"
 import "vendor:sdl2/ttf"
 
@@ -17,26 +19,26 @@ FontAtlas :: struct {
     max_height: int,
 }
 
-SystemFont :: struct {
-    display_name: string,
-    file_path: cstring,
-}
+load_front_from_file :: proc(state: ^State, path: string) -> FontAtlas {
+    font_height := i32(state.source_font_height*scale);
+    // FIXME: guarantee the lifetime of this new string
+    state.font.file_path = strings.clone(path)
 
-gen_font_atlas :: proc(state: ^State, path: cstring) -> FontAtlas {
+    font := ttf.OpenFont(strings.clone_to_cstring(state.font.file_path, allocator = context.temp_allocator), font_height)
+    if font == nil {
+        log.error("failed to load font data")
+        return state.font_atlas
+    }
+
     free_font_atlas(state.font_atlas);
 
-    font_height := i32(state.source_font_height*scale);
-    state.font_path = path
+    return gen_font_atlas(state, font)
+}
 
-    if state.font_path == nil {
-        state.font_path = load_default_system_font_path(font_height)
-    } 
-
-    // FIXME: check if this failed
+gen_font_atlas :: proc(state: ^State, font: ^ttf.Font) -> FontAtlas {
     atlas := FontAtlas {
-        font = ttf.OpenFont(state.font_path, font_height),
+        font = font
     }
-    assert(atlas.font != nil)
 
     ttf.SetFontStyle(atlas.font, ttf.STYLE_NORMAL);
 
@@ -61,7 +63,7 @@ gen_font_atlas :: proc(state: ^State, path: cstring) -> FontAtlas {
     }
 
     font_width := i32(atlas.max_width);
-    font_height = i32(atlas.max_height);
+    font_height := i32(atlas.max_height);
     // state.source_font_width = int(font_width/scale);
     // state.source_font_height = int(font_height/scale);
 
@@ -106,8 +108,10 @@ gen_font_atlas :: proc(state: ^State, path: cstring) -> FontAtlas {
     // FIXME: check if this failed
     atlas.texture = sdl2.CreateTextureFromSurface(state.sdl_renderer, font_surface);
     sdl2.SetTextureScaleMode(atlas.texture, .Best);
+
     return atlas;
 }
+
 
 free_font_atlas :: proc(font_atlas: FontAtlas) {
     if font_atlas.font != nil {

@@ -53,7 +53,7 @@ draw :: proc(state: ^State) {
             background_color = .Background1
         }
     )
-    { 
+    {
         floating_panels := [16]int{}
         num_floating := 0
 
@@ -75,7 +75,7 @@ draw :: proc(state: ^State) {
                                 style = {
                                     border = {.Left, .Right, .Top, .Bottom},
                                     border_color = .Background4,
-                                    background_color = .Background4, 
+                                    background_color = .Background4,
                                 },
                             )
                             {
@@ -182,7 +182,7 @@ expose_event_watcher :: proc "c" (state: rawptr, event: ^sdl2.Event) -> i32 {
 }
 
 main :: proc() {
-    ts.set_allocator() 
+    ts.set_allocator()
 
     _command_arena: mem.Arena
     mem.arena_init(&_command_arena, make([]u8, 1024*1024));
@@ -270,7 +270,7 @@ main :: proc() {
         "grep",
         "Grep the workspace",
         proc(state: ^State, _: rawptr) {
-            panels.open_grep_panel(state) 
+            panels.open_grep_panel(state)
         }
     )
 
@@ -283,7 +283,7 @@ main :: proc() {
             panels.open(state, panels.make_font_selector_panel())
         }
     )
-    
+
     OpenFileArgs :: struct {
         file_path: core.FilePathArg,
     }
@@ -334,7 +334,7 @@ main :: proc() {
     }
     defer ttf.Quit();
 
-    sdl_window := sdl2.CreateWindow(
+    state.sdl_window = sdl2.CreateWindow(
         "odin_editor - [it's command mode time]",
         sdl2.WINDOWPOS_UNDEFINED,
         sdl2.WINDOWPOS_UNDEFINED,
@@ -342,16 +342,16 @@ main :: proc() {
         480,
         {.SHOWN, .RESIZABLE, .ALLOW_HIGHDPI}
     );
-    defer if sdl_window != nil {
-        sdl2.DestroyWindow(sdl_window);
+    defer if state.sdl_window != nil {
+        sdl2.DestroyWindow(state.sdl_window);
     }
 
-    if sdl_window == nil {
+    if state.sdl_window == nil {
         log.error("Failed to create window:", sdl2.GetError());
         return;
     }
 
-    state.sdl_renderer = sdl2.CreateRenderer(sdl_window, -1, {.ACCELERATED, .PRESENTVSYNC});
+    state.sdl_renderer = sdl2.CreateRenderer(state.sdl_window, -1, {.ACCELERATED, .PRESENTVSYNC});
     defer if state.sdl_renderer != nil {
         sdl2.DestroyRenderer(state.sdl_renderer);
     }
@@ -374,7 +374,7 @@ main :: proc() {
         state.source_font_height = int(f32(state.source_font_height) * state.height_dpi_ratio)
     }
 
-    state.font_atlas = core.gen_font_atlas(&state, state.font_path);
+    state.font_atlas = core.load_default_system_font(&state, state.source_font_height);
     defer {
         if state.font_atlas.font != nil {
             ttf.CloseFont(state.font_atlas.font);
@@ -450,7 +450,7 @@ main :: proc() {
                                         state.current_input_map = &(&state.current_input_map.shift_key_actions[key]).action.(core.InputActions)
                                         return true;
                                 }
-                            } 
+                            }
                         } else {
                             if action, exists := state.current_input_map.key_actions[key]; exists {
                                 switch value in action.action {
@@ -489,7 +489,7 @@ main :: proc() {
                             }
                             if key == .LSHIFT {
                                 shift_key_pressed = false;
-                            } 
+                            }
                         }
                     }
                     case .Insert: {
