@@ -23,7 +23,8 @@ GrepPanel :: struct {
     selected_result: int,
     results_start: int,
     search_query: string,
-    glyphs: core.GlyphBuffer,
+    preview_buffer:    core.FileBuffer,
+    preview_file_path: string,
 
     query_arena: mem.Arena,
     query_results: []GrepQueryResult,
@@ -73,12 +74,21 @@ query_handler :: proc(job: ^jobs.Job) {
 }
 
 @(private)
-pop_job_results :: proc(panel_state: ^GrepPanel) {
+update_preview_to_result :: proc(panel_state: ^GrepPanel, state: ^core.State, result: ^GrepQueryResult) {
+    if result.file_path != panel_state.preview_file_path {
+        core.reload_file_into_buffer(&panel_state.preview_buffer, result.file_path, state.directory)
+        panel_state.preview_file_path = result.file_path
+    }
+    core.move_cursor_to_location(&panel_state.preview_buffer, result.line, result.col)
+}
+
+@(private)
+pop_job_results :: proc(panel_state: ^GrepPanel, state: ^core.State) {
     has_results := false
     for {
         job, did_pop := jobs.pop(&panel_state.query_queue);
         has_results = did_pop
-        
+
         if !did_pop || job.output == nil  {
             break
         }
@@ -96,11 +106,7 @@ pop_job_results :: proc(panel_state: ^GrepPanel) {
     if has_results && panel_state.query_results != nil {
         panel_state.selected_result = 0
         if len(panel_state.query_results) > 0 {
-            core.update_glyph_buffer_from_bytes(
-                &panel_state.glyphs,
-                transmute([]u8)panel_state.query_results[panel_state.selected_result].file_context,
-                panel_state.query_results[panel_state.selected_result].line,
-            )
+            update_preview_to_result(panel_state, state, &panel_state.query_results[0])
         }
     }
 }
@@ -152,6 +158,7 @@ make_grep_panel :: proc() -> core.Panel {
 
             jobs.destroy_job_queue(&panel_state.query_queue)
             ts.delete_state(&panel_state.buffer.tree)
+            ts.delete_state(&panel_state.preview_buffer.tree)
         },
         create = proc(panel: ^core.Panel, state: ^core.State, data: rawptr) {
             context.allocator = panel.allocator
@@ -161,8 +168,8 @@ make_grep_panel :: proc() -> core.Panel {
             panel_state^ = GrepPanel {}
 
             panel.input_map = core.new_input_map(show_help = true)
-            panel_state.glyphs = core.make_glyph_buffer(256,256)
             panel_state.buffer = core.new_virtual_file_buffer()
+            panel_state.preview_buffer = core.new_virtual_file_buffer(panel.allocator)
             jobs.make_job_queue(panel.allocator, 2, &panel_state.query_queue)
 
 
@@ -202,31 +209,19 @@ make_grep_panel :: proc() -> core.Panel {
                 this_panel := transmute(^core.Panel)user_data
                 panel_state := transmute(^GrepPanel)this_panel.state
 
-                if panel_state.selected_result > 0 {
+                if panel_state.query_results != nil && panel_state.selected_result > 0 {
                     panel_state.selected_result -= 1
+                    update_preview_to_result(panel_state, state, &panel_state.query_results[panel_state.selected_result])
                 }
-
-                core.update_glyph_buffer_from_bytes(
-                    &panel_state.glyphs,
-                    transmute([]u8)panel_state.query_results[panel_state.selected_result].file_context,
-                    panel_state.query_results[panel_state.selected_result].line,
-                )
-
             }, "move selection up");
             core.register_key_action(&panel.input_map.mode[.Normal], .J, proc(state: ^core.State, user_data: rawptr) {
                 this_panel := transmute(^core.Panel)user_data
                 panel_state := transmute(^GrepPanel)this_panel.state
 
-                if panel_state.selected_result < len(panel_state.query_results)-1 {
+                if panel_state.query_results != nil && panel_state.selected_result < len(panel_state.query_results)-1 {
                     panel_state.selected_result += 1
+                    update_preview_to_result(panel_state, state, &panel_state.query_results[panel_state.selected_result])
                 }
-
-                core.update_glyph_buffer_from_bytes(
-                    &panel_state.glyphs,
-                    transmute([]u8)panel_state.query_results[panel_state.selected_result].file_context,
-                    panel_state.query_results[panel_state.selected_result].line,
-                )
-
             }, "move selection down");
 
             core.register_key_action(&panel.input_map.mode[.Insert], .ESCAPE, proc(state: ^core.State, user_data: rawptr) {
@@ -266,7 +261,7 @@ make_grep_panel :: proc() -> core.Panel {
             context.allocator = panel.allocator
 
             panel_state := transmute(^GrepPanel)panel.state
-            pop_job_results(panel_state)
+            pop_job_results(panel_state, state)
 
             s := transmute(^ui.State)state.ui
 
@@ -362,15 +357,7 @@ make_grep_panel :: proc() -> core.Panel {
                     ui.close_element(s)
 
                     if panel_state.query_results != nil {
-                        // file contents
-                        selected_result := &panel_state.query_results[panel_state.selected_result]
-
-                        core.update_glyph_buffer_from_bytes(
-                            &panel_state.glyphs,
-                            transmute([]u8)selected_result.file_context,
-                            selected_result.line,
-                        )
-                        render_glyph_buffer(state, s, &panel_state.glyphs)
+                        render_raw_buffer(state, s, &panel_state.preview_buffer)
                     }
                 }
                 ui.close_element(s)

@@ -39,6 +39,14 @@ Selection :: struct {
     end: Cursor,
 }
 
+FileBufferSource :: struct {
+    content:   []u8,
+    full_path: string,
+    directory: string,
+    extension: string,
+    language:  ts.LanguageType,
+}
+
 FileBuffer :: struct {
     allocator: mem.Allocator,
 
@@ -754,70 +762,120 @@ new_virtual_file_buffer :: proc(allocator := context.allocator) -> FileBuffer {
     return buffer;
 }
 
-make_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: string = "") -> (FileBuffer, Error) {
-    context.allocator = allocator;
-
-    fd, err := os.open(file_path);
-    if err != nil {
-        return FileBuffer{}, make_error(ErrorType.FileIOError, fmt.aprintf("failed to open file: errno=%x", err));
+load_file_buffer_source :: proc(file_path: string, base_dir: string = "") -> (source: FileBufferSource, err: Error) {
+    fd, os_err := os.open(file_path)
+    if os_err != nil {
+        return {}, make_error(ErrorType.FileIOError, fmt.aprintf("failed to open file: errno=%x", os_err))
     }
-    defer os.close(fd);
+    defer os.close(fd)
 
-    fi, fstat_err := os.fstat(fd);
+    fi, fstat_err := os.fstat(fd)
     if fstat_err != nil {
-        return FileBuffer{}, make_error(ErrorType.FileIOError, fmt.aprintf("failed to get file info: errno=%x", fstat_err));
+        return {}, make_error(ErrorType.FileIOError, fmt.aprintf("failed to get file info: errno=%x", fstat_err))
     }
 
-    dir: string;
+    dir: string
     if base_dir != "" {
-        dir = base_dir;
+        dir = base_dir
     } else {
-        dir = filepath.dir(fi.fullpath);
+        dir = filepath.dir(fi.fullpath)
     }
 
-    extension := filepath.ext(fi.fullpath);
+    extension := filepath.ext(fi.fullpath)
 
-    file_type: ts.LanguageType = .None
-    if extension == ".odin" {
-        file_type = .Odin
-    } else if extension == ".rs" {
-        file_type = .Rust
-    } else if extension == ".json" {
-        file_type = .Json
+    language: ts.LanguageType = .None
+    switch extension {
+        case ".odin": language = .Odin
+        case ".rs":   language = .Rust
+        case ".json": language = .Json
     }
 
-    if original_content, success := os.read_entire_file_from_handle(fd); success {
-        defer delete(original_content)
-
-        content := make([]u8, len(original_content))
-        copy_slice(content, original_content)
-
-        width := 256;
-        height := 256;
-
-        // fmt.eprintln("file path", fi.fullpath[:]);
-
-        buffer := FileBuffer {
-            allocator = allocator,
-            directory = dir,
-            file_path = fi.fullpath,
-            // TODO: fix this windows issue
-            // file_path = fi.fullpath[4:],
-            extension = extension,
-
-            tree = ts.make_state(file_type),
-            history = make_history(content),
-
-            glyphs = make_glyph_buffer(width, height),
-        };
-
-        push_new_snapshot(&buffer.history)
-        ts.parse_buffer(&buffer.tree, tree_sitter_file_buffer_input(&buffer))
-
-        return buffer, error();
-    } else {
-        return FileBuffer{}, error(ErrorType.FileIOError, fmt.aprintf("failed to read from file"));
+    content, ok := os.read_entire_file_from_handle(fd)
+    if !ok {
+        return {}, make_error(ErrorType.FileIOError, fmt.aprintf("failed to read from file"))
     }
+
+    return FileBufferSource {
+        content   = content,
+        full_path = fi.fullpath,
+        directory = dir,
+        extension = extension,
+        language  = language,
+    }, error()
+}
+
+init_file_buffer_from_source :: proc(allocator: mem.Allocator, source: FileBufferSource) -> FileBuffer {
+    context.allocator = allocator
+
+    buffer := FileBuffer {
+        allocator = allocator,
+        file_path = source.full_path,
+        directory = source.directory,
+        extension = source.extension,
+        tree      = ts.make_state(source.language),
+        history   = make_history(source.content),
+        glyphs    = make_glyph_buffer(256, 256),
+    }
+
+    push_new_snapshot(&buffer.history)
+    ts.parse_buffer(&buffer.tree, tree_sitter_file_buffer_input(&buffer))
+
+    return buffer
+}
+
+apply_source_to_file_buffer :: proc(buffer: ^FileBuffer, source: FileBufferSource) {
+    context.allocator = buffer.allocator
+
+    // Refill the piece table in-place: clear reuses backing memory, no deallocation
+    t := &buffer.history.piece_table
+    clear(&t.content)
+    append(&t.content, ..source.content)
+    clear(&t.chunks)
+    append(&t.chunks, ContentIndex{ start = 0, len = len(t.content) })
+
+    // Reset history scalars — preview buffer is read-only, undo history unneeded
+    buffer.history.cursor = Cursor{}
+    buffer.history.next   = 0
+    buffer.history.first  = 0
+
+    // Reset display state
+    buffer.top_line  = 0
+    buffer.last_col  = 0
+    buffer.selection = nil
+    buffer.flags     = {}
+
+    // Update metadata — old strings remain in arena allocator, acceptable
+    buffer.file_path = source.full_path
+    buffer.directory = source.directory
+    buffer.extension = source.extension
+
+    // Update tree-sitter — C-heap allocated via TS_ALLOCATOR, safe to free inside arena
+    if source.language != buffer.tree.language_type {
+        ts.delete_state(&buffer.tree)
+        buffer.tree = ts.make_state(source.language)
+    }
+    ts.parse_buffer(&buffer.tree, tree_sitter_file_buffer_input(buffer))
+}
+
+make_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: string = "") -> (FileBuffer, Error) {
+    context.allocator = allocator
+
+    source, err := load_file_buffer_source(file_path, base_dir)
+    if err.type != .None { return FileBuffer{}, err }
+    defer delete(source.content)
+
+    return init_file_buffer_from_source(allocator, source), error()
+}
+
+reload_file_into_buffer :: proc(buffer: ^FileBuffer, file_path: string, base_dir: string = "") -> Error {
+    context.allocator = buffer.allocator
+
+    source, err := load_file_buffer_source(file_path, base_dir)
+    if err.type != .None { return err }
+    defer delete(source.content)
+
+    apply_source_to_file_buffer(buffer, source)
+    return error()
 }
 
 tree_sitter_file_buffer_input :: proc(buffer: ^FileBuffer) -> ts.Input {
