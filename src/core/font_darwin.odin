@@ -66,6 +66,23 @@ NSFontManager_availableMembersOfFontFamily :: proc "c" (target: ^NSFontManager, 
     return intrinsics.objc_send(^ns.Array, target, "availableMembersOfFontFamily:", font_family)
 }
 
+SystemFont :: struct {
+    display_name: string,
+    file_path: string,
+}
+
+load_default_system_font :: proc(state: ^State, font_height: int) -> FontAtlas {
+    path := load_default_system_font_path(i32(font_height))
+    return load_front_from_file(state, string(path))
+}
+
+load_font :: proc(state: ^State, system_font: SystemFont) -> FontAtlas {
+    atlas := load_front_from_file(state, system_font.file_path)
+    state.font = system_font
+    return atlas
+}
+
+@(private)
 load_default_system_font_path :: proc(font_height: i32) -> cstring {
     font_class := ns.objc_lookUpClass("NSFont")
     assert(font_class != nil)
@@ -83,14 +100,14 @@ load_default_system_font_path :: proc(font_height: i32) -> cstring {
 get_font_ref_file_path :: proc(font_ref: FontRef, font_height: i32) -> cstring {
     font_url := FontCopyAttribute(font_ref, FontURLAttribute)
     assert(font_url != nil)
-    
+
     url := transmute(^ns.URL)font_url
     url_cstring := url->fileSystemRepresentation()
 
     return url_cstring
-} 
+}
 
-load_system_font_list :: proc(allocator := context.temp_allocator) -> []SystemFont {
+load_system_font_list :: proc(state: ^State, allocator := context.temp_allocator) -> []SystemFont {
     manager := NSFontManager.sharedFontManager()
     assert(manager != nil)
 
@@ -126,7 +143,7 @@ load_system_font_list :: proc(allocator := context.temp_allocator) -> []SystemFo
 
                 system_fonts[num_monospace_fonts] = SystemFont {
                     display_name = fmt.aprintf("%v - %v", font_family_name->odinString(), font_style->odinString(), allocator = allocator),
-                    file_path = font_file_path,
+                    file_path = string(font_file_path),
                 }
 
                 num_monospace_fonts += 1
