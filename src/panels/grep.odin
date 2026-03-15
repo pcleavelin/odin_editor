@@ -86,12 +86,11 @@ update_preview_to_result :: proc(panel_state: ^GrepPanel, state: ^core.State, re
 pop_job_results :: proc(panel_state: ^GrepPanel, state: ^core.State) {
     has_results := false
     for {
-        job, did_pop := jobs.pop(&panel_state.query_queue);
-        has_results = did_pop
-
-        if !did_pop || job.output == nil  {
+        job, did_pop := jobs.pop(&panel_state.query_queue)
+        if !did_pop || job.output == nil {
             break
         }
+        has_results = true
 
         panel_state.query_results = nil
         context.allocator = mem.arena_allocator(&panel_state.query_arena)
@@ -103,11 +102,9 @@ pop_job_results :: proc(panel_state: ^GrepPanel, state: ^core.State) {
         jobs.destroy_job(&panel_state.query_queue, job)
     }
 
-    if has_results && panel_state.query_results != nil {
+    if has_results && panel_state.query_results != nil && len(panel_state.query_results) > 0 {
         panel_state.selected_result = 0
-        if len(panel_state.query_results) > 0 {
-            update_preview_to_result(panel_state, state, &panel_state.query_results[0])
-        }
+        update_preview_to_result(panel_state, state, &panel_state.query_results[0])
     }
 }
 
