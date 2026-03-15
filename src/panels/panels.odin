@@ -22,6 +22,10 @@ register_default_leader_actions :: proc(input_map: ^core.InputActions) {
         open_grep_panel(state)
     }, "Grep Workspace")
 
+    core.register_key_action(input_map, .F, proc(state: ^core.State, user_data: rawptr) {
+        open_file_finder_panel(state)
+    }, "Find File")
+
     core.register_key_action(input_map, .P, proc(state: ^core.State, user_data: rawptr) {
         open(state, make_cmd_palette_panel())
 

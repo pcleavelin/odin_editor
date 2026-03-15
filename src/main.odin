@@ -277,6 +277,16 @@ main :: proc() {
     core.register_editor_command(
         &state.commands,
         "nl.spacegirl.editor.core",
+        "find-file",
+        "Find a file in the workspace",
+        proc(state: ^State, _: rawptr) {
+            panels.open_file_finder_panel(state)
+        }
+    )
+
+    core.register_editor_command(
+        &state.commands,
+        "nl.spacegirl.editor.core",
         "select-font",
         "Opens the font selector",
         proc(state: ^State, _: rawptr) {
