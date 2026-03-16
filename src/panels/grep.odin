@@ -3,6 +3,8 @@ package panels
 import "base:runtime"
 import "core:mem"
 import "core:fmt"
+import "core:os"
+import "core:slice"
 import "core:strings"
 import "core:log"
 
@@ -37,6 +39,7 @@ GrepQueryResult :: struct {
     file_path: string,
     line: int,
     col: int,
+    mod_nsec: i64, // file modification time for recency sorting
 }
 
 open_grep_panel :: proc(state: ^core.State) {
@@ -73,6 +76,37 @@ query_handler :: proc(job: ^jobs.Job) {
     job.output = results_ptr
 }
 
+// Populates mod_nsec on each result (ripgrep groups results by file so we
+// only call os.stat when the path changes) then sorts by most-recently-
+// modified file first, with line number as the tiebreaker within a file.
+@(private)
+sort_results_by_recency :: proc(results: []GrepQueryResult) {
+    last_path: string
+    last_mod_nsec: i64
+
+    for &result in results {
+        if result.file_path == last_path {
+            result.mod_nsec = last_mod_nsec
+        } else {
+            info, err := os.stat(result.file_path, context.temp_allocator)
+            if err == nil {
+                last_mod_nsec = info.modification_time._nsec
+                os.file_info_delete(info, context.temp_allocator)
+            } else {
+                last_mod_nsec = 0
+            }
+            last_path = result.file_path
+            result.mod_nsec = last_mod_nsec
+        }
+    }
+
+    slice.sort_by(results, proc(a, b: GrepQueryResult) -> bool {
+        if a.mod_nsec != b.mod_nsec { return a.mod_nsec > b.mod_nsec }
+        if a.file_path != b.file_path { return a.file_path < b.file_path }
+        return a.line < b.line
+    })
+}
+
 @(private)
 update_preview_to_result :: proc(panel_state: ^GrepPanel, state: ^core.State, result: ^GrepQueryResult) {
     if result.file_path != panel_state.preview_file_path {
@@ -98,6 +132,7 @@ pop_job_results :: proc(panel_state: ^GrepPanel, state: ^core.State) {
         mem.free_all()
 
         panel_state.query_results = rs_grep_as_results(transmute(^RS_GrepResults)job.output)
+        sort_results_by_recency(panel_state.query_results)
 
         jobs.destroy_job(&panel_state.query_queue, job)
     }
