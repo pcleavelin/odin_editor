@@ -167,17 +167,33 @@ filter_and_rank :: proc(panel_state: ^FileFinderPanel, query: string, directory:
 	n := len(panel_state.all_entries)
 
 	for &entry in panel_state.all_entries {
-		// Match against relative path so e.g. "panels/g" works
 		rel := entry.path[len(directory):]
-		score := fuzzy_score(query, rel)
 
-		// score == -1 means no full subsequence match; push those to the bottom
-		if score < 0 {
+		// Score against the basename first: a prefix-like match on the filename
+		// is always tighter than one that spans path separators.
+		// Fall back to the full relative path when the basename has no full match
+		// (e.g. the query contains '/' or spans multiple path components).
+		base := filepath.base(entry.path)
+		base_score := fuzzy_score(query, base)
+		full_score := fuzzy_score(query, rel)
+
+		score: int
+		switch {
+		case base_score >= 0 && full_score >= 0:
+			score = min(base_score, full_score)
+		case base_score >= 0:
+			score = base_score
+		case full_score >= 0:
+			score = full_score
+		case:
 			entry.sort_id = max(int)
-		} else {
-			// fuzzy score is strictly primary, recency is tiebreaker
-			entry.sort_id = score * n + entry.recency_rank
+			append(&panel_state.filtered_results, &entry)
+			if len(panel_state.filtered_results) >= MAX_FILE_FINDER_RESULTS * 2 {break}
+			continue
 		}
+
+		// fuzzy score is strictly primary, recency is tiebreaker
+		entry.sort_id = score * n + entry.recency_rank
 		append(&panel_state.filtered_results, &entry)
 
 		if len(panel_state.filtered_results) >= MAX_FILE_FINDER_RESULTS * 2 {break}
