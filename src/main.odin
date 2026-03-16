@@ -33,6 +33,59 @@ ui_font_height :: proc() -> i32 {
     return i32(state.source_font_height);
 }
 
+@(private)
+render_split_node :: proc(idx: int, tree: ^core.SplitTree, state: ^State, s: ^ui.State) {
+    node := &tree.nodes[idx]
+    switch v in node.variant {
+    case core.SplitLeaf:
+        panel, ok := util.get(&state.panels, v.panel_id).?
+        if !ok || panel.render == nil { return }
+
+        if panel.id == state.current_panel {
+            ui.open_element(s, nil,
+                {
+                    dir  = .LeftToRight,
+                    kind = {ui.Grow{}, ui.Grow{}},
+                },
+                style = {
+                    border       = {.Left, .Right, .Top, .Bottom},
+                    border_color = .Background4,
+                    background_color = .Background4,
+                },
+            )
+            {
+                ui.growing_top_to_bottom(s)
+                {
+                    ui.spacer(s, state.source_font_width)
+                    {
+                        ui.growing_left_to_right(s)
+                        {
+                            ui.spacer(s, state.source_font_width)
+                            {
+                                panel->render(state)
+                            }
+                            ui.spacer(s, state.source_font_width)
+                        }
+                        ui.close_element(s)
+                    }
+                    ui.spacer(s, state.source_font_width)
+                }
+                ui.close_element(s)
+            }
+            ui.close_element(s)
+        } else {
+            panel->render(state)
+        }
+
+    case core.SplitInner:
+        dir := ui.UI_Direction.LeftToRight if v.dir == .Vertical else ui.UI_Direction.TopToBottom
+        ui.open_element(s, nil, {dir = dir, kind = {ui.Grow{}, ui.Grow{}}})
+        render_split_node(v.children[0], tree, state, s)
+        render_split_node(v.children[1], tree, state, s)
+        ui.close_element(s)
+    }
+}
+
 draw :: proc(state: ^State) {
     render_color := theme.get_palette_color(.Background);
     sdl2.SetRenderDrawColor(state.sdl_renderer, render_color.r, render_color.g, render_color.b, render_color.a);
@@ -57,53 +110,21 @@ draw :: proc(state: ^State) {
         floating_panels := [16]int{}
         num_floating := 0
 
+        // Collect floating panels; they render on top of the split tree
         for i in 0..<len(state.panels.data) {
             if panel, ok := util.get(&state.panels, i).?; ok {
-                if panel.render != nil {
-                    if panel.is_floating {
-                        if num_floating < len(floating_panels) {
-                            floating_panels[num_floating] = i
-                            num_floating += 1
-                        }
-                    } else {
-                        if panel.id == state.current_panel {
-                            ui.open_element(new_ui, nil,
-                                {
-                                    dir = .LeftToRight,
-                                    kind = {ui.Grow{}, ui.Grow{}},
-                                },
-                                style = {
-                                    border = {.Left, .Right, .Top, .Bottom},
-                                    border_color = .Background4,
-                                    background_color = .Background4,
-                                },
-                            )
-                            {
-                                ui.growing_top_to_bottom(new_ui)
-                                {
-                                    ui.spacer(new_ui, state.source_font_width)
-                                    {
-                                        ui.growing_left_to_right(new_ui)
-                                        {
-                                            ui.spacer(new_ui, state.source_font_width)
-                                            {
-                                                panel->render(state)
-                                            }
-                                            ui.spacer(new_ui, state.source_font_width)
-                                        }
-                                        ui.close_element(new_ui)
-                                    }
-                                    ui.spacer(new_ui, state.source_font_width)
-                                }
-                                ui.close_element(new_ui)
-                            }
-                            ui.close_element(new_ui)
-                        } else {
-                            panel->render(state)
-                        }
+                if panel.is_floating && panel.render != nil {
+                    if num_floating < len(floating_panels) {
+                        floating_panels[num_floating] = i
+                        num_floating += 1
                     }
                 }
             }
+        }
+
+        // Render non-floating panels through the split tree
+        if !core.split_tree_is_empty(&state.split_tree) {
+            render_split_node(state.split_tree.root, &state.split_tree, state, new_ui)
         }
 
         for i in 0..<num_floating {
@@ -326,10 +347,10 @@ main :: proc() {
             data := panels.MakeFileBuffer {
                 file_path = arg
             }
-            panels.open(&state, panels.make_file_buffer_panel(), &data)
+            panels.open(&state, panels.make_file_buffer_panel(), data = &data)
         }
     } else {
-        panels.open(&state, panels.make_file_buffer_panel(), &panels.MakeFileBuffer {})
+        panels.open(&state, panels.make_file_buffer_panel(), data = &panels.MakeFileBuffer{})
     }
 
     if sdl2.Init({.VIDEO}) < 0 {

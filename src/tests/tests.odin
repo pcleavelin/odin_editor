@@ -95,7 +95,7 @@ input_text :: proc(text: string) -> ArtificialTextInput {
 }
 
 setup_empty_buffer :: proc(state: ^core.State) {
-    panels.open(state, panels.make_file_buffer_panel(), &panels.MakeFileBuffer{})
+    panels.open(state, panels.make_file_buffer_panel(), data = &panels.MakeFileBuffer{})
 
     core.reset_input_map(state)
 }
@@ -874,4 +874,256 @@ run_editor_frame :: proc(state: ^core.State, input: ArtificialInput, is_ctrl_pre
     }
     
     runtime.free_all(context.temp_allocator);
+}
+
+// ── SplitTree unit tests ───────────────────────────────────────────────────
+
+@(test)
+split_tree_init_creates_root_leaf :: proc(t: ^testing.T) {
+    tree: core.SplitTree
+    core.split_tree_init(&tree, 42)
+
+    testing.expectf(t, tree.root != -1, "root should be set after init")
+    root := &tree.nodes[tree.root]
+    leaf, ok := root.variant.(core.SplitLeaf)
+    testing.expectf(t, ok, "root variant should be SplitLeaf after init")
+    testing.expect_value(t, leaf.panel_id, 42)
+    testing.expect_value(t, root.parent, -1)
+}
+
+@(test)
+split_tree_vertical_split :: proc(t: ^testing.T) {
+    tree: core.SplitTree
+    core.split_tree_init(&tree, 0)
+    core.split_tree_split(&tree, 0, 1, .Vertical)
+
+    // Root becomes an inner Vertical node
+    root := &tree.nodes[tree.root]
+    inner, ok := root.variant.(core.SplitInner)
+    testing.expectf(t, ok, "root should be SplitInner after vertical split")
+    testing.expect_value(t, inner.dir, core.SplitDir.Vertical)
+    testing.expect_value(t, root.parent, -1)
+
+    // First child is the original panel
+    c0 := &tree.nodes[inner.children[0]]
+    leaf0, ok0 := c0.variant.(core.SplitLeaf)
+    testing.expectf(t, ok0, "first child should be SplitLeaf")
+    testing.expect_value(t, leaf0.panel_id, 0)
+    testing.expect_value(t, c0.parent, tree.root)
+
+    // Second child is the new panel
+    c1 := &tree.nodes[inner.children[1]]
+    leaf1, ok1 := c1.variant.(core.SplitLeaf)
+    testing.expectf(t, ok1, "second child should be SplitLeaf")
+    testing.expect_value(t, leaf1.panel_id, 1)
+    testing.expect_value(t, c1.parent, tree.root)
+}
+
+@(test)
+split_tree_horizontal_split :: proc(t: ^testing.T) {
+    tree: core.SplitTree
+    core.split_tree_init(&tree, 0)
+    core.split_tree_split(&tree, 0, 1, .Horizontal)
+
+    root := &tree.nodes[tree.root]
+    inner, ok := root.variant.(core.SplitInner)
+    testing.expectf(t, ok, "root should be SplitInner after horizontal split")
+    testing.expect_value(t, inner.dir, core.SplitDir.Horizontal)
+}
+
+@(test)
+split_tree_close_second_child :: proc(t: ^testing.T) {
+    tree: core.SplitTree
+    core.split_tree_init(&tree, 0)
+    core.split_tree_split(&tree, 0, 1, .Vertical)
+
+    survivor := core.split_tree_close(&tree, 1)
+    testing.expect_value(t, survivor, 0)
+
+    // Root should be back to a single leaf for panel 0
+    root := &tree.nodes[tree.root]
+    leaf, ok := root.variant.(core.SplitLeaf)
+    testing.expectf(t, ok, "root should be SplitLeaf after closing second panel")
+    testing.expect_value(t, leaf.panel_id, 0)
+    testing.expect_value(t, root.parent, -1)
+}
+
+@(test)
+split_tree_close_first_child :: proc(t: ^testing.T) {
+    tree: core.SplitTree
+    core.split_tree_init(&tree, 0)
+    core.split_tree_split(&tree, 0, 1, .Vertical)
+
+    survivor := core.split_tree_close(&tree, 0)
+    testing.expect_value(t, survivor, 1)
+
+    root := &tree.nodes[tree.root]
+    leaf, ok := root.variant.(core.SplitLeaf)
+    testing.expectf(t, ok, "root should be SplitLeaf after closing first panel")
+    testing.expect_value(t, leaf.panel_id, 1)
+    testing.expect_value(t, root.parent, -1)
+}
+
+@(test)
+split_tree_navigate_left_right :: proc(t: ^testing.T) {
+    tree: core.SplitTree
+    core.split_tree_init(&tree, 0)
+    core.split_tree_split(&tree, 0, 1, .Vertical)
+
+    // 0 → right → 1
+    testing.expect_value(t, core.split_tree_navigate(&tree, 0, .Right), 1)
+    // 1 → left → 0
+    testing.expect_value(t, core.split_tree_navigate(&tree, 1, .Left), 0)
+    // 0 → left → none
+    testing.expect_value(t, core.split_tree_navigate(&tree, 0, .Left), -1)
+    // 1 → right → none
+    testing.expect_value(t, core.split_tree_navigate(&tree, 1, .Right), -1)
+}
+
+@(test)
+split_tree_navigate_up_down :: proc(t: ^testing.T) {
+    tree: core.SplitTree
+    core.split_tree_init(&tree, 0)
+    core.split_tree_split(&tree, 0, 1, .Horizontal)
+
+    // 0 → down → 1
+    testing.expect_value(t, core.split_tree_navigate(&tree, 0, .Down), 1)
+    // 1 → up → 0
+    testing.expect_value(t, core.split_tree_navigate(&tree, 1, .Up), 0)
+    // crossing axes returns nothing
+    testing.expect_value(t, core.split_tree_navigate(&tree, 0, .Left), -1)
+    testing.expect_value(t, core.split_tree_navigate(&tree, 1, .Right), -1)
+}
+
+@(test)
+split_tree_navigate_nested :: proc(t: ^testing.T) {
+    // Build:  [V inner]
+    //           /    \
+    //         [0]   [H inner]
+    //                /     \
+    //              [1]     [2]
+    tree: core.SplitTree
+    core.split_tree_init(&tree, 0)
+    core.split_tree_split(&tree, 0, 1, .Vertical)
+    core.split_tree_split(&tree, 1, 2, .Horizontal)
+
+    // 0 → right crosses V split, descends first child of right subtree → 1
+    testing.expect_value(t, core.split_tree_navigate(&tree, 0, .Right), 1)
+    // 2 → left crosses V split (walk up past H, then V), descend last of left → 0
+    testing.expect_value(t, core.split_tree_navigate(&tree, 2, .Left), 0)
+    // 1 → down within H split → 2
+    testing.expect_value(t, core.split_tree_navigate(&tree, 1, .Down), 2)
+    // 2 → up within H split → 1
+    testing.expect_value(t, core.split_tree_navigate(&tree, 2, .Up), 1)
+    // 0 has no up/down neighbor (it is a leaf under V only)
+    testing.expect_value(t, core.split_tree_navigate(&tree, 0, .Up), -1)
+    testing.expect_value(t, core.split_tree_navigate(&tree, 0, .Down), -1)
+}
+
+@(test)
+split_tree_close_nested :: proc(t: ^testing.T) {
+    // Same tree as above; close panel 1
+    // Result should be:  [V inner]
+    //                      /    \
+    //                    [0]    [2]
+    tree: core.SplitTree
+    core.split_tree_init(&tree, 0)
+    core.split_tree_split(&tree, 0, 1, .Vertical)
+    core.split_tree_split(&tree, 1, 2, .Horizontal)
+
+    survivor := core.split_tree_close(&tree, 1)
+    testing.expect_value(t, survivor, 2)
+
+    // Root is still a V inner with two leaves
+    root := &tree.nodes[tree.root]
+    inner, ok := root.variant.(core.SplitInner)
+    testing.expectf(t, ok, "root should still be SplitInner after close")
+    testing.expect_value(t, inner.dir, core.SplitDir.Vertical)
+
+    c0 := &tree.nodes[inner.children[0]]
+    leaf0, ok0 := c0.variant.(core.SplitLeaf)
+    testing.expectf(t, ok0, "first child should be leaf 0")
+    testing.expect_value(t, leaf0.panel_id, 0)
+
+    c1 := &tree.nodes[inner.children[1]]
+    leaf2, ok2 := c1.variant.(core.SplitLeaf)
+    testing.expectf(t, ok2, "second child should be leaf 2")
+    testing.expect_value(t, leaf2.panel_id, 2)
+}
+
+// ── SplitTree integration tests (via panels.open / panels.close) ───────────
+
+@(test)
+split_tree_open_panel_populates_tree :: proc(t: ^testing.T) {
+    e := new_test_editor()
+    setup_empty_buffer(&e)   // opens panel 0, inits tree
+
+    first_panel, ok := e.current_panel.?
+    testing.expectf(t, ok, "should have a current panel after setup")
+
+    // Tree root should be a leaf for the first panel
+    root := &e.split_tree.nodes[e.split_tree.root]
+    leaf, leaf_ok := root.variant.(core.SplitLeaf)
+    testing.expectf(t, leaf_ok, "root should be SplitLeaf after first open")
+    testing.expect_value(t, leaf.panel_id, first_panel)
+
+    defer {
+        panels.close(&e, first_panel)
+        delete_editor(&e)
+    }
+}
+
+@(test)
+split_tree_vertical_split_via_open :: proc(t: ^testing.T) {
+    e := new_test_editor()
+    setup_empty_buffer(&e)
+
+    first_panel := e.current_panel.?
+
+    // Open a second panel (defaults to vertical split)
+    second_panel, _ := panels.open(&e, panels.make_file_buffer_panel())
+
+    testing.expect_value(t, e.current_panel.?, second_panel)
+
+    // Tree root should now be an inner node
+    root := &e.split_tree.nodes[e.split_tree.root]
+    _, is_inner := root.variant.(core.SplitInner)
+    testing.expectf(t, is_inner, "root should be SplitInner after second open")
+
+    // Navigating left from the new panel should return the first panel
+    neighbour := core.split_tree_navigate(&e.split_tree, second_panel, .Left)
+    testing.expect_value(t, neighbour, first_panel)
+
+    defer {
+        panels.close(&e, second_panel)
+        panels.close(&e, first_panel)
+        delete_editor(&e)
+    }
+}
+
+@(test)
+split_tree_close_refocuses_neighbour :: proc(t: ^testing.T) {
+    e := new_test_editor()
+    setup_empty_buffer(&e)
+
+    first_panel := e.current_panel.?
+    second_panel, _ := panels.open(&e, panels.make_file_buffer_panel())
+
+    panels.close(&e, second_panel)
+
+    // Focus should have returned to first panel
+    focused, ok := e.current_panel.?
+    testing.expectf(t, ok, "should have a focused panel after close")
+    testing.expect_value(t, focused, first_panel)
+
+    // Tree should be back to a single leaf
+    root := &e.split_tree.nodes[e.split_tree.root]
+    leaf, leaf_ok := root.variant.(core.SplitLeaf)
+    testing.expectf(t, leaf_ok, "root should be SplitLeaf after closing second panel")
+    testing.expect_value(t, leaf.panel_id, first_panel)
+
+    defer {
+        panels.close(&e, first_panel)
+        delete_editor(&e)
+    }
 }

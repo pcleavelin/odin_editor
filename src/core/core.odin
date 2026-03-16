@@ -54,6 +54,8 @@ State :: struct {
     last_panel: Maybe(int),
     panels: util.StaticList(Panel),
     buffers: util.StaticList(FileBuffer),
+
+    split_tree: SplitTree,
 }
 
 Register :: struct {

@@ -2,7 +2,6 @@
 - copy paste from clipboard
 - can't escape out of certain input actions
 - 'changing' that includes the last character of a line moves the cursor incorrectly
-
 - Fix jumping forward a word jumping past consecutive brackets
 - "change selection" not pushing snapshot
 - Don't allow panel navigation in grep panel
@@ -49,7 +48,7 @@
     - [ ] Language Server Configurations
     - [ ] Diagnostics
         - [ ] In-line errors
-    - [ ] Go-to Definition/
+    - [ ] Go-to Definition
     - [ ] Find references
 - [ ] Integrate tree-sitter
     - [x] Syntax Highlighting
@@ -66,18 +65,24 @@
         - [x] Query across project
         - [x] Open file in new buffer
         - [x] Open file in new buffer at found location
-        - [ ] Preview file with context
-            - [x] Show Context
-            - [ ] Syntax highlighting
-            - [ ] Properly show lines numbers
+        - [x] Preview file with context
+            - [x] Show context
+            - [x] Syntax highlighting (via full FileBuffer)
+            - [x] Results sorted by file recency
+            - [ ] Proper line numbers in preview
             - [ ] Don't overlap result list with file preview
     - [ ] Open Buffer Search
-    - [ ] Workspace file search
+    - [x] Workspace file search
+        - [x] Fuzzy matching (consecutive subsequence, gap-distance scoring)
+        - [x] Ranked by last-modified time
+        - [x] File preview on selection
+        - [ ] Respect .gitignore / skip hidden directories
+        - [ ] Show recently opened files when query is empty
 - [ ] Job System
     - [x] Minimal Thread Pool
-    - [ ] Setting to only pop the the latest result
+    - [ ] Only pop the latest result (discard stale jobs)
     - [ ] Use reflection to avoid manually writing ring buffer serializer for each type
-        - [ ] Auto copy in and out of ring buffer/job output 
+        - [ ] Auto copy in and out of ring buffer/job output
 - Re-write the UI (again)
     - [x] New UI
     - [ ] Styling
@@ -94,5 +99,5 @@
     - Allow any-sized tabs
 - Command Search and Execution
     - Refactor to remove generics added specifically for plugins
-    - [ ] Palette based UI
-        - How do inputs work?
+    - [x] Palette based UI
+    - [ ] Commands that accept further input (e.g. rename, go-to-line)
