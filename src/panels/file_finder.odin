@@ -3,10 +3,8 @@ package panels
 import "base:runtime"
 import "core:mem"
 import "core:os"
-import "core:path/filepath"
 import "core:slice"
 import "core:strings"
-import "core:time"
 
 import "vendor:sdl2"
 
@@ -164,36 +162,19 @@ filter_and_rank :: proc(panel_state: ^FileFinderPanel, query: string, directory:
 		return
 	}
 
-	n := len(panel_state.all_entries)
-
 	for &entry in panel_state.all_entries {
 		rel := entry.path[len(directory):]
+		score := fuzzy_score(query, rel)
 
-		// Score against the basename first: a prefix-like match on the filename
-		// is always tighter than one that spans path separators.
-		// Fall back to the full relative path when the basename has no full match
-		// (e.g. the query contains '/' or spans multiple path components).
-		base := filepath.base(entry.path)
-		base_score := fuzzy_score(query, base)
-		full_score := fuzzy_score(query, rel)
-
-		score: int
-		switch {
-		case base_score >= 0 && full_score >= 0:
-			score = min(base_score, full_score)
-		case base_score >= 0:
-			score = base_score
-		case full_score >= 0:
-			score = full_score
-		case:
+		// score == -1 means no full subsequence match; push those to the bottom
+		if score < 0 {
 			entry.sort_id = max(int)
-			append(&panel_state.filtered_results, &entry)
-			if len(panel_state.filtered_results) >= MAX_FILE_FINDER_RESULTS * 2 {break}
-			continue
+		} else {
+			// fuzzy score and recency are equally weighted so that an old file
+			// with a marginally better gap score doesn't beat a recently-edited
+			// file with a slightly worse gap score
+			entry.sort_id = score + entry.recency_rank
 		}
-
-		// fuzzy score is strictly primary, recency is tiebreaker
-		entry.sort_id = score * n + entry.recency_rank
 		append(&panel_state.filtered_results, &entry)
 
 		if len(panel_state.filtered_results) >= MAX_FILE_FINDER_RESULTS * 2 {break}
