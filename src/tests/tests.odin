@@ -1051,79 +1051,133 @@ split_tree_close_nested :: proc(t: ^testing.T) {
     testing.expect_value(t, leaf2.panel_id, 2)
 }
 
-// ── SplitTree integration tests (via panels.open / panels.close) ───────────
+// ── SplitTree integration tests (Ctrl+W key sequences) ────────────────────
+
+// Helper: simulate Ctrl+W followed by a panel-action key.
+// LCTRL is released before the action key so that run_key_action looks in
+// key_actions (not ctrl_key_actions) when dispatching the sub-map entry.
+ctrl_w :: proc(state: ^core.State, key: core.Key) {
+    run_inputs(state, []ArtificialInput{
+        press_key(.LCTRL),
+        press_key(.W),
+        release_key(.LCTRL),
+        press_key(key),
+    })
+}
 
 @(test)
-split_tree_open_panel_populates_tree :: proc(t: ^testing.T) {
+split_tree_setup_populates_tree :: proc(t: ^testing.T) {
     e := new_test_editor()
-    setup_empty_buffer(&e)   // opens panel 0, inits tree
+    setup_empty_buffer(&e)
+    defer {
+        panels.close(&e, e.current_panel.?)
+        delete_editor(&e)
+    }
 
     first_panel, ok := e.current_panel.?
     testing.expectf(t, ok, "should have a current panel after setup")
 
-    // Tree root should be a leaf for the first panel
+    // Tree root should be a single leaf for the first panel
     root := &e.split_tree.nodes[e.split_tree.root]
     leaf, leaf_ok := root.variant.(core.SplitLeaf)
-    testing.expectf(t, leaf_ok, "root should be SplitLeaf after first open")
+    testing.expectf(t, leaf_ok, "root should be SplitLeaf after setup")
     testing.expect_value(t, leaf.panel_id, first_panel)
-
-    defer {
-        panels.close(&e, first_panel)
-        delete_editor(&e)
-    }
 }
 
 @(test)
-split_tree_vertical_split_via_open :: proc(t: ^testing.T) {
+split_tree_ctrl_w_v_opens_vertical_split :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
-
     first_panel := e.current_panel.?
+    defer {
+        panels.close(&e, e.current_panel.?)
+        panels.close(&e, first_panel)
+        delete_editor(&e)
+    }
 
-    // Open a second panel (defaults to vertical split)
-    second_panel, _ := panels.open(&e, panels.make_file_buffer_panel())
+    ctrl_w(&e, .V)
 
+    second_panel := e.current_panel.?
+    testing.expectf(t, second_panel != first_panel, "Ctrl+W V should focus the new panel")
+
+    // Root should now be a Vertical inner node
+    root := &e.split_tree.nodes[e.split_tree.root]
+    inner, is_inner := root.variant.(core.SplitInner)
+    testing.expectf(t, is_inner, "root should be SplitInner after Ctrl+W V")
+    testing.expect_value(t, inner.dir, core.SplitDir.Vertical)
+
+    // Navigating left from the new panel should reach the original panel
+    testing.expect_value(t, core.split_tree_navigate(&e.split_tree, second_panel, .Left), first_panel)
+}
+
+@(test)
+split_tree_ctrl_w_s_opens_horizontal_split :: proc(t: ^testing.T) {
+    e := new_test_editor()
+    setup_empty_buffer(&e)
+    first_panel := e.current_panel.?
+    defer {
+        panels.close(&e, e.current_panel.?)
+        panels.close(&e, first_panel)
+        delete_editor(&e)
+    }
+
+    ctrl_w(&e, .S)
+
+    second_panel := e.current_panel.?
+    testing.expectf(t, second_panel != first_panel, "Ctrl+W S should focus the new panel")
+
+    root := &e.split_tree.nodes[e.split_tree.root]
+    inner, is_inner := root.variant.(core.SplitInner)
+    testing.expectf(t, is_inner, "root should be SplitInner after Ctrl+W S")
+    testing.expect_value(t, inner.dir, core.SplitDir.Horizontal)
+
+    testing.expect_value(t, core.split_tree_navigate(&e.split_tree, second_panel, .Up), first_panel)
+}
+
+@(test)
+split_tree_ctrl_w_h_l_navigates :: proc(t: ^testing.T) {
+    e := new_test_editor()
+    setup_empty_buffer(&e)
+    first_panel := e.current_panel.?
+    defer {
+        panels.close(&e, e.current_panel.?)
+        panels.close(&e, first_panel)
+        delete_editor(&e)
+    }
+
+    ctrl_w(&e, .V)
+    second_panel := e.current_panel.?
+
+    // Ctrl+W H should move focus back left to first_panel
+    ctrl_w(&e, .H)
+    testing.expect_value(t, e.current_panel.?, first_panel)
+
+    // Ctrl+W L should move focus right to second_panel
+    ctrl_w(&e, .L)
     testing.expect_value(t, e.current_panel.?, second_panel)
-
-    // Tree root should now be an inner node
-    root := &e.split_tree.nodes[e.split_tree.root]
-    _, is_inner := root.variant.(core.SplitInner)
-    testing.expectf(t, is_inner, "root should be SplitInner after second open")
-
-    // Navigating left from the new panel should return the first panel
-    neighbour := core.split_tree_navigate(&e.split_tree, second_panel, .Left)
-    testing.expect_value(t, neighbour, first_panel)
-
-    defer {
-        panels.close(&e, second_panel)
-        panels.close(&e, first_panel)
-        delete_editor(&e)
-    }
 }
 
 @(test)
-split_tree_close_refocuses_neighbour :: proc(t: ^testing.T) {
+split_tree_ctrl_w_q_closes_and_refocuses :: proc(t: ^testing.T) {
     e := new_test_editor()
     setup_empty_buffer(&e)
-
     first_panel := e.current_panel.?
-    second_panel, _ := panels.open(&e, panels.make_file_buffer_panel())
-
-    panels.close(&e, second_panel)
-
-    // Focus should have returned to first panel
-    focused, ok := e.current_panel.?
-    testing.expectf(t, ok, "should have a focused panel after close")
-    testing.expect_value(t, focused, first_panel)
-
-    // Tree should be back to a single leaf
-    root := &e.split_tree.nodes[e.split_tree.root]
-    leaf, leaf_ok := root.variant.(core.SplitLeaf)
-    testing.expectf(t, leaf_ok, "root should be SplitLeaf after closing second panel")
-    testing.expect_value(t, leaf.panel_id, first_panel)
-
     defer {
-        panels.close(&e, first_panel)
+        panels.close(&e, e.current_panel.?)
         delete_editor(&e)
     }
+
+    ctrl_w(&e, .V)
+
+    // Close the new panel
+    ctrl_w(&e, .Q)
+
+    // Focus should have returned to first_panel
+    testing.expect_value(t, e.current_panel.?, first_panel)
+
+    // Tree should be a single leaf again
+    root := &e.split_tree.nodes[e.split_tree.root]
+    leaf, leaf_ok := root.variant.(core.SplitLeaf)
+    testing.expectf(t, leaf_ok, "root should be SplitLeaf after Ctrl+W Q")
+    testing.expect_value(t, leaf.panel_id, first_panel)
 }
