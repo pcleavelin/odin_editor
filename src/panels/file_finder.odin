@@ -16,7 +16,7 @@ import "../ui"
 
 MAX_FILE_FINDER_RESULTS :: 5000
 
-SKIP_DIRS :: []string{".git", "target", "bin", ".claude", "node_modules"}
+SKIP_DIRS :: []string{".jj", ".git", "target", "bin", ".claude", "node_modules"}
 
 FileFinderEntry :: struct {
 	path:         string, // absolute path; allocated in panel arena
@@ -117,7 +117,7 @@ collect_workspace_files :: proc(dir: string, allocator: mem.Allocator) -> []File
 }
 
 // Returns the gap-distance score for matching needle as a subsequence of
-// haystack. Lower is better. Returns 0 for empty needle.
+// haystack. Lower is better. Returns -1 if any needle character is not found.
 @(private)
 fuzzy_score :: proc(needle, haystack: string) -> int {
 	if len(needle) == 0 {return 0}
@@ -127,11 +127,6 @@ fuzzy_score :: proc(needle, haystack: string) -> int {
 
 	for needle_char in needle {
 		letter_found := false
-
-		if haystack_index >= len(haystack) {
-			dist += 1
-			continue
-		}
 
 		for haystack_char, i in haystack[haystack_index:] {
 			if haystack_char == needle_char {
@@ -149,9 +144,7 @@ fuzzy_score :: proc(needle, haystack: string) -> int {
 		}
 
 		if !letter_found {
-			// penalise but don't disqualify — matches the command palette behaviour
-			dist += len(haystack) - haystack_index
-			dist = max(dist, 0)
+			return -1
 		}
 	}
 
@@ -178,8 +171,13 @@ filter_and_rank :: proc(panel_state: ^FileFinderPanel, query: string, directory:
 		rel := entry.path[len(directory):]
 		score := fuzzy_score(query, rel)
 
-		// sort_id: fuzzy score is strictly primary, recency is tiebreaker
-		entry.sort_id = score * n + entry.recency_rank
+		// score == -1 means no full subsequence match; push those to the bottom
+		if score < 0 {
+			entry.sort_id = max(int)
+		} else {
+			// fuzzy score is strictly primary, recency is tiebreaker
+			entry.sort_id = score * n + entry.recency_rank
+		}
 		append(&panel_state.filtered_results, &entry)
 
 		if len(panel_state.filtered_results) >= MAX_FILE_FINDER_RESULTS * 2 {break}
