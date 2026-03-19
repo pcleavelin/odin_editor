@@ -299,6 +299,31 @@ file_buffer_leader_actions :: proc(input_map: ^core.InputActions) {
 
         core.reset_input_map(state)
     }, "View Symbol")
+
+    bookmark_actions := core.new_input_actions(show_help = true)
+    core.register_key_action(&bookmark_actions, .ESCAPE, proc(state: ^core.State, user_data: rawptr) {
+        core.reset_input_map(state)
+    }, "cancel")
+    core.register_key_action(&bookmark_actions, .A, proc(state: ^core.State, user_data: rawptr) {
+        panel := transmute(^core.Panel)user_data
+        panel_state := transmute(^FileBufferPanel)panel.state
+        buffer := core.get_buffer(state, panel_state.buffer_id).?
+
+        if state.bookmarks.current_list_id == -1 {
+            core.bookmark_create_list(&state.bookmarks, "default")
+        }
+
+        core.bookmark_add(
+            &state.bookmarks,
+            state.bookmarks.current_list_id,
+            buffer.file_path,
+            buffer.history.cursor.line,
+            buffer.history.cursor.col,
+        )
+
+        core.reset_input_map(state)
+    }, "Add Bookmark")
+    core.register_key_action(input_map, .B, bookmark_actions, "Bookmark")
 }
 
 file_buffer_go_actions :: proc(input_map: ^core.InputActions) {

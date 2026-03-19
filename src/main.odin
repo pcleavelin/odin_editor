@@ -224,6 +224,8 @@ main :: proc() {
         log_buffer = core.new_virtual_file_buffer(context.allocator),
     };
 
+    core.init_bookmarks(&state.bookmarks);
+
     // context.logger = core.new_logger(&state.log_buffer);
     context.logger = log.create_console_logger();
     state.ctx = context;
@@ -274,6 +276,16 @@ main :: proc() {
     //         }
     //     }
     // )
+
+    core.register_editor_command(
+        &state.commands,
+        "nl.spacegirl.editor.core",
+        "bookmarks",
+        "Open Bookmarks Panel",
+        proc(state: ^State, _: rawptr) {
+            panels.open_bookmarks_panel(state)
+        }
+    )
 
     core.register_editor_command(
         &state.commands,

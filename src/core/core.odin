@@ -56,6 +56,33 @@ State :: struct {
     buffers: util.StaticList(FileBuffer),
 
     split_tree: SplitTree,
+
+    bookmarks: Bookmarks,
+}
+
+// FIXME: move all of these to bookmarks.odin
+BookmarkListId :: distinct int
+
+Bookmark :: struct {
+    file_path: string,
+    line:      int,
+    col:       int,
+    label:     string,
+}
+
+BookmarkList :: struct {
+    id:        BookmarkListId,
+    name:      string,
+    bookmarks: [dynamic]Bookmark,
+    allocator: mem.Allocator,
+    arena:     mem.Arena,
+}
+
+// TODO: come up with a better name for this
+Bookmarks :: struct {
+    allocator:       mem.Allocator,
+    lists:           util.StaticList(BookmarkList),
+    current_list_id: BookmarkListId,
 }
 
 Register :: struct {

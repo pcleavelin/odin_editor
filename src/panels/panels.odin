@@ -33,6 +33,11 @@ register_default_leader_actions :: proc(input_map: ^core.InputActions) {
         sdl2.StartTextInput()
     }, "Command Palette")
 
+    core.register_key_action(input_map, .M, proc(state: ^core.State, user_data: rawptr) {
+        open_bookmarks_panel(state)
+        core.reset_input_map(state)
+    }, "Open Bookmarks")
+
     core.register_key_action(input_map, .COMMA, proc(state: ^core.State, user_data: rawptr) {
         current_panel := state.current_panel
 
