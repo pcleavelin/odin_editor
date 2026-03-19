@@ -11,6 +11,7 @@
 - Padding around UI elements
 
 # TODO
+- [ ] Convert tabs to spaces
 - [ ] Buffer horizontal scrolling
 - [ ] Buffer text wrapping
 - [ ] More Vim Edits

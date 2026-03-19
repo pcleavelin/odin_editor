@@ -1,6 +1,5 @@
 package panels
 
-import "base:runtime"
 import "core:mem"
 import "core:os"
 import "core:slice"
@@ -18,6 +17,7 @@ SKIP_DIRS :: []string{".jj", ".git", "target", "bin", ".claude", "node_modules"}
 
 FileFinderEntry :: struct {
 	path:         string, // absolute path; allocated in panel arena
+	mod_nsec:     i64, // modification time; used to assign recency_rank after sorting
 	recency_rank: int, // 0 = most recently modified
 	sort_id:      int, // combined fuzzy+recency score for current query
 }
@@ -44,15 +44,10 @@ open_file_finder_panel :: proc(state: ^core.State) {
 	sdl2.StartTextInput()
 }
 
-CollectedFile :: struct {
-	path:     string,
-	mod_nsec: i64, // modification_time._nsec for sorting
-}
-
 @(private)
 collect_workspace_files_recursive :: proc(
 	dir: string,
-	raw: ^[dynamic]CollectedFile,
+	entries: ^[dynamic]FileFinderEntry,
 	path_allocator: mem.Allocator,
 ) {
 	fd, err := os.open(dir)
@@ -75,14 +70,14 @@ collect_workspace_files_recursive :: proc(
 				}
 			}
 			if !skip {
-				collect_workspace_files_recursive(fi.fullpath, raw, path_allocator)
+				collect_workspace_files_recursive(fi.fullpath, entries, path_allocator)
 			}
 		} else {
 			if len(base) > 0 && base[0] == '.' {continue}
 
 			append(
-				raw,
-				CollectedFile{
+				entries,
+				FileFinderEntry{
 					path     = strings.clone(fi.fullpath, path_allocator),
 					mod_nsec = fi.modification_time._nsec,
 				},
@@ -93,25 +88,20 @@ collect_workspace_files_recursive :: proc(
 
 @(private)
 collect_workspace_files :: proc(dir: string, allocator: mem.Allocator) -> []FileFinderEntry {
-	raw := make([dynamic]CollectedFile, allocator)
-	collect_workspace_files_recursive(dir, &raw, allocator)
+	entries := make([dynamic]FileFinderEntry, allocator)
+	collect_workspace_files_recursive(dir, &entries, allocator)
 
 	// Sort by modification time descending (most recent first)
-	slice.sort_by(raw[:], proc(a, b: CollectedFile) -> bool {
+	slice.sort_by(entries[:], proc(a, b: FileFinderEntry) -> bool {
 		return a.mod_nsec > b.mod_nsec
 	})
 
-	entries := make([]FileFinderEntry, len(raw), allocator)
-	for r, i in raw {
-		entries[i] = FileFinderEntry {
-			path         = r.path,
-			recency_rank = i, // 0 = most recent
-		}
+	// Assign recency ranks after sorting
+	for &e, i in entries {
+		e.recency_rank = i
 	}
 
-	// raw backing array can be discarded (strings live in allocator)
-	delete(raw)
-	return entries
+	return entries[:]
 }
 
 // Returns the gap-distance score for matching needle as a subsequence of
@@ -183,11 +173,6 @@ filter_and_rank :: proc(panel_state: ^FileFinderPanel, query: string, directory:
 	slice.sort_by(panel_state.filtered_results[:], proc(a, b: ^FileFinderEntry) -> bool {
 		return a.sort_id < b.sort_id
 	})
-
-	if len(panel_state.filtered_results) > MAX_FILE_FINDER_RESULTS {
-		raw := transmute(^runtime.Raw_Dynamic_Array)(&panel_state.filtered_results)
-		raw.len = MAX_FILE_FINDER_RESULTS
-	}
 }
 
 @(private)
@@ -254,9 +239,6 @@ make_file_finder_panel :: proc() -> core.Panel {
 						path := panel_state.filtered_results[panel_state.selected_result].path
 						core.open_buffer_file(state, path, 0, 0)
 						close(state, this_panel.id)
-						state.mode = .Normal
-						sdl2.StopTextInput()
-						core.reset_input_map(state)
 					}
 				},
 				"Open File",
@@ -354,6 +336,7 @@ make_file_finder_panel :: proc() -> core.Panel {
 
 			filter_and_rank(panel_state, query, state.directory)
 			panel_state.selected_result = 0
+   panel_state.results_start = 0
 			update_file_finder_preview(panel_state, state)
 		},
 		render = proc(panel: ^core.Panel, state: ^core.State) -> (ok: bool) {

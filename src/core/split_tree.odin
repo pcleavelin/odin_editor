@@ -29,7 +29,7 @@ SplitTree :: struct {
 }
 
 // Returns the index of the first free slot, or -1 if full.
-split_tree_alloc :: proc(tree: ^SplitTree) -> int {
+split_tree_find_slot :: proc(tree: ^SplitTree) -> int {
     for i in 0 ..< SPLIT_TREE_MAX {
         if tree.nodes[i].variant == nil {
             return i
@@ -60,7 +60,7 @@ split_tree_init :: proc(tree: ^SplitTree, panel_id: int) {
     for i in 0 ..< SPLIT_TREE_MAX {
         tree.nodes[i] = {}
     }
-    idx := split_tree_alloc(tree)
+    idx := split_tree_find_slot(tree)
     tree.nodes[idx] = SplitNode{parent = -1, variant = SplitLeaf{panel_id = panel_id}}
     tree.root = idx
 }
@@ -71,7 +71,8 @@ split_tree_is_empty :: proc(tree: ^SplitTree) -> bool {
 }
 
 // Splits the leaf for current_panel_id, placing new_panel_id as the second
-// child under a new inner node with the given direction.
+// child. leaf_idx is promoted to an inner node in-place; two new leaves are
+// allocated for the two panels. No grandparent update is needed.
 split_tree_split :: proc(
     tree: ^SplitTree,
     current_panel_id: int,
@@ -81,42 +82,27 @@ split_tree_split :: proc(
     leaf_idx := split_tree_find_leaf(tree, current_panel_id)
     if leaf_idx == -1 {return}
 
-    old_parent := tree.nodes[leaf_idx].parent
+    // Allocate two new leaves; both point back to leaf_idx as parent
+    leaf1_idx := split_tree_find_slot(tree)
+    tree.nodes[leaf1_idx] = SplitNode {
+        parent  = leaf_idx,
+        variant = SplitLeaf{panel_id = current_panel_id},
+    }
 
-    // Allocate the new panel's leaf
-    new_leaf_idx := split_tree_alloc(tree)
-    tree.nodes[new_leaf_idx] = SplitNode {
-        parent  = -1, // patched below
+    leaf2_idx := split_tree_find_slot(tree)
+    tree.nodes[leaf2_idx] = SplitNode {
+        parent  = leaf_idx,
         variant = SplitLeaf{panel_id = new_panel_id},
     }
 
-    // Allocate the replacement inner node (takes the leaf's place in the tree)
-    inner_idx := split_tree_alloc(tree)
-    tree.nodes[inner_idx] = SplitNode {
-        parent  = old_parent,
-        variant = SplitInner{dir = dir, children = {leaf_idx, new_leaf_idx}},
-    }
-
-    // Patch child parent pointers
-    tree.nodes[leaf_idx].parent    = inner_idx
-    tree.nodes[new_leaf_idx].parent = inner_idx
-
-    // Replace the old leaf reference in its parent (or root)
-    if old_parent == -1 {
-        tree.root = inner_idx
-    } else {
-        gp := &tree.nodes[old_parent].variant.(SplitInner)
-        if gp.children[0] == leaf_idx {
-            gp.children[0] = inner_idx
-        } else {
-            gp.children[1] = inner_idx
-        }
-    }
+    // Promote leaf_idx to inner; its parent is already correct
+    tree.nodes[leaf_idx].variant = SplitInner{dir = dir, children = {leaf1_idx, leaf2_idx}}
 }
 
-// Removes the leaf for panel_id and promotes its sibling up to fill the gap.
-// Returns the panel_id of the surviving neighbour so the caller can refocus.
-// Returns -1 if panel_id is the sole remaining leaf (cannot close the last one).
+// Removes the leaf for panel_id by collapsing the sibling into the parent slot.
+// The parent's own parent pointer is already correct, so no grandparent update
+// is needed. Returns the panel_id that should receive focus, or -1 if this is
+// the sole remaining leaf.
 split_tree_close :: proc(tree: ^SplitTree, panel_id: int) -> int {
     leaf_idx := split_tree_find_leaf(tree, panel_id)
     if leaf_idx == -1 {return -1}
@@ -130,26 +116,20 @@ split_tree_close :: proc(tree: ^SplitTree, panel_id: int) -> int {
     inner       := tree.nodes[parent_idx].variant.(SplitInner)
     sibling_idx := inner.children[1] if inner.children[0] == leaf_idx else inner.children[0]
 
-    grandparent_idx := tree.nodes[parent_idx].parent
+    // Copy sibling's content into the parent slot; parent's own parent is unchanged
+    tree.nodes[parent_idx].variant = tree.nodes[sibling_idx].variant
 
-    // Promote sibling to fill the parent's position
-    tree.nodes[sibling_idx].parent = grandparent_idx
-    if grandparent_idx == -1 {
-        tree.root = sibling_idx
-    } else {
-        gp := &tree.nodes[grandparent_idx].variant.(SplitInner)
-        if gp.children[0] == parent_idx {
-            gp.children[0] = sibling_idx
-        } else {
-            gp.children[1] = sibling_idx
-        }
+    // If the sibling was an inner node, its children now point to sibling_idx —
+    // redirect them to parent_idx
+    if sibling_inner, ok := tree.nodes[parent_idx].variant.(SplitInner); ok {
+        tree.nodes[sibling_inner.children[0]].parent = parent_idx
+        tree.nodes[sibling_inner.children[1]].parent = parent_idx
     }
 
     split_tree_free(tree, leaf_idx)
-    split_tree_free(tree, parent_idx)
+    split_tree_free(tree, sibling_idx)
 
-    // Return the panel_id that should receive focus
-    return split_tree_descend_first(tree, sibling_idx)
+    return split_tree_descend_first(tree, parent_idx)
 }
 
 // Finds the adjacent panel in direction dir from current_panel_id.
