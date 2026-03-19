@@ -133,6 +133,17 @@ make_file_buffer_panel :: proc() -> core.Panel {
             panel_state := transmute(^FileBufferPanel)panel.state
             buffer := core.get_buffer(state, panel_state.buffer_id).?
 
+            if panel_state.is_searching {
+                query := core.buffer_to_string(&panel_state.search_buffer, allocator = context.temp_allocator)
+                if len(query) > 0 && query[len(query) - 1] == '\n' {
+                    panel_state.is_searching = false
+                    state.mode = .Normal
+                    sdl2.StopTextInput()
+                    core.reset_input_map(state)
+                    return
+                }
+            }
+
             run_query(panel_state, buffer)
 
             if panel_state.is_searching {
