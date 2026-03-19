@@ -133,6 +133,9 @@ destroy_job :: proc(q: ^JobQueue, job: ^Job) {
 destroy_job_queue :: proc(q: ^JobQueue) {
     intrinsics.atomic_store(&q.is_running, false)
 
+    for i in 0..<q.num_threads {
+        sync.post(&q.job_data[i].finished_sema)
+    }
     sync.post(&q.available_threads, q.num_threads)
 
     for i in 0..<len(q.threads) {
@@ -146,6 +149,7 @@ job_queue_thread_handler :: proc(t: ^thread.Thread) {
 
     for intrinsics.atomic_load(&job.queue.is_running) {
         sync.wait(&job.finished_sema)
+        if !intrinsics.atomic_load(&job.queue.is_running) { break }
         sync.wait(&job.queue.available_threads)
 
         if sync.guard(&job.queue.queue_mutex) {
