@@ -11,6 +11,9 @@
 - Padding around UI elements
 
 # TODO
+- [ ] File Bookmarks
+  - [ ] Can be used by other panels (like the File Finder and Grep panels)
+  - [ ] Multiple Lists of bookmarks can be saved
 - [ ] Convert tabs to spaces
 - [ ] Buffer horizontal scrolling
 - [ ] Buffer text wrapping

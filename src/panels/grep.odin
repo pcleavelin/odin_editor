@@ -28,8 +28,10 @@ GrepPanel :: struct {
     preview_buffer:    core.FileBuffer,
     preview_file_path: string,
 
-    query_arena: mem.Arena,
-    query_results: []GrepQueryResult,
+    results_list_id: core.BookmarkListId,
+
+    query_arena:   mem.Arena,
+    query_results: []GrepQueryResult, // intermediate; cleared after writing to bookmark list
 
     query_queue: jobs.JobQueue,
 }
@@ -108,12 +110,12 @@ sort_results_by_recency :: proc(results: []GrepQueryResult) {
 }
 
 @(private)
-update_preview_to_result :: proc(panel_state: ^GrepPanel, state: ^core.State, result: ^GrepQueryResult) {
-    if result.file_path != panel_state.preview_file_path {
-        core.reload_file_into_buffer(&panel_state.preview_buffer, result.file_path, state.directory)
-        panel_state.preview_file_path = result.file_path
+update_preview_to_result :: proc(panel_state: ^GrepPanel, state: ^core.State, bookmark: ^core.Bookmark) {
+    if bookmark.file_path != panel_state.preview_file_path {
+        core.reload_file_into_buffer(&panel_state.preview_buffer, bookmark.file_path, state.directory)
+        panel_state.preview_file_path = bookmark.file_path
     }
-    core.move_cursor_to_location(&panel_state.preview_buffer, result.line, result.col)
+    core.move_cursor_to_location(&panel_state.preview_buffer, bookmark.line, bookmark.col)
 }
 
 @(private)
@@ -126,20 +128,39 @@ pop_job_results :: proc(panel_state: ^GrepPanel, state: ^core.State) {
         }
         has_results = true
 
-        panel_state.query_results = nil
+        // Build intermediate results in the query arena for sorting
         context.allocator = mem.arena_allocator(&panel_state.query_arena)
-
         mem.free_all()
 
         panel_state.query_results = rs_grep_as_results(transmute(^RS_GrepResults)job.output)
         sort_results_by_recency(panel_state.query_results)
 
+        // Write sorted results into the persistent bookmark list
+        core.bookmark_clear_list(&state.bookmarks, panel_state.results_list_id)
+        for result in panel_state.query_results {
+            core.bookmark_add(
+                &state.bookmarks,
+                panel_state.results_list_id,
+                result.file_path,
+                result.line,
+                result.col,
+                label = result.file_context,
+            )
+        }
+
+        // Intermediate results no longer needed
+        panel_state.query_results = nil
+
         jobs.destroy_job(&panel_state.query_queue, job)
     }
 
-    if has_results && panel_state.query_results != nil && len(panel_state.query_results) > 0 {
+    if has_results {
         panel_state.selected_result = 0
-        update_preview_to_result(panel_state, state, &panel_state.query_results[0])
+        if bookmark_list, ok := core.bookmark_get_list(&state.bookmarks, panel_state.results_list_id); ok {
+            if len(bookmark_list.bookmarks) > 0 {
+                update_preview_to_result(panel_state, state, &bookmark_list.bookmarks[0])
+            }
+        }
     }
 }
 
@@ -191,6 +212,8 @@ make_grep_panel :: proc() -> core.Panel {
             jobs.destroy_job_queue(&panel_state.query_queue)
             ts.delete_state(&panel_state.buffer.tree)
             ts.delete_state(&panel_state.preview_buffer.tree)
+            // results_list_id is intentionally NOT deleted so results persist
+            // in the bookmarks panel after grep closes
         },
         create = proc(panel: ^core.Panel, state: ^core.State, data: rawptr) {
             context.allocator = panel.allocator
@@ -204,13 +227,14 @@ make_grep_panel :: proc() -> core.Panel {
             panel_state.preview_buffer = core.new_virtual_file_buffer(panel.allocator)
             jobs.make_job_queue(panel.allocator, 2, &panel_state.query_queue)
 
-
             arena_bytes, err := make([]u8, MAX_GREP_RESULTS*512)
             if err != nil {
                 log.errorf("failed to allocate arena for grep panel: '%v'", err)
                 return
             }
             mem.arena_init(&panel_state.query_arena, arena_bytes)
+
+            panel_state.results_list_id = core.bookmark_create_list(&state.bookmarks, "grep")
 
             panel_actions := core.new_input_actions(show_help = true)
             register_default_panel_actions(&panel_actions)
@@ -220,39 +244,43 @@ make_grep_panel :: proc() -> core.Panel {
                 this_panel := transmute(^core.Panel)user_data
                 panel_state := transmute(^GrepPanel)this_panel.state
 
-                if panel_state.query_results != nil {
-                    selected_result := &panel_state.query_results[panel_state.selected_result]
-
-                    core.open_buffer_file(state, selected_result.file_path, selected_result.line, selected_result.col)
-                    close(state, this_panel.id)
+                if bookmark_list, ok := core.bookmark_get_list(&state.bookmarks, panel_state.results_list_id); ok {
+                    if len(bookmark_list.bookmarks) > 0 {
+                        bookmark := &bookmark_list.bookmarks[panel_state.selected_result]
+                        core.open_buffer_file(state, bookmark.file_path, bookmark.line, bookmark.col)
+                        close(state, this_panel.id)
+                    }
                 }
-
             }, "Open File");
             core.register_key_action(&panel.input_map.mode[.Normal], .I, proc(state: ^core.State, user_data: rawptr) {
                 this_panel := transmute(^core.Panel)user_data
                 panel_state := transmute(^GrepPanel)this_panel.state
-                
-                core.move_cursor_right(&panel_state.buffer, false);
-                
-                state.mode = .Insert;
-                sdl2.StartTextInput();
+
+                core.move_cursor_right(&panel_state.buffer, false)
+
+                state.mode = .Insert
+                sdl2.StartTextInput()
             }, "enter insert mode");
             core.register_key_action(&panel.input_map.mode[.Normal], .K, proc(state: ^core.State, user_data: rawptr) {
                 this_panel := transmute(^core.Panel)user_data
                 panel_state := transmute(^GrepPanel)this_panel.state
 
-                if panel_state.query_results != nil && panel_state.selected_result > 0 {
-                    panel_state.selected_result -= 1
-                    update_preview_to_result(panel_state, state, &panel_state.query_results[panel_state.selected_result])
+                if bookmark_list, ok := core.bookmark_get_list(&state.bookmarks, panel_state.results_list_id); ok {
+                    if panel_state.selected_result > 0 {
+                        panel_state.selected_result -= 1
+                        update_preview_to_result(panel_state, state, &bookmark_list.bookmarks[panel_state.selected_result])
+                    }
                 }
             }, "move selection up");
             core.register_key_action(&panel.input_map.mode[.Normal], .J, proc(state: ^core.State, user_data: rawptr) {
                 this_panel := transmute(^core.Panel)user_data
                 panel_state := transmute(^GrepPanel)this_panel.state
 
-                if panel_state.query_results != nil && panel_state.selected_result < len(panel_state.query_results)-1 {
-                    panel_state.selected_result += 1
-                    update_preview_to_result(panel_state, state, &panel_state.query_results[panel_state.selected_result])
+                if bookmark_list, ok := core.bookmark_get_list(&state.bookmarks, panel_state.results_list_id); ok {
+                    if panel_state.selected_result < len(bookmark_list.bookmarks)-1 {
+                        panel_state.selected_result += 1
+                        update_preview_to_result(panel_state, state, &bookmark_list.bookmarks[panel_state.selected_result])
+                    }
                 }
             }, "move selection down");
 
@@ -272,19 +300,20 @@ make_grep_panel :: proc() -> core.Panel {
         },
         on_buffer_input = proc(panel: ^core.Panel, state: ^core.State) {
             panel_state := transmute(^GrepPanel)panel.state
-            
+
             input_str := core.buffer_to_string(&panel_state.buffer, allocator = context.temp_allocator)
-            if len(input_str) > 0 && input_str[len(input_str)-1] == '\n' && panel_state.query_results != nil {
-                selected_result := &panel_state.query_results[panel_state.selected_result]
-
-                core.open_buffer_file(state, selected_result.file_path, selected_result.line, selected_result.col)
-                close(state, panel.id)
-
-                state.mode = .Normal
-                sdl2.StopTextInput()
-                
-                core.reset_input_map(state)
-                return
+            if len(input_str) > 0 && input_str[len(input_str)-1] == '\n' {
+                if bookmark_list, ok := core.bookmark_get_list(&state.bookmarks, panel_state.results_list_id); ok {
+                    if len(bookmark_list.bookmarks) > 0 {
+                        bookmark := &bookmark_list.bookmarks[panel_state.selected_result]
+                        core.open_buffer_file(state, bookmark.file_path, bookmark.line, bookmark.col)
+                        close(state, panel.id)
+                        state.mode = .Normal
+                        sdl2.StopTextInput()
+                        core.reset_input_map(state)
+                        return
+                    }
+                }
             }
 
             run_query(panel_state, &panel_state.buffer, state.directory)
@@ -297,13 +326,15 @@ make_grep_panel :: proc() -> core.Panel {
 
             s := transmute(^ui.State)state.ui
 
+            bookmark_list, _ := core.bookmark_get_list(&state.bookmarks, panel_state.results_list_id)
+
             ListState :: struct {
-                core_state: ^core.State,
-                panel_state: ^GrepPanel,
+                core_state:    ^core.State,
+                panel_state:   ^GrepPanel,
             }
             list_state := ListState {
-                core_state = state,
-                panel_state = panel_state
+                core_state  = state,
+                panel_state = panel_state,
             }
 
             ui.open_element(s, nil,
@@ -360,27 +391,25 @@ make_grep_panel :: proc() -> core.Panel {
                         }
                         ui.close_element(s)
                         
+                        results := bookmark_list != nil ? bookmark_list.bookmarks[:] : []core.Bookmark{}
                         ui.list(
-                            GrepQueryResult,
+                            core.Bookmark,
                             s,
-                            panel_state.query_results,
-                            &list_state, &panel_state.selected_result, &panel_state.results_start, 
+                            results,
+                            &list_state, &panel_state.selected_result, &panel_state.results_start,
                             proc(s: ^ui.State, item: rawptr, state: rawptr) {
-                                result := transmute(^GrepQueryResult)item
+                                bookmark := transmute(^core.Bookmark)item
                                 list_state := transmute(^ListState)state
-                                
+
                                 ui.left_to_right(s)
                                 {
-                                   ui.open_element(s, fmt.tprintf("%v:%v: ", result.line, result.col), { kind = {ui.Exact(list_state.core_state.source_font_width*10), ui.Fit{} }})
-                                   ui.close_element(s)
-                                   
-                                   if len(result.file_path) > 0 {
-                                        ui.open_element(s, result.file_path[len(list_state.core_state.directory):], { kind = {ui.Grow{}, ui.Fit{}} })
+                                    ui.open_element(s, fmt.tprintf("%v:%v: ", bookmark.line, bookmark.col), {kind = {ui.Exact(list_state.core_state.source_font_width*10), ui.Fit{}}})
+                                    ui.close_element(s)
+
+                                    if len(bookmark.file_path) > 0 {
+                                        ui.open_element(s, bookmark.file_path[len(list_state.core_state.directory):], {kind = {ui.Grow{}, ui.Fit{}}})
                                         ui.close_element(s)
-                                    } else {
-                                        // ui.open_element(s, result.file_path, {}, style = { background_color = .BrightRed })
-                                        // ui.close_element(s)
-                                    } 
+                                    }
                                 }
                                 ui.close_element(s)
                             }
@@ -388,7 +417,7 @@ make_grep_panel :: proc() -> core.Panel {
                     }
                     ui.close_element(s)
 
-                    if panel_state.query_results != nil {
+                    if bookmark_list != nil && len(bookmark_list.bookmarks) > 0 {
                         render_raw_buffer(state, s, &panel_state.preview_buffer)
                     }
                 }

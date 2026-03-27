@@ -71,6 +71,17 @@ bookmark_remove :: proc(bookmarks: ^Bookmarks, list_id: BookmarkListId, index: i
     }
 }
 
+bookmark_clear_list :: proc(bookmarks: ^Bookmarks, id: BookmarkListId) {
+    list, ok := bookmark_get_list(bookmarks, id)
+    if !ok { return }
+
+    // arena_free_all only resets the offset, so name bytes are still readable
+    name_copy := list.name
+    mem.arena_free_all(&list.arena)
+    list.name      = strings.clone(name_copy, list.allocator)
+    list.bookmarks = make([dynamic]Bookmark, list.allocator)
+}
+
 bookmark_get_list :: proc(bookmarks: ^Bookmarks, id: BookmarkListId) -> (list: ^BookmarkList, ok: bool) {
     result, got := util.get(&bookmarks.lists, int(id)).?
     if !got { return nil, false }
