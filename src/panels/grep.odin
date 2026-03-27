@@ -144,7 +144,6 @@ pop_job_results :: proc(panel_state: ^GrepPanel, state: ^core.State) {
                 result.file_path,
                 result.line,
                 result.col,
-                label = result.file_context,
             )
         }
 

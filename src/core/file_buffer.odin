@@ -903,7 +903,7 @@ tree_sitter_file_buffer_input :: proc(buffer: ^FileBuffer) -> ts.Input {
 }
 
 save_buffer_to_disk :: proc(state: ^State, buffer: ^FileBuffer) -> (error: os.Error) {
-    fd := os.open(buffer.file_path, mode = os.O_WRONLY | os.O_TRUNC | os.O_CREATE) or_return;
+    fd := os.open(buffer.file_path, flags = os.O_WRONLY | os.O_TRUNC | os.O_CREATE) or_return;
     defer os.close(fd);
 
     t := buffer_piece_table(buffer)
