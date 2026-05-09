@@ -229,6 +229,13 @@ main :: proc() {
         log_buffer = core.new_virtual_file_buffer(context.allocator),
     };
 
+    test_info, test_ok := core.plugin_load("bin/bookmarks.elf")
+    if test_ok {
+        fmt.eprintf("loaded bookmarks: %v\n", test_info.info)
+    } else {
+        fmt.eprintf("failed to load bookmarks plugin: %v\n", test_info.info)
+    }
+
     core.init_bookmarks(&state.bookmarks);
 
     // context.logger = core.new_logger(&state.log_buffer);

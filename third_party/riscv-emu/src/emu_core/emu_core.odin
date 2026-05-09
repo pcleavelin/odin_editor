@@ -436,6 +436,17 @@ emu_comm_stack_pop_u64 :: proc(e: ^Emu64) -> (value: u64, ok: bool) {
     return
 }
 
+emu_comm_stack_pop_string :: proc(e: ^Emu64, allocator := context.allocator) -> (value: string, ok: bool) {
+    addr := emu_comm_stack_pop_u64(e) or_return
+    len := emu_comm_stack_pop_u32(e) or_return
+
+    buf := make([]u8, len)
+    for i in 0..<len {
+        buf[i] = emu_read_u8(e, addr+u64(i))
+    }
+    return string(buf), true
+}
+
 emu_comm_stack_pop :: proc(e: ^Emu64) -> (value: EmuValue, ok: bool) {
     if e.comm_stack_num > 0 {
         value = e.comm_stack[e.comm_stack_num-1]

@@ -25,6 +25,7 @@ State :: struct {
     font_atlas: FontAtlas,
     font: SystemFont,
     ui: rawptr,
+    plugins: [dynamic]Plugin,
 
     mode: Mode,
     should_close: bool,

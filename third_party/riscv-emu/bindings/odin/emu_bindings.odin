@@ -1,5 +1,6 @@
 package emu_bindings
 
+import "base:runtime"
 import "core:mem"
 import "core:slice"
 import "core:strings"
@@ -22,25 +23,26 @@ foreign emu_stdlib {
 
 MainProc :: proc()
 
+EMU_ARENA: mem.Arena
+EMU_ALLOCATOR: mem.Allocator
+EMU_CONTEXT: runtime.Context
+
 @(export)
 _start :: proc() {
-    main := transmute(MainProc)emu_out_pop_u64()
-
     data := slice.bytes_from_ptr(rawptr(uintptr(0x4000)), 1024 * 4)
-    arena: mem.Arena
-    mem.arena_init(&arena, data)
+    mem.arena_init(&EMU_ARENA, data)
 
-    allocator := mem.arena_allocator(&arena)
-
-    context.allocator = allocator
+    EMU_ALLOCATOR = mem.arena_allocator(&EMU_ARENA)
+    EMU_CONTEXT.allocator = EMU_ALLOCATOR
 
     print("_start called\n")
 
-    if main != nil {
-        main()
-    }
-
     emu_out_push_u64(0xBADBEEF)
+}
+
+push_string :: proc(str: string) {
+    emu_out_push_u32(u32(len(str)))
+    emu_out_push_u64(u64(uintptr(transmute(^u8)raw_data(str))))
 }
 
 pop_string :: proc() -> string {

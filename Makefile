@@ -1,8 +1,18 @@
 all: editor
 
-editor: src/**/*.odin
+editor: src/**/*.odin plugins
 	mkdir -p bin
 	odin build src/ -out:bin/editor
+
+plugins: emu
+	mkdir -p bin
+	cd plugins && $(MAKE)
+	cp plugins/bin/*.elf bin/
+
+emu:
+	mkdir -p bin
+	cd third_party/riscv-emu && $(MAKE)
+	cp third_party/riscv-emu/bin/stdlib.elf bin/stdlib.elf
 
 grep:
 	cargo fmt --manifest-path "src/pkg/grep_lib/Cargo.toml"
