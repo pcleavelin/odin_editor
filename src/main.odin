@@ -208,6 +208,11 @@ main :: proc() {
     _command_arena: mem.Arena
     mem.arena_init(&_command_arena, make([]u8, 1024*1024));
 
+    directory, dir_err := os.get_working_directory(context.allocator)
+    if dir_err != nil {
+        fmt.eprintf("couldn't get worrking directory: %v", dir_err)
+    }
+
     state = State {
         ctx = context,
         screen_width = 640,
@@ -220,7 +225,7 @@ main :: proc() {
         panels = util.make_static_list(core.Panel, 128),
         buffers = util.make_static_list(core.FileBuffer, 64),
 
-        directory = os.get_current_directory(),
+        directory = directory,
         log_buffer = core.new_virtual_file_buffer(context.allocator),
     };
 

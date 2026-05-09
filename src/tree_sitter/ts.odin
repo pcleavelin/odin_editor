@@ -386,14 +386,7 @@ load_highlights :: proc(state: ^State) {
         }
     }
 
-    fd, err := os.open(path)
-    if err != nil {
-        log.errorf("failed to open file: errno=%x", err)
-        return
-    }
-    defer os.close(fd);
-
-    if highlight_query, success := os.read_entire_file_from_handle(fd); success {
+    if highlight_query, err := os.read_entire_file(path, context.temp_allocator); err == nil {
         error_offset: u32 = 0
         error_type: QueryError = .None
 

@@ -61,7 +61,7 @@ collect_workspace_files_recursive :: proc(
 	for fi in infos {
 		base := fi.name
 
-		if fi.is_dir {
+		if fi.type == .Directory {
 			skip := false
 			for s in SKIP_DIRS {
 				if base == s {
@@ -72,7 +72,7 @@ collect_workspace_files_recursive :: proc(
 			if !skip {
 				collect_workspace_files_recursive(fi.fullpath, entries, path_allocator)
 			}
-		} else {
+		} else if fi.type == .Regular {
 			if len(base) > 0 && base[0] == '.' {continue}
 
 			append(

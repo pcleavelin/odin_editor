@@ -123,6 +123,7 @@
             tree-sitter-rust
             tree-sitter
             grep-lib
+            pkgsCross.riscv64-embedded.buildPackages.gcc
             binutils
             clang
           ] else if pkgs.system == "x86_64-linux" then [

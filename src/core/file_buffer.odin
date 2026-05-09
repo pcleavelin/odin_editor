@@ -769,7 +769,7 @@ load_file_buffer_source :: proc(file_path: string, base_dir: string = "") -> (so
     }
     defer os.close(fd)
 
-    fi, fstat_err := os.fstat(fd)
+    fi, fstat_err := os.fstat(fd, context.temp_allocator)
     if fstat_err != nil {
         return {}, make_error(ErrorType.FileIOError, fmt.aprintf("failed to get file info: errno=%x", fstat_err))
     }
@@ -790,8 +790,8 @@ load_file_buffer_source :: proc(file_path: string, base_dir: string = "") -> (so
         case ".json": language = .Json
     }
 
-    content, ok := os.read_entire_file_from_handle(fd)
-    if !ok {
+    content, ok := os.read_entire_file(fd, context.temp_allocator)
+    if ok != nil {
         return {}, make_error(ErrorType.FileIOError, fmt.aprintf("failed to read from file"))
     }
 
@@ -809,9 +809,9 @@ init_file_buffer_from_source :: proc(allocator: mem.Allocator, source: FileBuffe
 
     buffer := FileBuffer {
         allocator = allocator,
-        file_path = source.full_path,
-        directory = source.directory,
-        extension = source.extension,
+        file_path = strings.clone(source.full_path),
+        directory = strings.clone(source.directory),
+        extension = strings.clone(source.extension),
         tree      = ts.make_state(source.language),
         history   = make_history(source.content),
         glyphs    = make_glyph_buffer(256, 256),
@@ -862,7 +862,7 @@ make_file_buffer :: proc(allocator: mem.Allocator, file_path: string, base_dir: 
 
     source, err := load_file_buffer_source(file_path, base_dir)
     if err.type != .None { return FileBuffer{}, err }
-    defer delete(source.content)
+    // defer delete(source.content)
 
     return init_file_buffer_from_source(allocator, source), error()
 }
